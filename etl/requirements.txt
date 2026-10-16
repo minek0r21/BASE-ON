@@ -1,0 +1,6 @@
+# 적재 스크립트. 버전 고정 (2026-10-16, 2024~2026 전체 가공 확인). 공통 규칙은 pip install -e shared
+pandas==3.0.6
+numpy==2.4.6
+pyarrow==26.0.0
+neo4j==6.4.1
+python-dotenv==1.2.4

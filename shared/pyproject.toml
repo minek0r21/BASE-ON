@@ -1,0 +1,13 @@
+# backend와 etl이 같이 쓰는 계산 규칙 패키지.
+# 설치 (BASEON 폴더에서):  pip install -e shared
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "baseon-rules"
+version = "0.1.0"
+requires-python = ">=3.10"
+
+[tool.setuptools]
+packages = ["baseon_rules"]

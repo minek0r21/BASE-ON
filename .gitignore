@@ -1,0 +1,26 @@
+# 비밀값
+.env
+
+# 원본 기록·DB 덤프·검수 백업 (스크립트로 다시 받거나 서버 밖에 따로 보관)
+data/
+*.dump
+backups/
+
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.egg-info/
+build/
+
+# Next.js (frontend/)
+node_modules/
+.next/
+out/
+
+# OS·편집기
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
