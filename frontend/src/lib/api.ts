@@ -1,0 +1,804 @@
+/**
+ * BASE:ON API 클라이언트 — 응답 타입·변환·호출을 이 파일 하나에 둔다.
+ *
+ * 구조
+ *   Raw*      : 지금 FastAPI가 실제로 돌려주는 모양 (backend/app/routers/*.py)
+ *   도메인 타입: 화면이 쓰는 모양. 설계 6-3(API-02 `axes` 배열·`data_as_of`)을 기준으로 잡았다
+ *   to*()     : Raw → 도메인 변환. 백엔드 응답이 바뀌면 Raw 타입과 이 함수만 고친다
+ *
+ * 백엔드에 response_model이 생기면 Raw 타입은 openapi-typescript 생성 타입으로 바꾼다(설계 9장).
+ */
+
+export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api/v1";
+
+// ------------------------------------------------------------------ 공통
+
+/** 서버 오류 형식 `{"error": {"code", "message"}}` (설계 6-1) */
+export class ApiError extends Error {
+  constructor(
+    public status: number,
+    public code: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+type Query = Record<string, string | number | boolean | null | undefined>;
+
+async function get<T>(path: string, query: Query = {}, signal?: AbortSignal): Promise<T> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v != null) qs.set(k, String(v));
+  const url = `${API_BASE}${path}${qs.size ? `?${qs}` : ""}`;
+
+  const res = await fetch(url, { signal });
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    const err = body?.error;
+    throw new ApiError(res.status, err?.code ?? "HTTP_ERROR", err?.message ?? `요청 실패 (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
+// ------------------------------------------------------------------ API-01 검색
+
+type RawSearch = {
+  players: {
+    player_id: string;
+    name: string;
+    team: string | null;
+    position: string | null;
+    bats_throws: string | null;
+  }[];
+};
+
+export type PlayerHit = RawSearch["players"][number];
+
+/** 검색어 규칙: 공백 제거 후 1~20자 (설계 6-1) */
+export const normalizeQuery = (q: string) => q.replace(/\s+/g, "").slice(0, 20);
+
+export async function searchPlayers(q: string, signal?: AbortSignal): Promise<PlayerHit[]> {
+  const raw = await get<RawSearch>("/players", { q: normalizeQuery(q) }, signal);
+  return raw.players;
+}
+
+// ------------------------------------------------------------------ API-02 선수 요약
+
+type RawPctKey = "contact" | "hit" | "power" | "eye" | "consistency";
+
+type RawStats = {
+  pa: number; ab: number; h: number; hr: number;
+  avg: number | null; obp: number | null; slg: number | null; ops: number | null;
+  bb_pct: number | null; k_pct: number | null; iso: number | null; ops_sd: number | null;
+};
+
+type RawHr = {
+  pa_id: string;
+  date: string;
+  opponent: string;
+  pitcher: { player_id: string; name: string };
+  runs: number;
+  hr_seq: number;
+  video: {
+    video_id: string; title: string; duration_sec?: number | null; start_sec?: number | null; end_sec?: number | null;
+    precision?: "scene" | "inning";
+  } | null;
+};
+
+type RawPlayer = {
+  player_id: string;
+  name: string;
+  team: string | null;
+  position: string | null;
+  back_number: number | string | null;
+  birth_date: string | null;
+  bats_throws: string | null;
+  season: number | null;
+  stats: RawStats | null;
+  qualified: boolean;
+  percentiles: Record<RawPctKey, number | null> | null;
+  axis_ranks: Record<RawPctKey, number | null> | null;
+  group_size: number | null;
+  last_hr: RawHr | null;
+  last_hr_video: RawHr | null;
+  recent_video: { video_id: string; title: string; date: string; opponent: string; pa_id: string } | null;
+  /** 축 옆 ▶ — 안타·선구안 축의 그 시즌 가장 최근 확정 장면 (없는 축은 빠짐) */
+  axis_scenes?: Partial<Record<"hit" | "eye", RawBatAxisScene>>;
+  // 설계 6-3 이후 생기는 칸 (지금 응답에는 없다)
+  data_as_of?: string;
+  primary_role?: "batter" | "pitcher" | null;
+  pitching?: RawPitching | null;
+};
+
+type RawBatAxisScene = {
+  video_id: string; title: string; duration_sec: number | null; start_sec: number; end_sec: number | null;
+  precision: "scene" | "inning" | "game" | null;
+  pa_id: string; date: string; inning: number; inning_half: string; events: string; runs: number; opponent: string;
+};
+
+type RawPitching = {
+  role: "starter" | "reliever";
+  role_label: string;
+  g: number; gs: number; outs: number; tbf: number;
+  h: number; hr: number; bb: number; hbp: number; so: number; r: number;
+  avg: number | null; whip: number | null;
+  avg_velo: number | null; league_avg_velo: number | null;
+  qualified: boolean;
+  group_size: number | null;
+  axes: {
+    key: PitchAxisKey; label: string; metric: string; value: number | null;
+    reverse: boolean; percentile: number | null; rank: number | null;
+    scene?: RawPitchScene | null;
+  }[];
+  not_qualified_message: string | null;
+  recent_scene?: RawPitchScene | null;
+};
+
+type RawScene = {
+  video_id: string;
+  title: string;
+  duration_sec: number | null;
+  start_sec: number | null;
+  end_sec: number | null;
+  precision: "scene" | "inning" | "game";
+  scene_type: string | null;
+  tags: string[];
+};
+type RawPitchScene = RawScene & { outing_id: string; date: string; line: OutingLine };
+
+/** 등판 한 줄 기록 (장면 표기 「7.16 · 6이닝 8K 무실점」 재료) */
+export type OutingLine = { outs: number; so: number; r: number; h: number };
+
+const sceneClip = (s: RawScene): Clip => ({
+  videoId: s.video_id,
+  title: s.title,
+  startSec: s.start_sec ?? 0,
+  endSec: s.end_sec ?? s.duration_sec,
+  durationSec: s.duration_sec,
+  precision: s.precision,
+});
+
+/** 등판 장면 (투수 요약의 최근 장면·축 옆 ▶) */
+export type PitchScene = { clip: Clip; date: string; line: OutingLine };
+const toPitchScene = (s: RawPitchScene): PitchScene => ({ clip: sceneClip(s), date: s.date, line: s.line });
+
+export type PitchAxisKey = "strikeout" | "control" | "chase" | "hit_prevention" | "power_prevention";
+
+export type PitchAxis = {
+  key: PitchAxisKey;
+  label: string;
+  metric: string;
+  value: number | null;
+  percentile: number | null;
+  topPct: number | null;
+  rank: number | null;
+  reverse: boolean;
+  /** 이 축을 보여 주는 확정 장면 (탈삼진·안타 억제·제구만, docs/장면.md 6장) */
+  scene: PitchScene | null;
+};
+
+/** 투수 요약 (docs/투수.md 6-1·8장) */
+export type PitchingSummary = {
+  role: "starter" | "reliever";
+  roleLabel: string;
+  g: number; gs: number;
+  /** 잡은 아웃. 이닝 표기는 format.innings() */
+  outs: number;
+  tbf: number; h: number; hr: number; bb: number; hbp: number; so: number;
+  avg: number | null;
+  whip: number | null;
+  avgVelo: number | null;
+  leagueAvgVelo: number | null;
+  qualified: boolean;
+  groupSize: number | null;
+  axes: PitchAxis[];
+  notQualifiedMessage: string | null;
+  recentScene: PitchScene | null;
+};
+
+function toPitching(p: RawPitching): PitchingSummary {
+  return {
+    role: p.role, roleLabel: p.role_label, g: p.g, gs: p.gs, outs: p.outs, tbf: p.tbf,
+    h: p.h, hr: p.hr, bb: p.bb, hbp: p.hbp, so: p.so, avg: p.avg, whip: p.whip,
+    avgVelo: p.avg_velo, leagueAvgVelo: p.league_avg_velo, qualified: p.qualified, groupSize: p.group_size,
+    axes: p.axes.map(({ scene, ...a }) => ({
+      ...a,
+      topPct: a.percentile == null ? null : 100 - a.percentile,
+      scene: scene ? toPitchScene(scene) : null,
+    })),
+    notQualifiedMessage: p.not_qualified_message,
+    recentScene: p.recent_scene ? toPitchScene(p.recent_scene) : null,
+  };
+}
+
+/** 경기 꼬리표 (docs/포스트시즌.md 8-1). 정규시즌이면 stage · stage_label이 null */
+export type GameTag = {
+  game_type: "regular" | "postseason";
+  stage: "WC" | "SPO" | "PO" | "KS" | null;
+  series_game_no: number | null;
+  /** 「준PO 2차전」 */
+  stage_label: string | null;
+};
+
+// ------------------------------------------------------------------ API-23 투수 경기 기록 (등판 목록)
+
+type RawOutings = {
+  seasons: number[];
+  season: number | null;
+  months: number[];
+  month: number | null;
+  outings: (GameTag & {
+    outing_id: string;
+    game_pk: string;
+    date: string;
+    weekday: string;
+    opponent: string;
+    home: boolean;
+    score: { team: number; opponent: number };
+    result: "W" | "L" | "D";
+    role: string;
+    line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number };
+    scene: RawScene | null;
+    highlight: RawHighlight;
+  })[];
+};
+
+export type OutingRow = Omit<RawOutings["outings"][number], "scene" | "highlight" | "outing_id"> & {
+  outingId: string;
+  /** 보너스층: 이 등판의 확정 장면 (클립 scene · 챕터 inning) */
+  scene: Clip | null;
+  /** 기본층: 이 경기 하이라이트 */
+  highlight: Clip | null;
+};
+export type PlayerOutings = { seasons: number[]; season: number | null; months: number[]; month: number | null; outings: OutingRow[] };
+
+export async function getPlayerOutings(id: string, season: number | null, month: number | null, signal?: AbortSignal): Promise<PlayerOutings> {
+  const r = await get<RawOutings>(`/players/${encodeURIComponent(id)}/outings`, { season, month }, signal);
+  return {
+    seasons: r.seasons,
+    season: r.season,
+    months: r.months,
+    month: r.month,
+    outings: r.outings.map(({ outing_id, scene, highlight, ...o }) => ({
+      ...o,
+      outingId: outing_id,
+      scene: scene ? sceneClip(scene) : null,
+      highlight: highlight ? toClip(highlight) : null,
+    })),
+  };
+}
+
+export type AxisKey = RawPctKey;
+export type StatKey = keyof RawStats;
+
+export type Axis = {
+  key: AxisKey;
+  label: string;
+  metric: StatKey;
+  value: number | null;
+  percentile: number | null;
+  /** 상위 N% = 100 − 백분위 (FR-02-02) */
+  topPct: number | null;
+  rank: number | null;
+  /** true면 원 수치가 낮을수록 좋다 (삼진율·월별 OPS 표준편차) */
+  reverse: boolean;
+  /** 비교 대상인데 이 축만 계산 못 했을 때 이유 */
+  unavailable: string | null;
+  /** 축 옆 ▶ 장면 (안타생산 = 안타, 선구안 = 볼넷). 파워는 recentScene(홈런)을 쓴다 */
+  scene: { clip: Clip; label: string } | null;
+};
+
+/** 타자 홈런 장면 (최근 장면·파워 축 ▶, docs/장면.md 6장) */
+export type Scene = {
+  paId: string;
+  clip: Clip;
+  date: string;
+  hrSeq: number | null;
+  opponent: string;
+};
+
+export type PlayerSummary = {
+  playerId: string;
+  name: string;
+  team: string | null;
+  position: string | null;
+  /** 문자열 — `0`과 `00`이 다르다 (설계 T5) */
+  backNumber: string | null;
+  birthDate: string | null;
+  batsThrows: string | null;
+  season: number | null;
+  dataAsOf: string | null;
+  /** 이 시즌 타자 기록이 있나 (투수만 뛴 시즌이면 false) */
+  isBatter: boolean;
+  stats: RawStats | null;
+  qualified: boolean;
+  groupSize: number | null;
+  axes: Axis[];
+  notQualifiedMessage: string | null;
+  lastHr: RawHr | null;
+  recentScene: Scene | null;
+  /** 그 시즌 기본 화면: 타자 요약 / 투수 요약 (투수.md P7) */
+  primaryRole: "batter" | "pitcher" | null;
+  pitching: PitchingSummary | null;
+};
+
+/** 고정 순서: 삼진회피 → 안타생산 → 파워 → 선구안 → 꾸준함 (설계 6-3, etl/prepare.py 지표 대응) */
+export const AXIS_DEFS: { key: AxisKey; label: string; metric: StatKey; reverse: boolean }[] = [
+  { key: "contact", label: "삼진회피", metric: "k_pct", reverse: true },
+  { key: "hit", label: "안타생산", metric: "avg", reverse: false },
+  { key: "power", label: "파워", metric: "iso", reverse: false },
+  { key: "eye", label: "선구안", metric: "bb_pct", reverse: false },
+  { key: "consistency", label: "꾸준함", metric: "ops_sd", reverse: true },
+];
+
+const NOT_QUALIFIED = "리그 비교 대상 아님(타석 부족)"; // 「규정타석 미달」이라고 쓰지 않는다 (설계 6-3)
+
+const EVENT_SCENE_KO: Record<string, string> = { single: "안타", double: "2루타", triple: "3루타", walk: "볼넷" };
+
+function toAxisScene(name: string, s: RawBatAxisScene | undefined): Axis["scene"] {
+  if (!s) return null;
+  const what = `${EVENT_SCENE_KO[s.events] ?? s.events}${s.runs > 0 ? ` ${s.runs}타점` : ""}`;
+  return {
+    label: `${name} · ${Number(s.date.slice(5, 7))}.${Number(s.date.slice(8, 10))} ${s.opponent}전 ${s.inning}회${s.inning_half} ${what}`,
+    clip: {
+      videoId: s.video_id, title: s.title, startSec: s.start_sec ?? 0, endSec: s.end_sec ?? s.duration_sec ?? null,
+      durationSec: s.duration_sec ?? null, precision: s.precision ?? "scene",
+    },
+  };
+}
+
+function toPlayerSummary(r: RawPlayer): PlayerSummary {
+  const axes: Axis[] = AXIS_DEFS.map((d) => {
+    const percentile = r.percentiles?.[d.key] ?? null;
+    return {
+      ...d,
+      value: r.stats?.[d.metric] ?? null,
+      percentile,
+      topPct: percentile == null ? null : 100 - percentile,
+      rank: r.axis_ranks?.[d.key] ?? null,
+      unavailable: r.qualified && percentile == null ? "월별 타석 부족" : null,
+      scene: d.key === "hit" || d.key === "eye" ? toAxisScene(r.name, r.axis_scenes?.[d.key]) : null,
+    };
+  });
+
+  // 최근 장면 = 그 시즌 확정 홈런 장면 중 가장 최근 (잘한 장면만, 장면.md S8)
+  const v = r.last_hr_video ?? null;
+  const recentScene: Scene | null = v?.video
+    ? {
+        paId: v.pa_id,
+        date: v.date,
+        hrSeq: v.hr_seq,
+        opponent: v.opponent,
+        clip: {
+          videoId: v.video.video_id,
+          title: v.video.title,
+          startSec: v.video.start_sec ?? 0,
+          endSec: v.video.end_sec ?? v.video.duration_sec ?? null,
+          durationSec: v.video.duration_sec ?? null,
+          precision: v.video.precision ?? "scene",
+        },
+      }
+    : null;
+
+  return {
+    playerId: r.player_id,
+    name: r.name,
+    team: r.team,
+    position: r.position,
+    backNumber: r.back_number == null ? null : String(r.back_number),
+    birthDate: r.birth_date,
+    batsThrows: r.bats_throws,
+    season: r.season,
+    dataAsOf: r.data_as_of ?? null,
+    isBatter: r.stats != null,
+    stats: r.stats,
+    qualified: r.qualified,
+    groupSize: r.group_size,
+    axes,
+    notQualifiedMessage: r.stats != null && !r.qualified ? NOT_QUALIFIED : null,
+    lastHr: r.last_hr,
+    recentScene,
+    primaryRole: r.primary_role ?? (r.stats != null ? "batter" : null),
+    pitching: r.pitching ? toPitching(r.pitching) : null,
+  };
+}
+
+export async function getPlayer(id: string, season?: number | null, signal?: AbortSignal): Promise<PlayerSummary> {
+  return toPlayerSummary(await get<RawPlayer>(`/players/${encodeURIComponent(id)}`, { season }, signal));
+}
+
+// ------------------------------------------------------------------ API-19 시즌별 기록
+
+type RawSeasons = {
+  player_id: string;
+  name: string;
+  seasons: ({ season: number; teams: string[]; games: number } & Partial<RawStats> & Record<string, unknown>)[];
+  pitching_seasons?: ({ season: number; role: string; role_label: string; teams: string[] } & Record<string, unknown>)[];
+  /** 포스트시즌 기록 (PS1 · PS3): 시즌마다 한 줄, 백분위 없음 */
+  postseason_seasons?: ({ season: number; games: number } & Record<string, unknown>)[];
+  postseason_pitching?: ({ season: number } & Record<string, unknown>)[];
+};
+
+export type SeasonRow = RawSeasons["seasons"][number];
+export type PostSeasonRow = { season: number } & Record<string, unknown>;
+export type PlayerSeasons = {
+  batting: SeasonRow[];
+  pitching: NonNullable<RawSeasons["pitching_seasons"]>;
+  postBatting: PostSeasonRow[];
+  postPitching: PostSeasonRow[];
+  all: number[];
+};
+
+export async function getPlayerSeasons(id: string, signal?: AbortSignal): Promise<PlayerSeasons> {
+  const r = await get<RawSeasons>(`/players/${encodeURIComponent(id)}/seasons`, {}, signal);
+  const pitching = r.pitching_seasons ?? [];
+  // 시즌 선택 목록 = 타자·투수 기록이 있는 시즌 전부 (최근 시즌부터)
+  const all = [...new Set([...r.seasons.map((s) => s.season), ...pitching.map((s) => s.season)])].sort((a, b) => b - a);
+  return { batting: r.seasons, pitching, postBatting: r.postseason_seasons ?? [], postPitching: r.postseason_pitching ?? [], all };
+}
+
+// ------------------------------------------------------------------ API-17 상대한 투수 · API-06 맞대결
+
+export type BattingLine = { pa: number; ab: number; h: number; hr: number; bb: number; so: number; avg: number | null };
+export type VsPitcher = BattingLine & { player_id: string; name: string; team: string | null };
+export type Matchups = { season: number | null; min_pa: number; pitchers: VsPitcher[] };
+
+export async function getMatchups(id: string, season: number | null, minPa: number, signal?: AbortSignal): Promise<Matchups> {
+  return get<Matchups>(`/players/${encodeURIComponent(id)}/matchups`, { season, min_pa: minPa }, signal);
+}
+
+export type MatchupPa = GameTag & { pa_id: string; date: string; inning: number; inning_half: string; events: string; events_ko: string; has_video: boolean };
+export type Matchup = {
+  batter: { player_id: string; name: string };
+  pitcher: { player_id: string; name: string };
+  season: number | null;
+  summary: BattingLine;
+  plate_appearances: MatchupPa[];
+};
+
+export async function getMatchup(batter: string, pitcher: string, season: number | null, signal?: AbortSignal): Promise<Matchup> {
+  return get<Matchup>("/matchup", { batter, pitcher, season }, signal);
+}
+
+// ------------------------------------------------------------------ 장면 (영상 구간)
+
+/** 화면이 재생하는 영상 한 구간. precision: scene 바로 그 장면 / inning 그 이닝부터 / game 경기 요약 처음부터 */
+export type Clip = {
+  videoId: string;
+  title: string;
+  startSec: number;
+  endSec: number | null;
+  durationSec: number | null;
+  precision: "scene" | "inning" | "game";
+};
+
+type RawHighlight = {
+  video_id: string;
+  title: string;
+  channel: string | null;
+  duration_sec: number | null;
+  start_sec: number | null;
+  end_sec: number | null;
+  precision: "game";
+} | null;
+
+const toClip = (h: NonNullable<RawHighlight>): Clip => ({
+  videoId: h.video_id,
+  title: h.title,
+  startSec: h.start_sec ?? 0,
+  endSec: h.end_sec,
+  durationSec: h.duration_sec,
+  precision: h.precision,
+});
+
+// ------------------------------------------------------------------ API-03 출전 경기 목록
+
+type RawGames = {
+  seasons: number[];
+  season: number | null;
+  months: number[];
+  month: number | null;
+  games: (GameTag & {
+    game_pk: string;
+    date: string;
+    weekday: string;
+    opponent: string;
+    home: boolean;
+    score: { team: number; opponent: number };
+    result: "W" | "L" | "D";
+    line: { ab: number; h: number; hr: number };
+    video_count: number;
+    highlight?: RawHighlight;
+    /** 이 경기 이 선수 영상 — 멀티 히트처럼 여러 타석을 담은 영상, 처음부터 재생 (docs/장면.md S13) */
+    player_video?: { video_id: string; title: string; duration_sec: number | null; start_sec: number | null; end_sec: number | null } | null;
+  })[];
+};
+
+export type GameRow = Omit<RawGames["games"][number], "highlight" | "game_pk" | "video_count" | "player_video" | keyof GameTag> & {
+  /** 이 경기 이 선수 영상 (여러 타석을 담은 영상, 처음부터) */
+  playerVideo: Clip | null;
+  /** 포스트시즌 꼬리표 「준PO 2차전」 (정규시즌 null) */
+  stageLabel: string | null;
+  gamePk: string;
+  /** 기본층 「이 경기 하이라이트」 (docs/장면.md). 없으면 null */
+  highlight: Clip | null;
+};
+
+export type PlayerGames = { seasons: number[]; season: number | null; months: number[]; month: number | null; games: GameRow[] };
+
+export async function getPlayerGames(id: string, season: number | null, month: number | null, signal?: AbortSignal): Promise<PlayerGames> {
+  const r = await get<RawGames>(`/players/${encodeURIComponent(id)}/games`, { season, month }, signal);
+  return {
+    seasons: r.seasons,
+    season: r.season,
+    months: r.months,
+    month: r.month,
+    games: r.games.map((g) => ({
+      gamePk: g.game_pk,
+      date: g.date,
+      weekday: g.weekday,
+      opponent: g.opponent,
+      home: g.home,
+      score: g.score,
+      result: g.result,
+      line: g.line,
+      stageLabel: g.stage_label,
+      highlight: g.highlight ? toClip(g.highlight) : null,
+      playerVideo: g.player_video
+        ? { videoId: g.player_video.video_id, title: g.player_video.title, startSec: g.player_video.start_sec ?? 0,
+            endSec: g.player_video.end_sec ?? g.player_video.duration_sec, durationSec: g.player_video.duration_sec, precision: "game" }
+        : null,
+    })),
+  };
+}
+
+// ------------------------------------------------------------------ API-04 경기 요약 + 그 선수 타석
+
+type RawGamePas = {
+  game: {
+    game_pk: string;
+    date: string;
+    away: { team: string; score: number };
+    home: { team: string; score: number };
+    innings: number;
+    highlight?: RawHighlight;
+  };
+  line: { ab: number; h: number; hr: number; bb: number };
+  plate_appearances: {
+    pa_id: string;
+    pa_no: number;
+    inning: number;
+    inning_half: "초" | "말";
+    events: string;
+    events_ko: string;
+    runs_scored: number;
+    hr_seq: number | null;
+    /** 포스트시즌 n호 (PS5). 정규시즌 홈런이면 null */
+    post_hr_seq: number | null;
+    /** 「시즌 45호」 · 「2026 포스트시즌 2호」 */
+    hr_label: string | null;
+    runners: { on_1b: boolean; on_2b: boolean; on_3b: boolean };
+    pitcher: { player_id: string; name: string };
+    has_video: boolean;
+  }[];
+};
+
+export type PaRow = RawGamePas["plate_appearances"][number];
+export type GameDetail = { highlight: Clip | null; line: RawGamePas["line"]; pas: PaRow[] };
+
+export async function getGamePas(gamePk: string, playerId: string, signal?: AbortSignal): Promise<GameDetail> {
+  const r = await get<RawGamePas>(`/games/${encodeURIComponent(gamePk)}/plate-appearances`, { player: playerId }, signal);
+  return { highlight: r.game.highlight ? toClip(r.game.highlight) : null, line: r.line, pas: r.plate_appearances };
+}
+
+// ------------------------------------------------------------------ API-05 타석의 확정 장면
+
+type RawPaVideo = {
+  pa_id: string;
+  videos: {
+    video_id: string; title: string; duration_sec: number | null; start_sec: number | null; end_sec: number | null;
+    precision?: "scene" | "inning";
+  }[];
+};
+
+/** 타석의 확정 장면 중 첫째 (rank 순: 클립이 챕터보다 앞) */
+export async function getPaClip(paId: string, signal?: AbortSignal): Promise<Clip | null> {
+  const r = await get<RawPaVideo>(`/plate-appearances/${encodeURIComponent(paId)}/video`, {}, signal);
+  const v = r.videos[0];
+  return v
+    ? {
+        videoId: v.video_id, title: v.title, startSec: v.start_sec ?? 0, endSec: v.end_sec ?? v.duration_sec,
+        durationSec: v.duration_sec, precision: v.precision ?? "scene",
+      }
+    : null;
+}
+
+// ------------------------------------------------------------------ API-12 재생 불가 신고
+
+/** 재생 오류가 난 영상을 알린다. 서버가 YouTube에 확인해 재생 불가면 검수 「영상 소실」로 보낸다 (설계 8-3).
+ *  응답은 늘 202라 기다리지 않고, 실패해도 화면에는 영향이 없다 */
+export function reportUnplayable(videoId: string): void {
+  fetch(`${API_BASE}/video-links/${encodeURIComponent(videoId)}/report`, { method: "POST", keepalive: true }).catch(() => {});
+}
+
+// ------------------------------------------------------------------ API-11 타자 비교
+
+type RawCompare = {
+  season: number;
+  group_size: number;
+  players: {
+    player_id: string; name: string; team: string | null;
+    has_stats: boolean; qualified: boolean;
+    stats: RawStats | null;
+    axes: { key: AxisKey; label: string; metric: StatKey; reverse: boolean; value: number | null; percentile: number | null; rank: number | null }[];
+    message: string | null;
+  }[];
+};
+export type CompareResult = RawCompare;
+export type ComparePlayer = RawCompare["players"][number];
+
+export async function getCompare(ids: string[], season: number | null, signal?: AbortSignal): Promise<CompareResult> {
+  return get<RawCompare>("/players/compare", { ids: ids.join(","), season }, signal);
+}
+
+// ------------------------------------------------------------------ 관리자 검수 (/admin/review, 설계 6-4·8-4)
+
+export type TargetKind = "game" | "pa" | "outing";
+
+export type ReviewItem = {
+  target_kind: TargetKind;
+  target_id: string;
+  date: string | null;
+  summary: string;
+  video: { video_id: string; title: string; channel: string | null; kind: string | null; duration_sec: number | null };
+  status: string;
+  origin: string;
+  scene_type: string | null;
+  precision: "scene" | "inning" | "game";
+  start_sec: number | null;
+  end_sec: number | null;
+  score: number | null;
+  reasons: string | null;
+  review_reason: string | null;
+  tags: string[] | null;
+};
+export type ReviewQueue = {
+  total: number; limit: number; offset: number;
+  counts: { target_kind: TargetKind; reason: string; n: number }[];
+  items: ReviewItem[];
+};
+export type ReviewStats = Partial<Record<TargetKind, {
+  pending: number; auto_confirmed: number; approved: number; rejected: number; manual: number; accuracy: number | null;
+  /** 자동 연결 중 검수에서 맞음(승인)·틀림(반려) — 표본 확인(NFR-07) */
+  auto_reviewed_ok: number; auto_reviewed_ng: number;
+}>>;
+
+/** 관리자 토큰은 sessionStorage에만 (탭을 닫으면 사라진다, 설계 6-4) */
+const TOKEN_KEY = "baseon.admin.token";
+export const adminToken = {
+  get: () => { try { return sessionStorage.getItem(TOKEN_KEY) ?? ""; } catch { return ""; } },
+  set: (t: string) => { try { if (t) sessionStorage.setItem(TOKEN_KEY, t); else sessionStorage.removeItem(TOKEN_KEY); } catch { /* 저장소 막힘 */ } },
+};
+
+async function admin<T>(method: "GET" | "PATCH", path: string, query: Query = {}, body?: unknown): Promise<T> {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(query)) if (v != null) qs.set(k, String(v));
+  const token = adminToken.get();
+  const res = await fetch(`${API_BASE}${path}${qs.size ? `?${qs}` : ""}`, {
+    method,
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const err = (await res.json().catch(() => null))?.error;
+    throw new ApiError(res.status, err?.code ?? "HTTP_ERROR", err?.message ?? `요청 실패 (${res.status})`);
+  }
+  return res.json() as Promise<T>;
+}
+
+export type ReviewMode = "pending" | "auto_confirmed";
+
+export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | null; reason: string | null; season: number | null; offset: number }) =>
+  admin<ReviewQueue>("GET", "/admin/review/queue", { status: f.mode, target_kind: f.targetKind, reason: f.reason, season: f.season, limit: 20, offset: f.offset });
+
+export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
+
+export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
+const reviewPath = (it: ReviewItem) =>
+  `/admin/review/${it.target_kind}/${encodeURIComponent(it.target_id)}/videos/${encodeURIComponent(it.video.video_id)}`;
+
+export const saveReview = (it: ReviewItem, body: { action: ReviewActionKind; reviewer: string; start_sec?: number; end_sec?: number; to_target_id?: string }) =>
+  admin<unknown>("PATCH", reviewPath(it), {}, body);
+
+/** 옮김 후보: 타석 = 같은 경기 그 타자 다른 타석 + 영상 매칭 후보, 등판 = 같은 투수 앞뒤 7일 + 같은 경기 다른 투수, 경기 = 같은 날 다른 경기 */
+export type MoveCandidate = { target_id: string; date: string; why: string; summary: string };
+export const getMoveCandidates = (it: ReviewItem) =>
+  admin<{ candidates: MoveCandidate[] }>("GET", reviewPath(it) + "/move-candidates").then((r) => r.candidates);
+
+// ------------------------------------------------------------------ TanStack Query 키
+
+export const qk = {
+  search: (q: string) => ["search", normalizeQuery(q)] as const,
+  player: (id: string, season: number | null) => ["player", id, season] as const,
+  seasons: (id: string) => ["seasons", id] as const,
+  games: (id: string, season: number | null, month: number | null) => ["games", id, season, month] as const,
+  gamePas: (gamePk: string, playerId: string) => ["gamePas", gamePk, playerId] as const,
+  outings: (id: string, season: number | null, month: number | null) => ["outings", id, season, month] as const,
+  compare: (ids: string[], season: number | null) => ["compare", ids.join(","), season] as const,
+  matchups: (id: string, season: number | null, minPa: number) => ["matchups", id, season, minPa] as const,
+  matchup: (batter: string, pitcher: string, season: number | null) => ["matchup", batter, pitcher, season] as const,
+  reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
+  reviewStats: () => ["reviewStats"] as const,
+  postseason: () => ["postseason"] as const,
+  recentHrs: (limit: number) => ["recentHrs", limit] as const,
+};
+
+// ------------------------------------------------------------------ API-25 포스트시즌 코너 · API-15 최근 홈런 (메인)
+
+type RawClip = { video_id: string; title: string; duration_sec: number | null; start_sec: number | null; end_sec: number | null; precision: "scene" | "inning" | "game" | null };
+const rawClip = (c: RawClip): Clip => ({
+  videoId: c.video_id, title: c.title, startSec: c.start_sec ?? 0, endSec: c.end_sec ?? c.duration_sec,
+  durationSec: c.duration_sec, precision: c.precision ?? "scene",
+});
+
+export type PostScene = {
+  kind: "walkoff" | "comeback" | "home_run" | "go_ahead" | "pitching";
+  label: string;
+  gamePk: string;
+  player: { player_id: string; name: string };
+  clip: Clip;
+};
+export type PostSeries = {
+  stage: "WC" | "SPO" | "PO" | "KS";
+  name: string;
+  teams: string[];
+  wins: Record<string, number>;
+  winner: string | null;
+  games: { gamePk: string; stageLabel: string; date: string; away: { team: string; score: number }; home: { team: string; score: number }; highlight: Clip | null }[];
+  scenes: PostScene[];
+};
+export type Postseason = { season: number; period: { start: string | null; end: string | null; active: boolean }; series: PostSeries[] };
+
+type RawPostseason = {
+  season: number;
+  period: Postseason["period"];
+  series: (Omit<PostSeries, "games" | "scenes"> & {
+    games: { game_pk: string; stage_label: string; date: string; away: { team: string; score: number }; home: { team: string; score: number }; highlight: RawHighlight }[];
+    scenes: { kind: PostScene["kind"]; label: string; game_pk: string; player: PostScene["player"]; clip: RawClip }[];
+  })[];
+};
+
+/** 메인 「포스트시즌 코너」 (docs/포스트시즌.md PS6). period.active일 때만 그린다 */
+export async function getPostseason(signal?: AbortSignal): Promise<Postseason> {
+  const r = await get<RawPostseason>("/postseason", {}, signal);
+  return {
+    season: r.season,
+    period: r.period,
+    series: r.series.map((s) => ({
+      ...s,
+      games: s.games.map((g) => ({ gamePk: g.game_pk, stageLabel: g.stage_label, date: g.date, away: g.away, home: g.home, highlight: g.highlight ? toClip(g.highlight) : null })),
+      scenes: s.scenes.map((c) => ({ kind: c.kind, label: c.label, gamePk: c.game_pk, player: c.player, clip: rawClip(c.clip) })),
+    })),
+  };
+}
+
+export type RecentHr = GameTag & {
+  pa_id: string;
+  date: string;
+  inning: number;
+  inning_half: "초" | "말";
+  runs: number;
+  hr_label: string | null;
+  situation: string | null;
+  batter: { player_id: string; name: string; team: string };
+  pitcher: { player_id: string; name: string };
+  opponent: string;
+  has_video: boolean;
+  video: { video_id: string; title: string } | null;
+};
+export type RecentHrs = { season: number; includes_postseason: boolean; home_runs: RecentHr[] };
+
+/** 메인 「최근 홈런 장면」 (API-15). 포스트시즌 기간이면 포스트시즌 홈런도 최신순으로 (PS7) */
+export async function getRecentHomeRuns(limit = 9, signal?: AbortSignal): Promise<RecentHrs> {
+  return get<RecentHrs>("/home-runs", { limit }, signal);
+}
