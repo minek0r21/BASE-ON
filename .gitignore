@@ -5,6 +5,13 @@
 data/
 *.dump
 backups/
+# 영상 목록 34,000개 (21MB, 2026-09-24 조회분 + 06b 갱신). 받는 법은 etl/README.md
+videos/yt_inventory.json
+# 07이 만드는 매칭 결과 (실행할 때마다 다시 만든다)
+videos/links_*.csv
+videos/videos_*.csv
+videos/unmatched_*.csv
+videos/match_*.csv
 
 # Python
 __pycache__/
@@ -24,3 +31,12 @@ out/
 Thumbs.db
 .vscode/
 .idea/
+
+# 영상 판독 시험 결과 (다시 만들 수 있음)
+etl/research/video_judge/_eval_truth.json
+etl/research/video_judge/eval_out/
+etl/research/video_judge/eval_score.json
+etl/research/video_judge/pilot2_truth.json
+etl/research/video_judge/pilot2_out/
+videos/yt_inventory.*.bak.json
+etl/research/video_judge/pilot2_run.log

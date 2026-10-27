@@ -21,6 +21,15 @@ SET p.position = r.position,         // 투수 / 포수 / 내야수 / 외야수
 """
 
 
+# 개명한 선수: 옛 이름도 검색되게 (설계.md 5-2 · statscene DEC-035). 기록은 경기 당시 이름(batter_name)이라 따로 고치지 않는다
+FORMER_NAMES = {"67504": ["김민수"], "68403": ["김윤수"], "68419": ["최채흥"], "69645": ["장지수"]}
+Q_FORMER = """
+UNWIND $rows AS r
+MATCH (p:Player {player_id: r.player_id})
+SET p.former_names = r.names
+"""
+
+
 def val(x):  # 빈칸이면 None, 아니면 앞뒤 공백 제거 (CSV에 포지션 빈칸 3명: 최근 시즌 2024인 선수)
     return None if pd.isna(x) or str(x).strip() == "" else str(x).strip()
 
@@ -46,6 +55,7 @@ def main():
     print(f"DB 선수 {total}명 중 프로필과 맞는 선수 {found}명")
 
     load_rows(driver, Q, rows, "선수 프로필")
+    load_rows(driver, Q_FORMER, [{"player_id": k, "names": v} for k, v in FORMER_NAMES.items()], "옛 이름")
 
     missing = run(driver, "MATCH (p:Player) WHERE p.birth_date IS NULL RETURN p.player_id AS id, p.name AS 이름 LIMIT 10")
     print("프로필이 없는 DB 선수 (없어야 정상):", missing or "없음")
