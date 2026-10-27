@@ -1,0 +1,72 @@
+# 서버 배포용 구성 (EC2 t4g.small 2GB 기준, docs/배포.md). 로컬 개발은 저장소 맨 위 docker-compose.yml을 쓴다.
+#   cd deploy && docker compose up -d --build     Caddy(HTTPS · 화면) + API + Neo4j
+#   python scripts/deploy.py db                   PC의 DB를 덤프해 서버에 덮어쓴다 (서버에서는 적재 · 검수를 하지 않는다)
+# 값은 이 폴더의 .env에서 읽는다 (deploy/.env.example 참고)
+name: baseon-server   # 로컬 개발 환경(baseon)과 볼륨 이름이 겹치지 않게
+
+services:
+  neo4j:
+    image: neo4j:2026.09.0-community   # 로컬 docker-compose.yml과 같은 버전이어야 덤프를 그대로 올릴 수 있다
+    restart: unless-stopped
+    stop_grace_period: 90s             # 기본 10초면 정리 중에 강제 종료된다
+    environment:
+      NEO4J_AUTH: neo4j/${NEO4J_PASSWORD:?deploy/.env에 NEO4J_PASSWORD(8자 이상)를 넣어야 한다}
+      # 2GB 서버: 힙 384MB + 캐시 256MB(DB 파일 170MB가 다 들어간다). 트랜잭션 메모리 · 로그를 줄여 JVM이 커지지 않게
+      NEO4J_server_memory_heap_initial__size: 384m
+      NEO4J_server_memory_heap_max__size: 384m
+      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_db_memory_transaction_total_max: 128m
+      NEO4J_db_tx__log_rotation_retention__policy: "1 files"
+      NEO4J_server_jvm_additional: "-XX:MaxDirectMemorySize=128m -XX:+ExitOnOutOfMemoryError"
+    volumes:
+      - neo4jdata:/data
+      - ../../dumps:/dumps                  # scripts/deploy.py db가 올린 덤프 (/opt/baseon/dumps)
+    # 포트를 열지 않는다 — 7687 · 7474는 바깥에서 닿지 않는다
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:7474 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  api:
+    build:
+      context: ..
+      dockerfile: backend/Dockerfile
+    restart: unless-stopped
+    environment:
+      NEO4J_URI: bolt://neo4j:7687
+      NEO4J_USER: neo4j
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD}
+      CORS_ORIGINS: ${CORS_ORIGINS:-}              # 화면과 API가 같은 주소라 비워 둬도 된다
+      ADMIN_TOKENS: ${ADMIN_TOKENS:?deploy/.env에 ADMIN_TOKENS를 넣어야 한다 (서버 검수는 막지만 토큰도 건다)}
+      YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}        # 재생 불가 신고(API-12)의 판정에만 쓴다. 비우면 신고만 받는다
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers"]
+    depends_on:
+      neo4j:
+        condition: service_healthy
+
+  caddy:
+    image: caddy:2.10.2-alpine
+    restart: unless-stopped
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?deploy/.env에 SITE_ADDRESS(도메인)를 넣어야 한다}
+      ACME_EMAIL: ${ACME_EMAIL:?deploy/.env에 ACME_EMAIL(인증서 계정 이메일)을 넣어야 한다}
+      ACCESS: ${ACCESS:-private}
+      BASIC_AUTH_USER: ${BASIC_AUTH_USER:-}
+      BASIC_AUTH_HASH: ${BASIC_AUTH_HASH:-}
+    ports:
+      - "${HTTP_PORT:-80}:80"
+      - "${HTTPS_PORT:-443}:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ../frontend/out:/srv/www:ro          # scripts/deploy.py code가 PC에서 빌드해 올린 화면
+      - caddydata:/data                      # HTTPS 인증서
+      - caddyconfig:/config
+    depends_on:
+      - api
+
+volumes:
+  neo4jdata:
+  caddydata:
+  caddyconfig:

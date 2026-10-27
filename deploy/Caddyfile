@@ -1,0 +1,46 @@
+# 서버 입구. 도메인이면 HTTPS 인증서를 자동으로 받는다 (Let's Encrypt). 값은 deploy/.env
+#   SITE_ADDRESS  예: baseon.duckdns.org  (로컬 시험은 :80)
+#   ACCESS        private(기본, 비밀번호) | public(누구나)
+#   ACME_EMAIL    인증서 계정 이메일. 있어야 Let's Encrypt가 막힐 때 ZeroSSL로 넘어간다
+#                 (kro.kr처럼 여럿이 나눠 쓰는 도메인은 Let's Encrypt 주 50개 한도가 늘 차 있다 — docs/배포.md 3장)
+
+{
+	email {$ACME_EMAIL}
+}
+
+(auth_private) {
+	basic_auth {
+		{$BASIC_AUTH_USER} {$BASIC_AUTH_HASH}
+	}
+}
+(auth_public) {
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	import auth_{$ACCESS}
+
+	# 검수 · 적재는 PC에서만 한다. 서버 DB는 매주 PC 덤프로 덮어쓰므로 여기서 한 검수는 사라진다.
+	# respond만 쓰면 handle보다 늦게 돌아서 막히지 않는다 → handle로 (경로가 긴 것부터 고른다)
+	handle /api/v1/admin* {
+		respond "Not found" 404
+	}
+	handle /admin* {
+		respond "Not found" 404
+	}
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+	handle {
+		root * /srv/www
+		header /_next/static/* Cache-Control "public, max-age=31536000, immutable"
+		try_files {path} {path}/index.html
+		file_server
+	}
+	handle_errors 404 {
+		root * /srv/www
+		rewrite * /404.html
+		file_server
+	}
+}
