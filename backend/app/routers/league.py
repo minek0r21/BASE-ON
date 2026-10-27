@@ -158,7 +158,7 @@ def get_batters(  # API 16: 리그 상위 타자 / 지표별 TOP / 팀 타자 �
             "percentiles": {a: (None if s.get(k) is None else int(s[k])) for a, k in AXES.items()} if r else None,
             "axis_ranks": r,                                    # {"power": 2, ...} 또는 null
             "strengths": [{"axis": a, "rank": n} for a, n in best],  # 잘하는 것 2개
-            "scene_count": scenes.get(b["player_id"], 0),           # 승인된 장면 수
+            "scene_count": scenes.get(b["player_id"], 0),           # 확정 장면 수 (자동 확정·승인)
         })
 
     return {

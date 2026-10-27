@@ -36,10 +36,12 @@ def game_tag(row: dict) -> dict:
 Q_PERIOD = """
 MATCH (g:Game {season: $season, game_type: 'regular'})
 WITH max(g.date) AS last_regular
+OPTIONAL MATCH (p:Game {season: $season, game_type: 'postseason'})
+WITH last_regular, count(p) AS post_games
 OPTIONAL MATCH (k:Game {season: $season, stage: 'KS'})-[:HOME]->(h:Team), (k)-[:AWAY]->(a:Team)
-WITH last_regular, k,
+WITH last_regular, post_games, k,
      CASE WHEN k.home_final > k.away_final THEN h.team_id WHEN k.away_final > k.home_final THEN a.team_id END AS winner
-RETURN toString(last_regular) AS last_regular, toString(max(k.date)) AS ks_last, collect(winner) AS ks_winners
+RETURN toString(last_regular) AS last_regular, post_games, toString(max(k.date)) AS ks_last, collect(winner) AS ks_winners
 """
 
 
@@ -49,9 +51,11 @@ def today_kst() -> date:
 
 def period(season: int) -> dict:
     """포스트시즌 기간 (PS6): 정규시즌 마지막 경기 다음 날 ~ 한국시리즈 끝나고 14일.
-    한국시리즈가 아직 안 끝났으면 end = None(열려 있음). active = 오늘이 기간 안인가"""
+    한국시리즈가 아직 안 끝났으면 end = None(열려 있음). active = 오늘이 기간 안인가.
+    그 시즌 포스트시즌 경기가 하나도 없으면 기간이 아니다 — 정규시즌 기록이 시즌 중간에 끝난 데이터
+    (HF 배포본 2026은 07-26까지)를 「정규시즌이 끝났다」로 읽지 않게"""
     r = run(Q_PERIOD, season=season)
-    if not r or not r[0]["last_regular"]:
+    if not r or not r[0]["last_regular"] or not r[0]["post_games"]:
         return {"start": None, "end": None, "active": False}
     r = r[0]
     start = date.fromisoformat(r["last_regular"]) + timedelta(days=1)
