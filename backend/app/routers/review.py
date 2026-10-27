@@ -1,10 +1,11 @@
 """
 영상·장면 검수 API
-   5. GET   /plate-appearances/{pa_id}/video                       기록 탭: 이 타석의 승인된 영상
+   5. GET   /plate-appearances/{pa_id}/video                       기록 탭: 이 타석의 확정 장면 (자동 확정·승인)
    7. GET   /video-links?status=&sort=&limit=&offset=              장면 검수: 영상 목록 (연결·후보 포함)
    8. PATCH /video-links/{video_id}/plate-appearances/{pa_id}      장면 검수: 승인 / 반려 / 다른 타석으로 옮김
    9. POST  /video-links/{video_id}/plate-appearances/{pa_id}      장면 검수: 영상-타석 새 연결 (직접 연결)
   10. GET   /video-links/stats                                     장면 검수: 자동 연결 정확도
+8 · 9(쓰기)는 /admin/review와 같은 토큰을 쓴다(ADMIN_TOKENS가 있을 때만). 서버에서는 Caddy가 /admin만 막으므로 여기서 막는다.
 
 연결 상태 (MATCHED_TO.status)
   pending  자동 매칭(08)이 만든 연결, 검수 전
@@ -13,12 +14,13 @@
 """
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field
 
 from ..db import run
 from ..errors import ApiError
 from ..events import events_ko
+from .admin import require_admin
 
 router = APIRouter(tags=["영상·검수"])
 
@@ -31,15 +33,16 @@ def _summary(inning, half, events, runs) -> str:  # 타석 한 줄 요약: "3회
 # ------------------------------------------------------------------ 5. 타석의 영상
 Q_PA_VIDEOS = """
 MATCH (pa:PlateAppearance {pa_id: $pa})
-OPTIONAL MATCH (pa)-[m:MATCHED_TO {status: 'approved'}]->(v:VideoLink)
-WITH pa, m, v ORDER BY v.published_at
+OPTIONAL MATCH (pa)-[m:MATCHED_TO]->(v:VideoLink) WHERE m.status IN ['auto_confirmed', 'approved'] AND coalesce(m.precision, 'scene') <> 'game'
+WITH pa, m, v ORDER BY m.rank, v.published_at
 RETURN pa.pa_id AS pa_id,
        collect(v {.video_id, .title, .duration_sec,
-                  start_sec: coalesce(m.start_sec, 0), end_sec: m.end_sec}) AS videos
+                  start_sec: coalesce(m.start_sec, 0), end_sec: m.end_sec,
+                  precision: coalesce(m.precision, 'scene'), scene_type: m.scene_type}) AS videos
 """
 
 
-@router.get("/plate-appearances/{pa_id}/video", summary="5. 타석의 영상 (승인된 것만)")
+@router.get("/plate-appearances/{pa_id}/video", summary="5. 타석의 확정 장면")
 def get_pa_video(pa_id: str):  # API 5: 기록 탭 '영상보기'
     rows = run(Q_PA_VIDEOS, pa=pa_id)
     if not rows:
@@ -51,6 +54,7 @@ def get_pa_video(pa_id: str):  # API 5: 기록 탭 '영상보기'
 # 영상마다 연결(MATCHED_TO) 전부를 모은다. 후보(CANDIDATE)는 따로 불러 붙인다
 Q_VIDEO_LINKS = """
 MATCH (v:VideoLink)
+WHERE EXISTS { (:PlateAppearance)-[:MATCHED_TO|CANDIDATE]->(v) }  // 타석 장면만. 경기 하이라이트(Game)는 검수 대상이 따로다
 OPTIONAL MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance)-[m:MATCHED_TO]->(v)
 RETURN v {.video_id, .title, .duration_sec, game_date: toString(v.game_date)} AS v,
        collect(CASE WHEN m IS NULL THEN null ELSE {
@@ -191,7 +195,8 @@ Q_PA_EXISTS = "MATCH (pa:PlateAppearance {pa_id: $pa}) RETURN pa.pa_id AS pa_id"
 Q_VIDEO_EXISTS = "MATCH (v:VideoLink {video_id: $video}) RETURN v.video_id AS video_id"
 
 
-@router.patch("/video-links/{video_id}/plate-appearances/{pa_id}", summary="8. 검수 저장 (승인·반려·옮김)")
+@router.patch("/video-links/{video_id}/plate-appearances/{pa_id}", summary="8. 검수 저장 (승인·반려·옮김)",
+              dependencies=[Depends(require_admin)])
 def review_link(video_id: str, pa_id: str, body: ReviewBody):  # API 8
     if not run(Q_LINK, pa=pa_id, video=video_id):
         raise ApiError(404, "LINK_NOT_FOUND", "이 영상과 타석의 연결이 없습니다")
@@ -227,7 +232,7 @@ CREATE (pa)-[:MATCHED_TO {status: 'approved', origin: 'manual', reviewer: $revie
 
 
 @router.post("/video-links/{video_id}/plate-appearances/{pa_id}", status_code=201,
-             summary="9. 영상-타석 직접 연결")
+             summary="9. 영상-타석 직접 연결", dependencies=[Depends(require_admin)])
 def create_link(video_id: str, pa_id: str, body: LinkBody):  # API 9
     if not run(Q_VIDEO_EXISTS, video=video_id):
         raise ApiError(404, "VIDEO_NOT_FOUND", "영상을 찾을 수 없습니다")

@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from . import db, errors
-from .routers import games, league, matchup, players, review
+from .routers import admin, games, league, matchup, meta, outings, players, postseason, report, review
 
 
 @asynccontextmanager
@@ -36,7 +36,8 @@ app.add_middleware(
 errors.register(app)
 
 PREFIX = "/api/v1"
-for r in (players.router, games.router, matchup.router, league.router, review.router):
+for r in (players.router, games.router, matchup.router, league.router, review.router, outings.router, admin.router, report.router,
+          postseason.router, meta.router):
     app.include_router(r, prefix=PREFIX)
 
 

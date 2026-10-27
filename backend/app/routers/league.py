@@ -3,6 +3,8 @@
   13. GET /standings?season=                                  팀 순위
   16. GET /batters?season=&team=&sort=&qualified=&limit=       타자 순위표 (리그 상위 타자, 팀 선수 목록)
   18. GET /leaders?season=&limit=                              지표 5개별 상위 n명 (메인 '이런 타자는 어때요?')
+  26. GET /pitchers?season=&team=&limit=                       투수 목록 (팀 화면 투수 표)
+  28. GET /standings/history?season=                           순위 변동 (달마다 마지막 날 순위, 시안 「순위 변동 보기」)
 """
 from typing import Literal
 
@@ -18,7 +20,7 @@ router = APIRouter(tags=["리그"])
 Q_SEASONS = "MATCH (g:Game) RETURN DISTINCT g.season AS season ORDER BY season"
 
 Q_SEASON_GAMES = """
-MATCH (g:Game {season: $season})-[:HOME]->(h:Team), (g)-[:AWAY]->(a:Team)
+MATCH (g:Game {season: $season, game_type: 'regular'})-[:HOME]->(h:Team), (g)-[:AWAY]->(a:Team)  // 순위는 정규시즌만 (포스트시즌.md B7)
 RETURN h.team_id AS home_id, h.name AS home, a.team_id AS away_id, a.name AS away,
        g.home_final AS home_score, g.away_final AS away_score
 """
@@ -80,7 +82,8 @@ RETURN p.player_id AS player_id, p.name AS name, p.bats_throws AS bats_throws, p
 
 # 선수마다 그 시즌 승인된 장면(영상) 수 — 카드의 '장면 N' 표시
 Q_SCENE_COUNTS = """
-MATCH (p:Player)-[:BATTED_IN]->(:PlateAppearance {season: $season})-[:MATCHED_TO {status: 'approved'}]->(v:VideoLink)
+MATCH (p:Player)-[:BATTED_IN]->(:PlateAppearance {season: $season, game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
+WHERE m.status IN ['auto_confirmed', 'approved']
 RETURN p.player_id AS player_id, count(DISTINCT v) AS n
 """
 
@@ -149,6 +152,9 @@ def get_batters(  # API 16: 리그 상위 타자 / 지표별 TOP / 팀 타자 �
             "avg": None if s.get("avg") is None else round(s["avg"], 3),
             "hr": s.get("hr"),
             "ops": None if s.get("ops") is None else round(s["ops"], 3),
+            # 실제 수치 (시안 「실제 수치 보기」 · 「100명 평균」 · 팀 화면 표)
+            **{k: s.get(k) for k in ("ab", "h", "b2", "b3", "bb", "hbp", "sf", "so")},
+            **{k: None if s.get(k) is None else round(s[k], 4) for k in ("obp", "slg", "iso", "k_pct", "bb_pct", "ops_sd")},
             "percentiles": {a: (None if s.get(k) is None else int(s[k])) for a, k in AXES.items()} if r else None,
             "axis_ranks": r,                                    # {"power": 2, ...} 또는 null
             "strengths": [{"axis": a, "rank": n} for a, n in best],  # 잘하는 것 2개
@@ -208,3 +214,75 @@ def get_leaders(  # API 18: 백분위 5개 지표마다 리그 상위 n명을 �
         }
 
     return {"season": season, "group_size": len(group), "leaders": leaders}
+
+
+# ------------------------------------------------------------------ 26. 투수 목록
+Q_PITCHERS = """
+MATCH (p:Player)-[:HAS_PITCHING_STAT]->(s:PitcherSeasonStat {season: $season})
+OPTIONAL MATCH (p)-[f:PLAYS_FOR {season: $season}]->(t:Team)
+WITH p, s, t, f ORDER BY f.last_date DESC
+WITH p, s, head(collect(t.name)) AS team
+WHERE $team IS NULL OR team = $team
+RETURN p.player_id AS player_id, p.name AS name, p.back_number AS back_number, p.bats_throws AS bats_throws, team,
+       s {.g, .gs, .outs, .tbf, .h, .hr, .bb, .hbp, .so, .r, .avg, .whip, .role, .qualified} AS s
+ORDER BY s.outs DESC
+LIMIT $limit
+"""
+
+
+@router.get("/pitchers", summary="26. 투수 목록 (팀 화면)")
+def get_pitchers(  # API 26: 그 시즌 투수 기록, 이닝 많은 순
+    season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
+    team: str | None = Query(None, description="팀 이름 (예: KIA). 생략하면 리그 전체"),
+    limit: int = Query(500, ge=1, le=1000),
+):
+    if season is None:
+        season = run(Q_LATEST_STAT_SEASON)[0]["s"]
+    out = []
+    for r in run(Q_PITCHERS, season=season, team=team, limit=limit):
+        s = r["s"]
+        out.append({"player_id": r["player_id"], "name": r["name"], "team": r["team"], "back_number": r["back_number"],
+                    "bats_throws": r["bats_throws"], "role": s.get("role"), "qualified": bool(s.get("qualified")),
+                    **{k: s.get(k) for k in ("g", "gs", "outs", "tbf", "h", "hr", "bb", "hbp", "so", "r")},
+                    "avg": None if s.get("avg") is None else round(s["avg"], 3),
+                    "whip": None if s.get("whip") is None else round(s["whip"], 2)})
+    return {"season": season, "pitchers": out}
+
+
+# ------------------------------------------------------------------ 28. 순위 변동
+Q_SEASON_RESULTS = """
+MATCH (g:Game {season: $season, game_type: 'regular'})-[:HOME]->(h:Team), (g)-[:AWAY]->(a:Team)
+RETURN toString(g.date) AS date, h.name AS home, a.name AS away, g.home_final AS hs, g.away_final AS as_
+ORDER BY date
+"""
+
+
+@router.get("/standings/history", summary="28. 순위 변동 (달마다)")
+def get_standings_history(season: int = Query(..., description="시즌")):
+    rows = run(Q_SEASON_RESULTS, season=season)
+    if not rows:
+        raise ApiError(404, "SEASON_NOT_FOUND", f"{season} 시즌 경기가 없습니다")
+    rec: dict = {}
+    marks = []
+    last_month = None
+
+    def snapshot(label, date):
+        teams = sorted(rec, key=lambda t: (-(rec[t]["w"] / max(1, rec[t]["w"] + rec[t]["l"])), -rec[t]["w"]))
+        marks.append({"label": label, "date": date, "ranks": {t: i + 1 for i, t in enumerate(teams)}})
+
+    for i, r in enumerate(rows):
+        for t, mine, opp in ((r["home"], r["hs"], r["as_"]), (r["away"], r["as_"], r["hs"])):
+            x = rec.setdefault(t, {"w": 0, "l": 0, "g": 0})
+            x["g"] += 1
+            if mine > opp:
+                x["w"] += 1
+            elif mine < opp:
+                x["l"] += 1
+        month = int(r["date"][5:7])
+        nxt = rows[i + 1]["date"] if i + 1 < len(rows) else None
+        if nxt is None:
+            done = all(x["g"] >= 144 for x in rec.values())
+            snapshot("최종" if done else f"{month}.{int(r['date'][8:10])}", r["date"])
+        elif int(nxt[5:7]) != month and month >= 4:  # 3월(개막 몇 경기)은 4월에 합친다
+            snapshot(f"{month}월", r["date"])
+    return {"season": season, "checkpoints": marks}
