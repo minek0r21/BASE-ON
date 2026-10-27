@@ -5,13 +5,15 @@
 이 스크립트는 목록의 마지막 게시일 3일 전부터 채널 12개의 업로드를 받아, 같은 영상은 새 정보로 바꾸고 새 영상은 더한다.
 2026 재생목록(크보모먼트 · H/L) 소속도 새로 읽는다. 쓰기 전에 원래 파일을 yt_inventory.<날짜>.bak.json으로 남긴다.
 
-    python etl/06b_update_inventory.py            # 호스트에서 (키: .env의 YOUTUBE_API_KEY)
+    python etl/06b_update_inventory.py            # 호스트에서 (키: .env의 YOUTUBE_API_KEY, 표준 라이브러리만 씀)
     python etl/06b_update_inventory.py --dry-run  # 받을 개수만
+    docker compose run --rm etl etl/06b_update_inventory.py   # Docker로 (키는 env_file로 들어간다)
 
 쿼터: 채널마다 업로드 목록 50개당 1 + 영상 정보 50개당 1 + 재생목록 50개당 1 (보통 수십 단위, 하루 한도 10,000)
 """
 import argparse
 import json
+import os
 import re
 import shutil
 import urllib.error
@@ -34,11 +36,15 @@ OVERLAP = timedelta(days=3)  # 늦게 처리된 업로드·바뀐 제목을 다�
 
 
 def key() -> str:
-    for line in open(ROOT / ".env", encoding="utf-8"):
+    """환경변수 → 저장소 맨 위 .env 순서. Docker etl 컨테이너는 env_file로 환경변수를 받고 .env 파일은 없다"""
+    if os.environ.get("YOUTUBE_API_KEY"):
+        return os.environ["YOUTUBE_API_KEY"]
+    env = ROOT / ".env"
+    for line in (env.read_text(encoding="utf-8").splitlines() if env.exists() else []):
         k, _, v = line.strip().partition("=")
         if k == "YOUTUBE_API_KEY" and v:
             return v
-    raise SystemExit("YOUTUBE_API_KEY가 .env에 없습니다")
+    raise SystemExit("YOUTUBE_API_KEY가 없습니다 (.env 또는 환경변수)")
 
 
 def call(k: str, endpoint: str, **params) -> dict:

@@ -19,6 +19,7 @@
   videos/unmatched_2025_<단계>.csv  연결 못 한 영상과 이유
 """
 import argparse
+from pathlib import Path
 
 from match_game import match_game
 from match_outing import match_outing
@@ -31,11 +32,20 @@ def main():
     ap.add_argument("--season", type=int, default=2025)
     ap.add_argument("--step", choices=STEPS, default="pa",
                     help="pa: 장면 클립 → 타석 · game: 경기 하이라이트 → 경기 · outing: 등판 클립·챕터 → 등판")
-    ap.add_argument("--videos", default="videos/playlist_PLMtML65ksOv0.csv")
+    ap.add_argument("--videos", help="영상 목록. 생략하면 videos/yt_inventory.json, 없을 때만 2025 크보모먼트 재생목록 CSV")
     args = ap.parse_args()
 
+    # 기본 입력을 재생목록 CSV로 두면 --videos 없이 돌렸을 때 작은 입력으로 links_<시즌>_<단계>.csv를 덮어쓰고,
+    # 08이 그 결과로 자동 연결을 바꿔 장면이 크게 줄어든다(2025 타석 자동 확정 2,578 → 887로 확인). 그래서 영상 목록이 먼저다
+    inventory = VIDEOS_DIR / "yt_inventory.json"
+    if not args.videos:
+        args.videos = inventory if inventory.exists() else VIDEOS_DIR / "playlist_PLMtML65ksOv0.csv"
+    if inventory.exists() and Path(args.videos).resolve() != inventory.resolve():
+        print(f"주의: 영상 목록({inventory.name})이 있는데 {Path(args.videos).name}로 매칭합니다. "
+              "이 결과를 08로 넣으면 영상 목록 기준 자동 연결이 이 결과로 바뀝니다.")
+
     videos = load_videos(args.videos)
-    print(f"영상 {len(videos)}개 읽음 (종류 {videos['kind'].value_counts().to_dict()})")
+    print(f"입력 {Path(args.videos).name}: 영상 {len(videos)}개 (종류 {videos['kind'].value_counts().to_dict()})")
     step = {"pa": match_pa, "game": match_game, "outing": match_outing}[args.step]
     links, miss, game_date = step(videos, args.season)
 

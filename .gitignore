@@ -5,7 +5,7 @@
 data/
 *.dump
 backups/
-# 영상 목록 34,000개 (21MB, 2026-09-24 조회분 + 06b 갱신). 받는 법은 etl/README.md
+# 영상 목록 약 35,000개 (21MB, 2026-09-24 조회분 + 06b 갱신). 받는 법은 etl/README.md
 videos/yt_inventory.json
 # 07이 만드는 매칭 결과 (실행할 때마다 다시 만든다)
 videos/links_*.csv
