@@ -137,6 +137,13 @@ def get_batters(  # API 16: 리그 상위 타자 / 지표별 TOP / 팀 타자 �
     rows = rows[:limit]
 
     scenes = {r["player_id"]: r["n"] for r in run(Q_SCENE_COUNTS, season=season)}
+    league_avg, hr_scenes = None, {}
+    if sort in AXES:  # 지표로 정렬하면 05 능력별 순위: 비교 대상 평균 원 수치 + 대표 장면(그 시즌 최근 홈런 장면)
+        vk = LEADER_VALUE[sort][0]
+        vals = [b["s"][vk] for b in group if b["s"].get(vk) is not None]
+        league_avg = _round(sum(vals) / len(vals), 4) if vals else None
+        hr_scenes = {r["player_id"]: {**scene_of(r), "pa_id": r["pa_id"], "date": r["date"], "hr_seq": r["hr_seq"]}
+                     for r in run(Q_LATEST_HR_SCENES, ids=[b["player_id"] for b in rows], season=season, confirmed=CONFIRMED)}
 
     batters = []
     for i, b in enumerate(rows, 1):
@@ -164,12 +171,14 @@ def get_batters(  # API 16: 리그 상위 타자 / 지표별 TOP / 팀 타자 �
             "axis_ranks": r,                                    # {"power": 2, ...} 또는 null
             "strengths": [{"axis": a, "rank": n} for a, n in best],  # 잘하는 것 2개
             "scene_count": scenes.get(b["player_id"], 0),           # 확정 장면 수 (자동 확정·승인)
+            **({"scene": hr_scenes.get(b["player_id"])} if sort in AXES else {}),  # 대표 장면 (없으면 null)
         })
 
     return {
         "season": season,
         "sort": sort,
         "group_size": len(group),  # 비교 대상 인원 (시안 '100명 중'의 100 자리)
+        "league_avg": league_avg,  # 지표로 정렬했을 때 비교 대상 평균 원 수치(LEADER_VALUE), 아니면 null
         "batters": batters,
     }
 
@@ -319,6 +328,9 @@ def get_pitchers(  # API 26: 그 시즌 투수 기록. 기본은 이닝 많은 �
         for r in run(Q_PITCHER_AXIS_SCENES, ids=[x["player_id"] for x in rows], season=season,
                      tag=AXIS_TAGS[sort], confirmed=CONFIRMED):
             axis_scenes[r["player_id"]] = {**scene_of(r), "outing_id": r["outing_id"], "date": r["date"], "line": r["line"]}
+    elif sort in P_AXES:  # 태그가 없는 지표(유인 · 장타 억제)는 대표 장면 = 그 시즌 최근 확정 등판 장면 (장면.md 6장)
+        for r in run(Q_LATEST_OUTING_SCENES, ids=[x["player_id"] for x in rows], season=season, confirmed=CONFIRMED):
+            axis_scenes[r["player_id"]] = {**scene_of(r), "outing_id": r["outing_id"], "date": r["date"], "line": r["line"]}
 
     out = []
     for i, r in enumerate(rows, 1):
@@ -333,7 +345,7 @@ def get_pitchers(  # API 26: 그 시즌 투수 기록. 기본은 이닝 많은 �
                     "percentiles": {k: (None if s.get(a[4]) is None else int(s[a[4]])) for k, a in P_AXES.items()} if q else None,
                     "axis_ranks": ranks.get(r["player_id"]),                                       # 같은 역할 비교 대상 안 등수
                     "scene_count": scenes.get(r["player_id"], 0),                                  # 그 시즌 확정 등판 장면 수
-                    **({"scene": axis_scenes.get(r["player_id"])} if sort in AXIS_TAGS else {})})  # 그 지표 대표 장면 (없으면 null)
+                    **({"scene": axis_scenes.get(r["player_id"])} if sort in P_AXES else {})})  # 그 지표 대표 장면 (없으면 null)
 
     group_size = sum(1 for r in all_rows if r["s"].get("qualified") and (role is None or r["s"].get("role") == role))
     return {"season": season, "sort": sort, "role": role,

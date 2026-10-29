@@ -9,6 +9,8 @@
  * 백엔드에 response_model이 생기면 Raw 타입은 openapi-typescript 생성 타입으로 바꾼다(설계 9장).
  */
 
+import { innings, outingLine, rate3 } from "./format";
+
 export const API_BASE = process.env.NEXT_PUBLIC_API_BASE ?? "/api/v1";
 
 // ------------------------------------------------------------------ 공통
@@ -737,6 +739,7 @@ export const qk = {
   topBatters: () => ["topBatters"] as const,
   topPitchers: () => ["topPitchers"] as const,
   standings: () => ["standings"] as const,
+  rankings: (role: string, axis: string) => ["rankings", role, axis] as const,
 };
 
 // ------------------------------------------------------------------ API-25 포스트시즌 코너 · API-15 최근 홈런 (메인)
@@ -900,3 +903,55 @@ export const getTopPitchers = (signal?: AbortSignal) =>
 /** API-13 팀 순위 */
 export type Standing = { team_id: string; team: string; games: number; w: number; l: number; d: number; pct: number; rank: number; gb: number };
 export const getStandings = (signal?: AbortSignal) => get<{ season: number; teams: Standing[] }>("/standings", {}, signal);
+
+/** 05 능력별 순위 — 타자(API-16 `sort=지표`) · 선발(API-26 `role=starter&qualified=true&sort=지표`)을 같은 줄 모양으로 */
+export type RankRow = {
+  rank: number; // 지표 등수 (공동 순위)
+  player_id: string;
+  name: string;
+  team: string | null;
+  meta: string; // 「LG · 내야수」 · 「NC · 선발」
+  percentile: number;
+  value: number | null; // 지표 원 수치
+  stats: { label: string; value: string }[]; // 타석 · 홈런 · OPS / 탈삼진 · 이닝 · WHIP
+  scene: { clip: Clip; title: string; date: string } | null; // 대표 장면 (타자 최근 홈런 · 투수 그 지표 등판)
+};
+export type Rankings = { season: number; groupSize: number; leagueAvg: number | null; rows: RankRow[] };
+
+type RawRankScene = RawClip & { date: string; hr_seq?: number | null; line?: OutingLine };
+const BAT_VALUE: Record<string, "k_pct" | "avg" | "iso" | "bb_pct" | "ops_sd"> = { contact: "k_pct", hit: "avg", power: "iso", eye: "bb_pct", consistency: "ops_sd" };
+
+export async function getRankings(role: "batter" | "pitcher", axis: string, signal?: AbortSignal): Promise<Rankings> {
+  const scene = (name: string, s: RawRankScene | null | undefined) => s ? {
+    clip: rawClip(s), date: s.date,
+    title: s.line ? `${name} ${outingLine(s.line)}` : `${name} ${s.hr_seq ? `${s.hr_seq}호 ` : ""}홈런`,
+  } : null;
+  if (role === "batter") {
+    type B = { player_id: string; name: string; team: string | null; position: string | null; pa: number | null; hr: number | null; ops: number | null;
+               percentiles: Record<string, number | null>; axis_ranks: Record<string, number>; scene?: RawRankScene | null } & Record<string, unknown>;
+    const r = await get<{ season: number; group_size: number; league_avg: number | null; batters: B[] }>("/batters", { sort: axis, limit: 500 }, signal);
+    return {
+      season: r.season, groupSize: r.group_size, leagueAvg: r.league_avg,
+      rows: r.batters.map((b) => ({
+        rank: b.axis_ranks[axis], player_id: b.player_id, name: b.name, team: b.team,
+        meta: [b.team, b.position].filter(Boolean).join(" · "), percentile: b.percentiles[axis] ?? 0,
+        value: (b[BAT_VALUE[axis]] as number | null) ?? null,
+        stats: [{ label: "타석", value: String(b.pa ?? "–") }, { label: "홈런", value: String(b.hr ?? "–") }, { label: "OPS", value: rate3(b.ops) }],
+        scene: scene(b.name, b.scene),
+      })),
+    };
+  }
+  type P = { player_id: string; name: string; team: string | null; so: number | null; outs: number | null; whip: number | null;
+             metrics: Record<string, number | null>; percentiles: Record<string, number | null>; axis_ranks: Record<string, number>; scene?: RawRankScene | null };
+  const r = await get<{ season: number; group_size: number; league_avg: number | null; pitchers: P[] }>(
+    "/pitchers", { role: "starter", qualified: true, sort: axis }, signal);
+  return {
+    season: r.season, groupSize: r.group_size, leagueAvg: r.league_avg,
+    rows: r.pitchers.map((p) => ({
+      rank: p.axis_ranks[axis], player_id: p.player_id, name: p.name, team: p.team,
+      meta: [p.team, "선발"].filter(Boolean).join(" · "), percentile: p.percentiles[axis] ?? 0, value: p.metrics[axis],
+      stats: [{ label: "탈삼진", value: String(p.so ?? "–") }, { label: "이닝", value: innings(p.outs) }, { label: "WHIP", value: p.whip?.toFixed(2) ?? "–" }],
+      scene: scene(p.name, p.scene),
+    })),
+  };
+}

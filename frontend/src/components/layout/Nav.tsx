@@ -11,7 +11,7 @@ import { md } from "@/lib/format";
 // 아직 옮기지 않은 화면은 메뉴를 회색으로 두고 누르지 못하게 한다
 const MENU: { label: string; href: string | null }[] = [
   { label: "홈", href: "/" },
-  { label: "선수", href: null },
+  { label: "선수", href: "/rankings/" },
   { label: "장면", href: null },
   { label: "팀", href: null },
   { label: "일정", href: null },
@@ -49,7 +49,7 @@ export default function Nav() {
               <Link
                 key={m.label}
                 href={m.href}
-                aria-current={path === m.href ? "page" : undefined}
+                aria-current={(m.href === "/" ? path === "/" : path.startsWith(m.href.replace(/\/$/, ""))) ? "page" : undefined}
                 className="rounded-lg px-3 py-1.5 text-[15px] font-medium text-fg-2 transition-colors duration-[120ms] hover:bg-surface-2 aria-[current=page]:font-bold aria-[current=page]:text-fg"
               >
                 {m.label}

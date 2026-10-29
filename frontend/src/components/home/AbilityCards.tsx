@@ -5,22 +5,9 @@ import { useState } from "react";
 import { playerHref } from "@/components/SearchBox";
 import { PlayerAvatar, TeamLogo } from "@/components/ui/Media";
 import type { LeaderCard, Leaders } from "@/lib/api";
-import { pct1, rate3 } from "@/lib/format";
+import { axisCopy, rankingsHref } from "@/lib/axes";
 import { SectionHead } from "./common";
 
-// 능력 카드 문구 (Figma 113:519 · 136:1569). 이름은 사람 말, 부제는 기준 지표
-const CARD: Record<string, { title: string; sub: string; fmt: (v: number | null) => string }> = {
-  contact: { title: "삼진을 잘 안 당하는 타자", sub: "삼진 비율 · 낮을수록 좋아요", fmt: pct1 },
-  hit: { title: "안타를 잘 치는 타자", sub: "안타를 친 비율 (타율)", fmt: rate3 },
-  power: { title: "멀리 치는 타자", sub: "장타를 얼마나 치나 · 순수 장타력", fmt: rate3 },
-  eye: { title: "공을 잘 고르는 타자", sub: "볼넷 비율", fmt: pct1 },
-  consistency: { title: "기복이 적은 타자", sub: "달마다 OPS(출루율 + 장타율) 차이 · 작을수록 좋아요", fmt: rate3 },
-  strikeout: { title: "삼진을 잘 잡는 투수", sub: "삼진 비율 · 높을수록 좋아요", fmt: pct1 },
-  control: { title: "볼넷을 잘 안 주는 투수", sub: "볼넷·몸에 맞는 공 비율 · 낮을수록 좋아요", fmt: pct1 },
-  chase: { title: "유인구로 속이는 투수", sub: "존 밖 공에 스윙한 비율", fmt: pct1 },
-  hit_prevention: { title: "안타를 잘 안 맞는 투수", sub: "피안타율 · 낮을수록 좋아요", fmt: rate3 },
-  power_prevention: { title: "장타를 잘 안 맞는 투수", sub: "피순수장타력 · 낮을수록 좋아요", fmt: rate3 },
-};
 
 export default function AbilityCards({ batters, pitchers, asOf }: { batters?: Leaders; pitchers?: Leaders; asOf: string | null }) {
   const [role, setRole] = useState<"batter" | "pitcher">("batter");
@@ -58,7 +45,7 @@ export default function AbilityCards({ batters, pitchers, asOf }: { batters?: Le
       ) : (
         <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
           {data.cards.map((c) => (
-            <Card key={c.key} card={c} />
+            <Card key={c.key} card={c} role={role} />
           ))}
         </ul>
       )}
@@ -66,13 +53,15 @@ export default function AbilityCards({ batters, pitchers, asOf }: { batters?: Le
   );
 }
 
-function Card({ card }: { card: LeaderCard }) {
-  const def = CARD[card.key];
+function Card({ card, role }: { card: LeaderCard; role: "batter" | "pitcher" }) {
+  const def = axisCopy(card.key);
   const [first, ...rest] = card.players;
   if (!def || !first) return null;
   return (
     <li className="flex flex-col rounded-3xl border border-line bg-surface px-5 py-[22px]">
-      <h3 className="text-lg leading-snug font-bold break-keep">{def.title}</h3>
+      <h3 className="text-lg leading-snug font-bold break-keep">
+        <Link href={rankingsHref(role, card.key)} className="hover:underline">{def.title}</Link>
+      </h3>
       <p className="mt-1.5 text-xs text-muted">{def.sub}</p>
       <Link href={playerHref(first.player_id)} className="group mt-5 block">
         <span className="flex items-center gap-2.5">
@@ -103,6 +92,9 @@ function Card({ card }: { card: LeaderCard }) {
           </li>
         ))}
       </ol>
+      <Link href={rankingsHref(role, card.key)} className="mt-auto pt-4 text-[13px] font-bold text-brand-text hover:underline">
+        순위 전체 ›
+      </Link>
     </li>
   );
 }
