@@ -741,6 +741,7 @@ export const qk = {
   standings: () => ["standings"] as const,
   rankings: (role: string, axis: string) => ["rankings", role, axis] as const,
   gameDays: (start: string) => ["gameDays", start] as const,
+  team: (kind: string, team: string) => ["team", kind, team] as const,
 };
 
 // ------------------------------------------------------------------ API-25 포스트시즌 코너 · API-15 최근 홈런 (메인)
@@ -963,3 +964,38 @@ export async function getRankings(role: "batter" | "pitcher", axis: string, sign
 export type GameDayCount = { date: string; games: number; home_runs: number; home_run_scenes: number; pitcher_scenes: number };
 export type GameDays = { start: string; end: string; first_date: string | null; last_date: string | null; days: GameDayCount[] };
 export const getGameDays = (start: string, end: string, signal?: AbortSignal) => get<GameDays>("/games/days", { start, end }, signal);
+
+// ------------------------------------------------------------------ 06 팀 (API-35 최근 경기 · API-33 최근 장면 · API-16 · 26 선수 표)
+
+export type TeamGame = GameTag & { game_pk: string; date: string; home: boolean; opponent: string; innings: number | null;
+                                   score: { team: number; opponent: number }; result: "W" | "L" | "D"; highlight: Clip | null };
+export async function getTeamGames(team: string, signal?: AbortSignal): Promise<TeamGame[]> {
+  type Raw = Omit<TeamGame, "highlight"> & { highlight: RawHighlight };
+  const r = await get<{ games: Raw[] }>(`/teams/${encodeURIComponent(team)}/games`, { limit: 5 }, signal);
+  return r.games.map((g) => ({ ...g, highlight: g.highlight ? toClip(g.highlight) : null }));
+}
+
+/** 팀 장면 한 개 — 홈런이면 「30호 · 솔로 홈런 · 4회말」, 등판이면 「6이닝 8K 무실점 · 선발」 재료 */
+export type TeamScene = {
+  kind: "home_run" | "outing"; date: string; opponent: string; player: { player_id: string; name: string }; clip: Clip;
+  hrSeq?: number | null; inning?: number; inningHalf?: "초" | "말"; runs?: number; role?: "선발" | "구원"; line?: OutingLine;
+};
+export type TeamScenes = { counts: { home_run_scenes: number; pitcher_scenes: number; total: number }; scenes: TeamScene[] };
+export async function getTeamScenes(team: string, signal?: AbortSignal): Promise<TeamScenes> {
+  type Raw = Omit<TeamScene, "clip" | "hrSeq" | "inningHalf"> & { scene: RawClip; hr_seq?: number | null; inning_half?: "초" | "말" };
+  const r = await get<{ counts: TeamScenes["counts"]; scenes: Raw[] }>(`/teams/${encodeURIComponent(team)}/scenes`, { limit: 12 }, signal);
+  return {
+    counts: r.counts,
+    scenes: r.scenes.map(({ scene, hr_seq, inning_half, ...s }) => ({ ...s, clip: rawClip(scene), hrSeq: hr_seq, inningHalf: inning_half })),
+  };
+}
+
+export type TeamBatter = { player_id: string; name: string; back_number: string | number | null; position: string | null; hr: number | null;
+                           ops: number | null; pa: number | null; scene_count: number; strengths: { axis: string; rank: number }[] };
+export const getTeamBatters = (team: string, signal?: AbortSignal) =>
+  get<{ group_size: number; batters: TeamBatter[] }>("/batters", { team, sort: "ops", limit: 30 }, signal);
+
+export type TeamPitcher = { player_id: string; name: string; back_number: string | number | null; g: number; gs: number; outs: number;
+                            so: number; whip: number | null; qualified: boolean; scene_count: number; axis_ranks: Record<string, number> | null };
+export const getTeamPitchers = (team: string, signal?: AbortSignal) =>
+  get<{ group_size: number; pitchers: TeamPitcher[] }>("/pitchers", { team, role: "starter", sort: "outs", limit: 30 }, signal);

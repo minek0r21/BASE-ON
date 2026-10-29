@@ -13,7 +13,7 @@ const MENU: { label: string; href: string | null }[] = [
   { label: "홈", href: "/" },
   { label: "선수", href: "/rankings/" },
   { label: "장면", href: "/scenes/" },
-  { label: "팀", href: null },
+  { label: "팀", href: "/teams/" },
   { label: "일정", href: null },
 ];
 

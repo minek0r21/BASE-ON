@@ -8,6 +8,7 @@
   29. GET /pitchers/leaders?season=&role=&limit=               투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」)
   31. GET /players/{player_id}/similar?season=&as=&limit=      가장 강한 지표가 비슷한 선수 (03 · 03b 아래)
   33. GET /teams/{team}/scenes?season=&limit=                  팀의 최근 장면 (06 팀 「KIA의 최근 장면」)
+  35. GET /teams/{team}/games?season=&limit=                   팀의 최근 경기 (06 팀 「최근 경기」)
 """
 from typing import Literal
 
@@ -15,7 +16,9 @@ from fastapi import APIRouter, Query
 
 from ..db import run
 from ..errors import ApiError
-from ..scenes import CONFIRMED, scene_of
+from ..postseason import game_tag
+from ..scenes import CONFIRMED, game_highlights, scene_of
+from ..utils import result_of
 from .players import AXIS_TAGS, PITCH_AXES
 
 router = APIRouter(tags=["리그"])
@@ -584,3 +587,38 @@ def get_team_scenes(  # API 33: 그 팀 선수들의 홈런 · 등판 장면, �
     return {"team": team, "season": season,
             "counts": {"home_run_scenes": len(hrs), "pitcher_scenes": len(outs), "total": len(hrs) + len(outs)},
             "scenes": scenes}
+
+
+# ------------------------------------------------------------------ 35. 팀의 최근 경기
+Q_TEAM_GAMES = """
+MATCH (t:Team {name: $team})
+MATCH (g:Game {season: $season})-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team)
+WHERE home = t OR away = t
+RETURN g.game_pk AS game_pk, toString(g.date) AS date, g.dh_no AS dh_no, g.innings AS innings,
+       g.game_type AS game_type, g.stage AS stage, g.series_game_no AS series_game_no,
+       home = t AS is_home, CASE WHEN home = t THEN away.name ELSE home.name END AS opponent,
+       CASE WHEN home = t THEN g.home_final ELSE g.away_final END AS score,
+       CASE WHEN home = t THEN g.away_final ELSE g.home_final END AS opp_score
+ORDER BY g.date DESC, g.dh_no DESC
+LIMIT $limit
+"""
+
+
+@router.get("/teams/{team}/games", summary="35. 팀의 최근 경기 (06 팀)")
+def get_team_games(  # API 35: 시안 06 「최근 경기」 카드 5장 — 날짜 · 홈/원정 · 상대 · 점수 · 승패 · 경기 하이라이트
+    team: str,
+    season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
+    limit: int = Query(5, ge=1, le=30),
+):
+    if not run(Q_TEAM_EXISTS, team=team):
+        raise ApiError(404, "TEAM_NOT_FOUND", "팀을 찾을 수 없습니다")
+    if season is None:
+        season = run(Q_LATEST_STAT_SEASON)[0]["s"]
+    rows = run(Q_TEAM_GAMES, team=team, season=season, limit=limit)
+    highlights = game_highlights([r["game_pk"] for r in rows])
+    games = [{"game_pk": r["game_pk"], "date": r["date"], "dh_no": r["dh_no"], "innings": r["innings"], **game_tag(r),
+              "home": r["is_home"], "opponent": r["opponent"], "score": {"team": r["score"], "opponent": r["opp_score"]},
+              "result": result_of(r["score"], r["opp_score"]),
+              "highlight": highlights.get(r["game_pk"])}
+             for r in rows]
+    return {"team": team, "season": season, "games": games}
