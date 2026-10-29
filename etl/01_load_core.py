@@ -30,7 +30,8 @@ Q_GAME = """
 UNWIND $rows AS r
 MERGE (g:Game {game_pk: r.game_pk})
 SET g.date = date(r.date), g.season = r.season, g.dh_no = r.dh_no,
-    g.home_final = r.home_final, g.away_final = r.away_final, g.innings = r.innings
+    g.home_final = r.home_final, g.away_final = r.away_final, g.innings = r.innings,
+    g.game_type = r.game_type, g.stage = r.stage, g.series_game_no = r.series_game_no  // 포스트시즌 (docs/포스트시즌.md 4장)
 WITH g, r
 MATCH (h:Team {team_id: r.home_team})
 MATCH (a:Team {team_id: r.away_team})
@@ -78,14 +79,16 @@ def main():
     pa = build_pa(df, games)
     players = build_players(df, pa)
     plays_for = build_plays_for(pa)
-    print(f"   경기 {len(games):,} · 타석 {len(pa):,} · 선수 {len(players):,} ({time.time() - start:.1f}초)")
+    print(f"   경기 {len(games):,} (포스트시즌 {int(games['game_type'].eq('postseason').sum())}) · 타석 {len(pa):,} · "
+          f"선수 {len(players):,} ({time.time() - start:.1f}초)")
 
     print("2) Neo4j에 적재하는 중…")
     driver = get_driver()
     load_rows(driver, Q_TEAM, to_records(teams), "팀")
     load_rows(driver, Q_PLAYER, to_records(players), "선수")
     load_rows(driver, Q_GAME, to_records(games[
-        ["game_pk", "date", "season", "dh_no", "home_final", "away_final", "innings", "home_team", "away_team"]
+        ["game_pk", "date", "season", "dh_no", "home_final", "away_final", "innings", "home_team", "away_team",
+         "game_type", "stage", "series_game_no"]
     ]), "경기")
     load_rows(driver, Q_PA, pa_rows(pa), "타석")
     load_rows(driver, Q_PLAYS_FOR, to_records(plays_for), "소속(PLAYS_FOR)")

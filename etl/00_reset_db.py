@@ -18,6 +18,10 @@ CONSTRAINTS = [
     "CREATE CONSTRAINT pitching_stat_id IF NOT EXISTS FOR (n:PitcherSeasonStat) REQUIRE n.stat_id IS UNIQUE",
     "CREATE CONSTRAINT video_id IF NOT EXISTS FOR (n:VideoLink) REQUIRE n.video_id IS UNIQUE",
     "CREATE CONSTRAINT archetype_id IF NOT EXISTS FOR (n:PitchArchetype) REQUIRE n.archetype_id IS UNIQUE",
+    "CREATE CONSTRAINT outing_id IF NOT EXISTS FOR (n:Outing) REQUIRE n.outing_id IS UNIQUE",  # 등판 (docs/장면.md 3-5)
+    # 포스트시즌 기록 (docs/포스트시즌.md 5장)
+    "CREATE CONSTRAINT post_stat_id IF NOT EXISTS FOR (n:BatterPostseasonStat) REQUIRE n.stat_id IS UNIQUE",
+    "CREATE CONSTRAINT post_pitching_stat_id IF NOT EXISTS FOR (n:PitcherPostseasonStat) REQUIRE n.stat_id IS UNIQUE",
 ]
 INDEXES = [
     "CREATE TEXT INDEX player_name IF NOT EXISTS FOR (n:Player) ON (n.name)",
@@ -40,15 +44,18 @@ def main():
         print("취소했습니다.")
         return
 
-    # 1) 노드·관계 삭제 (한 번에 지우면 메모리가 부족할 수 있어 1만 개씩)
-    deleted = 0
-    while True:
-        c = run(driver, "MATCH (n) WITH n LIMIT 10000 DETACH DELETE n RETURN count(*) AS c")[0]["c"]
-        if c == 0:
-            break
-        deleted += c
-        print(f"  삭제: {deleted:,}", end="\r")
-    print(f"  삭제 완료: {deleted:,}개          ")
+    # 1) 관계 → 노드 순서로 묶음 삭제. 노드를 DETACH로 지우면 선수·팀처럼 관계가 수천 개인 노드가 한 묶음에 몰려
+    #    트랜잭션 메모리 한도(dbms.memory.transaction.total.max)를 넘는다 (10-21, 관계 약 150만 개)
+    for what, q in (("관계", "MATCH ()-[r]->() WITH r LIMIT 20000 DELETE r RETURN count(*) AS c"),
+                    ("노드", "MATCH (n) WITH n LIMIT 20000 DELETE n RETURN count(*) AS c")):
+        deleted = 0
+        while True:
+            c = run(driver, q)[0]["c"]
+            if c == 0:
+                break
+            deleted += c
+            print(f"  {what} 삭제: {deleted:,}", end="\r")
+        print(f"  {what} 삭제 완료: {deleted:,}개          ")
 
     # 2) 기존 제약조건·인덱스 삭제
     for r in run(driver, "SHOW CONSTRAINTS YIELD name"):

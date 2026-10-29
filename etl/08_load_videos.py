@@ -1,83 +1,98 @@
 """
-08. 영상과 매칭 결과를 DB에 넣기
+08. 영상과 연결(매칭 결과)을 DB에 넣기. 설계: docs/장면.md 3·4장
 
-07에서 만든 매칭 결과(CSV)를 Neo4j에 넣는다.
-  (VideoLink)                                영상 노드
-  (PlateAppearance)-[:CANDIDATE]->(VideoLink)   후보 (타자마다 상위 3개)  score, rank, reasons
-  (PlateAppearance)-[:MATCHED_TO]->(VideoLink)  자동 연결 (검수 대기)     status, origin, score, reasons
+07이 만든 그 시즌의 videos_<시즌>_<단계>.csv · links_<시즌>_<단계>.csv 를 전부 Neo4j에 넣는다.
+연결 대상 종류와 상관없이 같은 방식이다.
+  (VideoLink)                                   영상 노드 (kind · channel · …)
+  (<대상>)-[:CANDIDATE {score, rank, reasons}]->(VideoLink)      후보
+  (<대상>)-[:MATCHED_TO {status, origin, scene_type, precision, start_sec, end_sec, …}]->(VideoLink)  연결
+  <대상> = Game(경기) · PlateAppearance(타석) · Outing(등판)   — scenes.TARGETS
 
-실행 (data 폴더에서, 01 다음)
-  python etl/08_load_videos.py --season 2025 --videos videos/playlist_PLMtML65ksOv0.csv
+실행 (01·02 다음)
+  docker compose run --rm etl etl/08_load_videos.py --season 2025
 
-다시 실행해도 안전하다
-- 영상·후보는 같은 값으로 덮어쓴다
-- 이미 검수한 연결(승인·거절, 직접 연결)은 건드리지 않는다. 대기 중인 자동 연결만 점수를 갱신한다
+다시 실행해도 안전하다 (설계 7-2)
+- 시작할 때 그 시즌 대상의 CANDIDATE 전부와, 자동(origin auto)이면서 pending·auto_confirmed인 MATCHED_TO만 지운다
+- 사람이 승인·반려·직접 연결한 것은 남고, 07이 같은 쌍을 다시 내도 MERGE가 만나 아무것도 바꾸지 않는다
 """
 import argparse
 
-import pandas as pd
-
-from common import ROOT, get_driver, load_rows, run, to_records
+from common import get_driver, load_rows, run, to_records
+from scenes import TARGETS, VIDEO_COLUMNS, read_season
 
 Q_VIDEO = """
 UNWIND $rows AS r
 MERGE (v:VideoLink {video_id: r.video_id})
-SET v.title = r.title,
-    v.game_date = date(r.game_date),
-    v.published_at = datetime(r.published_at),
-    v.duration_sec = r.duration_sec,
-    v.source = 'clip'
+SET v.title = r.title, v.channel = r.channel, v.kind = r.kind,
+    v.game_date = CASE WHEN r.game_date IS NULL THEN null ELSE date(r.game_date) END,
+    v.published_at = datetime(r.published_at), v.duration_sec = r.duration_sec,
+    v.embeddable = r.embeddable, v.source = null,
+    // 임베드가 막힌 영상은 처음부터 재생 불가. 신고(API-12)로 정해진 false는 다시 적재해도 남긴다
+    v.playable = CASE WHEN r.embeddable = false THEN false ELSE coalesce(v.playable, true) END
+"""
+
+# 그 시즌 대상의 자동 생성물만 지운다. 라벨은 TARGETS 표에서만 온다 (사용자 입력 아님)
+Q_CLEAN = """
+MATCH (t:{label} {{season: $season}})-[c:CANDIDATE]->(:VideoLink) DELETE c
+"""
+Q_CLEAN_AUTO = """
+MATCH (t:{label} {{season: $season}})-[m:MATCHED_TO]->(:VideoLink)
+WHERE m.origin STARTS WITH 'auto' AND m.status IN ['pending', 'auto_confirmed']
+  AND coalesce(m.review_reason, '') <> 'unplayable'   // 재생 불가로 검수에 보낸 것은 남긴다 (API-12)
+DELETE m
 """
 
 Q_CANDIDATE = """
 UNWIND $rows AS r
-MATCH (pa:PlateAppearance {pa_id: r.pa_id}), (v:VideoLink {video_id: r.video_id})
-MERGE (pa)-[c:CANDIDATE]->(v)
+MATCH (t:{label} {{{key}: r.target_id}}), (v:VideoLink {{video_id: r.video_id}})
+MERGE (t)-[c:CANDIDATE]->(v)
 SET c.score = r.score, c.rank = r.rank, c.reasons = r.reasons
 """
 
 Q_MATCHED = """
 UNWIND $rows AS r
-MATCH (pa:PlateAppearance {pa_id: r.pa_id}), (v:VideoLink {video_id: r.video_id})
-MERGE (pa)-[m:MATCHED_TO]->(v)
-ON CREATE SET m.status = 'pending', m.origin = 'auto', m.score = r.score, m.reasons = r.reasons
-ON MATCH SET m.score = CASE WHEN m.status = 'pending' AND m.origin = 'auto' THEN r.score ELSE m.score END,
-             m.reasons = CASE WHEN m.status = 'pending' AND m.origin = 'auto' THEN r.reasons ELSE m.reasons END
+MATCH (t:{label} {{{key}: r.target_id}}), (v:VideoLink {{video_id: r.video_id}})
+MERGE (t)-[m:MATCHED_TO]->(v)
+ON CREATE SET m.status = r.status, m.origin = r.origin, m.scene_type = r.scene_type, m.precision = r.precision,
+              m.start_sec = r.start_sec, m.end_sec = r.end_sec, m.score = r.score, m.rank = r.rank,
+              m.reasons = r.reasons, m.review_reason = r.review_reason,
+              m.tags = CASE WHEN r.tags IS NULL THEN [] ELSE split(r.tags, '+') END
 """
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--season", type=int, default=2025)
-    ap.add_argument("--videos", default="videos/playlist_PLMtML65ksOv0.csv")
     args = ap.parse_args()
 
-    videos = pd.read_csv(ROOT / args.videos, dtype={"video_id": str}, encoding="utf-8-sig")
-    match = pd.read_csv(ROOT / f"videos/match_{args.season}.csv", dtype={"video_id": str}, encoding="utf-8-sig")
-
-    # 후보가 하나라도 있는 영상만 넣는다 (시구·국가대표 경기 등은 제외)
-    v = videos[videos["video_id"].isin(set(match["video_id"]))].copy()
-    game_date = match.drop_duplicates("video_id").set_index("video_id")["game_pk"].str[:8]
-    v["game_date"] = v["video_id"].map(game_date).map(lambda d: f"{d[:4]}-{d[4:6]}-{d[6:]}")
-    v["duration_sec"] = v["duration_sec"].astype(int)
-
-    cand = match[["pa_id", "video_id", "score", "rank", "reasons"]]
-    auto = match[match["matched"]][["pa_id", "video_id", "score", "reasons"]]
-    print(f"영상 {len(v)}개, 후보 {len(cand)}개, 자동 연결 {len(auto)}개")
+    videos, links, steps = read_season(args.season)
+    for c in ("start_sec", "end_sec", "rank"):
+        links[c] = links[c].astype("Int64")
+    print(f"단계 {steps} · 영상 {len(videos)}개 · 연결 파일 {len(links)}줄 "
+          f"({links.groupby(['target_kind', 'rel']).size().to_dict()})")
 
     driver = get_driver()
-    load_rows(driver, Q_VIDEO, to_records(v[["video_id", "title", "game_date", "published_at", "duration_sec"]]), "영상")
-    load_rows(driver, Q_CANDIDATE, to_records(cand), "후보 CANDIDATE")
-    load_rows(driver, Q_MATCHED, to_records(auto), "자동 연결 MATCHED_TO")
+    load_rows(driver, Q_VIDEO, to_records(videos[VIDEO_COLUMNS]), "영상")
+    for kind, (label, key) in TARGETS.items():
+        sub = links[links["target_kind"] == kind]
+        run(driver, Q_CLEAN.format(label=label), season=args.season)
+        run(driver, Q_CLEAN_AUTO.format(label=label), season=args.season)
+        if sub.empty:
+            continue
+        cand = sub[sub["rel"] == "candidate"][["target_id", "video_id", "score", "rank", "reasons"]]
+        matched = sub[sub["rel"] == "matched"].drop(columns=["rel", "target_kind"])
+        load_rows(driver, Q_CANDIDATE.format(label=label, key=key), to_records(cand), f"{kind} 후보 CANDIDATE")
+        load_rows(driver, Q_MATCHED.format(label=label, key=key), to_records(matched), f"{kind} 연결 MATCHED_TO")
+        missing = run(driver, f"""
+            UNWIND $ids AS id
+            OPTIONAL MATCH (t:{label} {{{key}: id}}) WITH id, t WHERE t IS NULL
+            RETURN count(id) AS n""", ids=list(sub["target_id"].unique()))[0]["n"]
+        print(f"  DB에 없는 {kind} 대상 (0이어야 정상, 01을 같은 시즌으로 넣었는지 확인): {missing}")
 
     print(run(driver, """
-        MATCH ()-[m:MATCHED_TO]->() RETURN m.status AS 상태, m.origin AS 출처, count(*) AS 개수
-        ORDER BY 상태, 출처"""))
-    missing = run(driver, """
-        UNWIND $ids AS id
-        OPTIONAL MATCH (pa:PlateAppearance {pa_id: id}) WITH id, pa WHERE pa IS NULL
-        RETURN count(id) AS n""", ids=list(cand["pa_id"].unique()))[0]["n"]
-    print(f"DB에 없는 타석 (0이어야 정상, 01을 같은 시즌으로 넣었는지 확인): {missing}")
+        MATCH (t)-[m:MATCHED_TO]->(:VideoLink)
+        RETURN labels(t)[0] AS 대상, m.status AS 상태, m.origin AS 출처, count(*) AS 개수
+        ORDER BY 대상, 상태, 출처"""))
     driver.close()
 
 
