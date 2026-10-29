@@ -77,6 +77,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 28 | GET /standings/history?season= | 달마다 순위 |
 | 29 | GET /pitchers/leaders?season=&role=&limit= | 투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」, 기본 선발) |
 | 30 | GET /outings/{outing_id}/plate-appearances | 등판 상세: 등판 요약 + 이닝별 상대 타자(결과 · 범례 분류 · 투구 수 · 볼카운트 · 주자 · 아웃) |
+| 31 | GET /players/{id}/similar?season=&as=&limit= | 비슷한 선수: 가장 강한 지표 순위에서 바로 위 선수 먼저, 모자라면 아래 (카드 대표 장면 포함) |
 
 **장면 · 검수**
 
