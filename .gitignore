@@ -43,3 +43,9 @@ etl/research/video_judge/pilot2_run.log
 
 # 설계 · 기획 문서 (저장소에 올리지 않음 — 팀 공유 폴더에서 관리)
 docs/
+
+# 선수 사진 · 구단 엠블럼 (서비스에 쓰지만 저장소에는 넣지 않음 — 팀 문서 「데이터_이용.md」)
+photos/
+logos/
+photos_x4/
+logos_x4/

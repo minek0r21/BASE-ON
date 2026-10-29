@@ -22,11 +22,11 @@ export default function ScoreStrip({ day, isLast }: { day: Day; isLast: boolean 
             <Fragment key={g.game_pk}>
               {i > 0 && <li className="hidden h-5 w-px bg-line-strong lg:block" aria-hidden />}
               <li className="flex items-center gap-2 px-2 font-num text-sm font-bold">
-                <TeamLogo team={g.away.team} height={16} />
+                <TeamLogo team={g.away.team} height={20} />
                 <span>
                   {g.away.team} {g.away.score} : {g.home.score} {g.home.team}
                 </span>
-                <TeamLogo team={g.home.team} height={16} />
+                <TeamLogo team={g.home.team} height={20} />
                 {g.stage_label && <span className="text-[11px] font-medium text-muted">{g.stage_label}</span>}
               </li>
             </Fragment>

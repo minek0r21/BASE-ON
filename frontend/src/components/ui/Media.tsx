@@ -4,7 +4,7 @@
 import { useState } from "react";
 import { logoUrl, photoUrl, team as teamOf } from "@/lib/teams";
 
-/** 선수 얼굴 (원형). 사진 원본이 94×118이라 크게 늘리지 않는다 — 없으면 이름 첫 글자 + 구단 연한 색 */
+/** 선수 얼굴 (원형). 사진은 4배로 키운 376×472(scripts/upscale_media.py)라 72px까지 깨지지 않는다 — 없으면 이름 첫 글자 + 구단 연한 색 */
 export function PlayerAvatar({ id, name, team, size = 40 }: { id: string; name: string; team?: string | null; size?: number }) {
   const [failed, setFailed] = useState(false);
   const t = teamOf(team);

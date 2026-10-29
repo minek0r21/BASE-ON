@@ -94,7 +94,7 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
             <p className="mt-1 text-[13px] text-[#a1a1a8]">{playing ? playing.sub : main && sceneSub(main.scene, main.game)}</p>
             {main && isMain && (
             <div className="mt-3 flex items-center gap-2.5">
-              <PlayerAvatar id={main.scene.player.player_id} name={main.scene.player.name} team={main.scene.team} size={36} />
+              <PlayerAvatar id={main.scene.player.player_id} name={main.scene.player.name} team={main.scene.team} size={44} />
               <span className="text-[13px] font-medium text-[#d3d4d8]">
                 {main.scene.player.name} · {teamOf(main.scene.team)?.full ?? main.scene.team}
               </span>

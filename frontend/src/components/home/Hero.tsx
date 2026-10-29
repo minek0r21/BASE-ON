@@ -55,11 +55,11 @@ export default function Hero({ day, recommended, onPlay }: {
                   <li key={p.id}>
                     <Link
                       href={playerHref(p.id)}
-                      className={`flex h-11 items-center gap-2 rounded-full border pr-4 pl-1.5 text-sm font-medium transition-colors duration-[120ms] ${
+                      className={`flex h-12 items-center gap-2.5 rounded-full border pr-4 pl-1 text-sm font-medium transition-colors duration-[120ms] ${
                         !firstVisit && i === 0 ? "border-brand bg-brand-soft" : "border-line bg-surface hover:bg-surface-2"
                       }`}
                     >
-                      <PlayerAvatar id={p.id} name={p.name} team={p.team} size={32} />
+                      <PlayerAvatar id={p.id} name={p.name} team={p.team} size={40} />
                       {p.name}
                     </Link>
                   </li>

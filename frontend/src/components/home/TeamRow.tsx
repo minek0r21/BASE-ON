@@ -9,10 +9,10 @@ export default function TeamRow({ teams, sub }: { teams?: Standing[]; sub: strin
       <SectionHead title="팀으로 찾기" sub={sub} />
       <ul className="grid grid-cols-5 gap-3 lg:grid-cols-10">
         {(teams ?? []).map((t) => (
-          <li key={t.team_id} className="flex flex-col items-center gap-1.5 rounded-2xl border border-line bg-surface pt-3.5 pb-3" title={`${t.w}승 ${t.l}패 ${t.d}무 · 승률 ${t.pct.toFixed(3)}`}>
-            <TeamLogo team={t.team} height={30} />
-            <span className="text-[13px] font-bold">{t.team}</span>
-            <span className="text-[11px] font-medium text-fg-2">{t.rank}위</span>
+          <li key={t.team_id} className="flex flex-col items-center rounded-2xl border border-line bg-surface pt-5 pb-3.5" title={`${t.w}승 ${t.l}패 ${t.d}무 · 승률 ${t.pct.toFixed(3)}`}>
+            <span className="flex h-14 items-center"><TeamLogo team={t.team} height={52} /></span>
+            <span className="mt-2.5 text-sm font-bold">{t.team}</span>
+            <span className="mt-0.5 text-xs font-medium text-fg-2">{t.rank}위</span>
           </li>
         ))}
       </ul>

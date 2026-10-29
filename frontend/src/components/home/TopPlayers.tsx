@@ -44,13 +44,13 @@ function Column({ title, note, rows }: { title: string; note: string; rows: Row[
           <li key={r.id}>
             <Link
               href={playerHref(r.id)}
-              className={`grid grid-cols-[28px_40px_1fr_120px_56px_auto] items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors duration-[120ms] hover:bg-surface-2 ${i === 0 ? "bg-surface-2" : ""}`}
+              className={`grid grid-cols-[28px_48px_1fr_120px_56px_auto] items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors duration-[120ms] hover:bg-surface-2 ${i === 0 ? "bg-surface-2" : ""}`}
             >
               <span className="font-display text-[28px] leading-none font-extrabold">{i + 1}</span>
-              <PlayerAvatar id={r.id} name={r.name} team={r.team} size={40} />
+              <PlayerAvatar id={r.id} name={r.name} team={r.team} size={48} />
               <span className="min-w-0">
                 <span className="flex items-center gap-1.5 text-[15px] font-bold">
-                  {r.name} <TeamLogo team={r.team} height={12} />
+                  {r.name} <TeamLogo team={r.team} height={14} />
                 </span>
                 <span className="block truncate text-[11px] text-muted">{r.meta}</span>
               </span>

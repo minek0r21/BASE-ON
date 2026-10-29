@@ -14,6 +14,7 @@ npm run build               # out/ 생성 (Caddy가 그대로 서빙)
 ```
 
 - 선수 사진(`photos/`) · 구단 엠블럼(`logos/`)은 저장소에 넣지 않는다(팀 문서 「데이터_이용.md」). `sync_media.py`가 복사한 `public/media/`가 빌드에 같이 들어간다. 파일이 없으면 화면은 이름 첫 글자 · 팀 이름 글자로 대신 그린다.
+- 원본이 작아(사진 94×118 · 엠블럼 64×41, KBO 공식 사이트 최대 크기) 고해상도 화면에서 깨진다 → `python scripts/upscale_media.py --esrgan <realesrgan-ncnn-vulkan.exe>`로 4배 폴더(`photos_x4/` · `logos_x4/`)를 만들면 `sync_media.py`가 그쪽을 먼저 쓴다. 사진은 「AI 30% + 원본 확대 · 선명화 70%」(AI만 쓰면 피부가 그림처럼 매끈해짐), 엠블럼은 AI 4배 그대로. 그래픽카드로 842장 몇 분.
 
 - 개발 서버는 `.env.development`의 `NEXT_PUBLIC_API_BASE`(`http://localhost:8000/api/v1`)를 직접 부른다. API 쪽 `.env`의 `CORS_ORIGINS`에 `http://localhost:3000`이 있어야 한다(기본값).
 - 배포 빌드는 같은 도메인의 `/api/v1`을 부른다.

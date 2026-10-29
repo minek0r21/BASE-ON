@@ -6,7 +6,6 @@ import { playerHref } from "@/components/SearchBox";
 import { PlayerAvatar, TeamLogo } from "@/components/ui/Media";
 import type { LeaderCard, Leaders } from "@/lib/api";
 import { pct1, rate3 } from "@/lib/format";
-import { leaguePosition } from "@/lib/position";
 import { SectionHead } from "./common";
 
 // 능력 카드 문구 (Figma 113:519 · 136:1569). 이름은 사람 말, 부제는 기준 지표
@@ -59,7 +58,7 @@ export default function AbilityCards({ batters, pitchers, asOf }: { batters?: Le
       ) : (
         <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
           {data.cards.map((c) => (
-            <Card key={c.key} card={c} n={data.groupSize} />
+            <Card key={c.key} card={c} />
           ))}
         </ul>
       )}
@@ -67,31 +66,29 @@ export default function AbilityCards({ batters, pitchers, asOf }: { batters?: Le
   );
 }
 
-function Card({ card, n }: { card: LeaderCard; n: number }) {
+function Card({ card }: { card: LeaderCard }) {
   const def = CARD[card.key];
   const [first, ...rest] = card.players;
   if (!def || !first) return null;
-  const pos = leaguePosition(first.percentile, first.rank, n);
   return (
     <li className="flex flex-col rounded-3xl border border-line bg-surface px-5 py-[22px]">
       <h3 className="text-lg leading-snug font-bold break-keep">{def.title}</h3>
       <p className="mt-1.5 text-xs text-muted">{def.sub}</p>
       <Link href={playerHref(first.player_id)} className="group mt-5 block">
         <span className="flex items-center gap-2.5">
-          <PlayerAvatar id={first.player_id} name={first.name} team={first.team} size={56} />
+          <PlayerAvatar id={first.player_id} name={first.name} team={first.team} size={72} />
           <span className="min-w-0">
             <span className="flex items-center gap-1.5 text-[17px] font-bold group-hover:underline">
-              {first.name} <TeamLogo team={first.team} height={14} />
+              {first.name} <TeamLogo team={first.team} height={16} />
             </span>
             <span className="font-num text-xs font-bold">
-              {first.rank}위 · {def.fmt(first.value)}
+              {first.rank}위
             </span>
           </span>
         </span>
-        <span className="mt-2 flex items-baseline gap-1.5" aria-label={`리그 ${pos.label}`}>
-          <span className="text-[15px] font-medium text-fg-2">{pos.side}</span>
-          <span className="font-display text-[52px] leading-none font-extrabold">{pos.pct}%</span>
-        </span>
+        {/* 메인 카드는 1~3위만 보여 줘 「상위 1%」가 다섯 장 모두 같아진다 → 원 수치를 크게 (10-29 결정 (나)).
+            「상위 N%」 강조는 선수 화면 · 05 능력별 순위에서 */}
+        <span className="mt-2 block font-display text-[52px] leading-none font-extrabold">{def.fmt(first.value)}</span>
       </Link>
       <hr className="my-4 border-line" />
       <ol className="space-y-2.5">
@@ -99,7 +96,7 @@ function Card({ card, n }: { card: LeaderCard; n: number }) {
           <li key={p.player_id}>
             <Link href={playerHref(p.player_id)} className="flex items-center gap-2.5 hover:underline">
               <span className="w-2.5 font-num text-[13px] font-bold text-muted">{p.rank}</span>
-              <PlayerAvatar id={p.player_id} name={p.name} team={p.team} size={28} />
+              <PlayerAvatar id={p.player_id} name={p.name} team={p.team} size={36} />
               <span className="min-w-0 flex-1 truncate text-sm font-medium">{p.name}</span>
               <span className="font-num text-sm font-semibold text-fg-2">{def.fmt(p.value)}</span>
             </Link>
