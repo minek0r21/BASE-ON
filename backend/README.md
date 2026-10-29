@@ -20,11 +20,11 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 
 ## 확정 장면
 연결(`MATCHED_TO`)의 상태가 `auto_confirmed`(자동 확정) 또는 `approved`(승인)이면 **확정**이고, 화면의 ▶·장면 수·최근 홈런 장면은 확정만 쓴다(설계 D1).
-`pending`(검수 대기)·`rejected`(반려)는 화면에 나오지 않는다. 연결 구조와 자동 확정 규칙은 `docs/장면.md`.
+`pending`(검수 대기)·`rejected`(반려)는 화면에 나오지 않는다. 연결 구조와 자동 확정 규칙은 팀 문서 「장면.md」.
 
 ## 관리자 토큰
 `.env`에 `ADMIN_TOKENS=이름1:토큰1,이름2:토큰2`가 있으면 `/admin/…`과 예전 검수 쓰기(8 · 9)가 `Authorization: Bearer <토큰>`을 요구하고, 검수자 이름은 토큰으로 정한다. 재생 불가 신고(12)는 누구나 쓴다.
-비워 두면(로컬 개발) 토큰 없이 열린다. 서버에서는 Caddy가 `/admin`·`/api/v1/admin`을 404로 막는다(`docs/배포.md`).
+비워 두면(로컬 개발) 토큰 없이 열린다. 서버에서는 Caddy가 `/admin`·`/api/v1/admin`을 404로 막는다(팀 문서 「배포.md」).
 
 ## 파일
 | 파일 | 하는 일 |

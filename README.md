@@ -18,15 +18,9 @@ BASEON/
 ├─ scripts/
 │   ├─ get_data.py                원본 기록(parquet)을 리비전 고정으로 받기 → data/kbo_pbp/
 │   ├─ reload_all.sh              DB 전체 다시 적재 (00 → 01 → 02 → 05 → 03 → 07 → 08)
-│   └─ deploy.py                  서버에 코드·화면·DB 올리기 (docs/배포.md)
+│   └─ deploy.py                  서버에 코드·화면·DB 올리기
 ├─ data/                          원본 기록 (저장소에 올리지 않음)
-├─ docs/
-│   ├─ 설계.md                    TRD 기준 통합 설계와 팀 결정 (14장 D1~)
-│   ├─ 스키마.md                  Neo4j 노드·관계·속성 설명
-│   ├─ 투수.md                    투수 5지표 · 선발/불펜 · 실점 귀속 (D12)
-│   ├─ 장면.md                    영상 장면 연결 구조 · 자동 확정 규칙 · 검수 (S1~S15)
-│   ├─ 포스트시즌.md              포스트시즌 설계 (팀 저장소에서는 데이터가 없어 꺼져 있음)
-│   └─ 배포.md                    서버 배포 (Caddy · HTTPS · 비밀번호)
+├─ docs/                          설계 · 기획 문서 (저장소에 올리지 않음)
 ├─ etl/                           원본 데이터 → Neo4j 적재 코드 (자세한 건 etl/README.md)
 │   ├─ prepare.py                 parquet 읽기·정제·계산 (DB 안 씀)
 │   ├─ 00 ~ 03                    DB 초기화 → 팀·선수·경기·타석·등판 → 시즌 기록·백분위 → 확인
@@ -125,6 +119,15 @@ uvicorn app.main:app --reload
 python etl/tests/test_rules.py     # 계산 규칙 단위 시험 (Docker: docker compose run --rm etl etl/tests/test_rules.py)
 ```
 
-## 데이터 출처
-- 타석 기록: Hugging Face slothman3878/kbo_playbyplay (CC BY 4.0, 리비전 고정 — 2026은 7월 26일까지)
-- 영상: KBO · 구단 공식 YouTube 채널 (정보만 저장, 재생은 임베드)
+## 데이터 출처 · 이용
+- 경기 기록(데이터 출처): Hugging Face [slothman3878/kbo_playbyplay](https://huggingface.co/datasets/slothman3878/kbo_playbyplay) — CC BY 4.0
+  - 리비전 `6afc8af044e3bba5f326b688e8cb41d7ff7065ec`로 고정해서 받는다(`scripts/get_data.py`, 파일별 SHA-256 확인). 2026 시즌은 7월 26일까지.
+- 원천 정보 제공처: NAVER Sports 문자중계. 데이터셋은 원문 해설 텍스트가 아닌 구조화된 경기 기록만 담고 있다.
+- 이 저장소는 원본 데이터를 포함하지 않는다(`data/`는 git 제외). 원문 문자중계 텍스트는 수집하거나 공개하지 않는다.
+- 선수 프로필 일부: 위키백과(CC BY-SA 4.0) · 영상: KBO · 구단 공식 YouTube 채널(정보만 저장, 재생은 임베드)
+- KBO · NAVER · 각 구단과 관계없는 비공식 · 비상업 수업 프로젝트다.
+
+### 데이터 없이 실행하기
+- `.env.example`을 `.env`로 복사한 뒤 `docker compose up -d`만 하면 API와 DB가 뜬다(적재용 etl 컨테이너는 따로 실행할 때만 켜진다). DB가 비어 있으면 화면에 기록이 나오지 않는다.
+- 계산 규칙 단위 시험(`etl/tests/test_rules.py`)은 데이터 없이 돈다.
+- 데이터를 넣으려면 `python scripts/get_data.py`로 받은 뒤 `bash scripts/reload_all.sh`.

@@ -20,7 +20,7 @@ parquet를 새 스키마(스키마 탭 확정본)대로 Neo4j에 넣는다. 1단
 | `08_load_videos.py` | VideoLink 노드, CANDIDATE·MATCHED_TO(검수 대기) 관계 적재. 이미 검수한 연결은 안 건드림 |
 | `scenes.py` | 07의 영상 분류 · 제목 읽기 공통 (경기 · 타석 · 등판) |
 | `tests/test_rules.py` | 계산 규칙 단위 시험 (백분위 · 꾸준함 · 실점 귀속 · 유인 · 안타 장면). `python etl/tests/test_rules.py` |
-| `research/video_judge/` | Gemini 영상 판독 시험 코드 (보류, `docs/장면.md` 11장). 적재에는 쓰지 않는다 |
+| `research/video_judge/` | Gemini 영상 판독 시험 코드 (보류, 팀 문서 「장면.md」 11장). 적재에는 쓰지 않는다 |
 
 ## 실행 순서 (PowerShell, 프로젝트 맨 위 폴더에서)
 
@@ -65,7 +65,7 @@ python etl/08_load_videos.py --season 2025                    # 매칭 결과를
 
 `videos/` 폴더에 06 결과가 이미 있으면 06은 건너뛰어도 된다 (YouTube 키 없이 07·08만 돌리면 됨).
 07 결과 파일(`links_*`·`videos_*`·`unmatched_*`)은 git에 올리지 않는다 — 07을 돌릴 때마다 다시 만든다.
-구조·규칙은 `docs/장면.md`.
+구조·규칙은 팀 문서 「장면.md」.
 
 **영상 목록 `videos/yt_inventory.json`** (약 21MB, git 제외): KBO · 10개 구단 · 티빙 채널의 2024-03 이후 업로드 약 35,000개.
 처음 목록은 담당자(ETL 영상 담당)에게 파일로 받아 `videos/`에 둔다 — 처음부터 다시 받는 스크립트는 저장소에 없다.
@@ -82,9 +82,9 @@ docker compose run --rm etl etl/06b_update_inventory.py      # Docker로 해도 
 
 - 타석은 `(game_pk, at_bat_number)`로 묶고 마지막 공 줄에서 결과·상황을 가져온다. 결과가 빈 타석은 제외한다.
 - 사용 시즌: 2024~2026.7.26 (2023 제외, `prepare.py`의 SEASONS). 기본은 세 시즌 모두 적재.
-- 정규시즌만 집계한다. `kbo_pbp_<시즌>_post.parquet`(포스트시즌)가 있으면 경기·타석에는 넣되 시즌 기록·백분위에서는 뺀다 (`docs/포스트시즌.md`, 팀 저장소에는 이 파일을 받는 길이 없다).
+- 정규시즌만 집계한다. `kbo_pbp_<시즌>_post.parquet`(포스트시즌)가 있으면 경기·타석에는 넣되 시즌 기록·백분위에서는 뺀다 (팀 문서 「포스트시즌.md」, 팀 저장소에는 이 파일을 받는 길이 없다).
 - 백분위 대상: 규정타석(타석이 가장 많은 팀의 경기 수 × 3.1)의 50% 이상. 같은 시즌 대상 타자끼리 비교한다.
 - 백분위 = 나보다 나쁜 선수 수 ÷ n × 100 반올림 (설계 D3). 1위도 100이 되지 않는다.
 - 꾸준함: 3월→4월 · 10월→9월을 합친 뒤 20타석 이상인 달의 월별 OPS 모표준편차, 그런 달이 3개 미만이면 null (설계 D3).
-- 투수: 아웃 · 실점은 주자별 책임 투수에게 귀속한다 (`charge_runs`, `docs/투수.md` 10장). 5지표 · 선발/불펜 구분은 `docs/투수.md`.
+- 투수: 아웃 · 실점은 주자별 책임 투수에게 귀속한다 (`charge_runs`, 팀 문서 「투수.md」 10장). 5지표 · 선발/불펜 구분은 팀 문서 「투수.md」.
 - PLAYS_FOR에는 season 말고도 games, first_date, last_date가 들어간다. 시즌 중 트레이드된 선수의 최근 팀을 가리기 위해서다.

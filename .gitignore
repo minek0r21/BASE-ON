@@ -40,3 +40,6 @@ etl/research/video_judge/pilot2_truth.json
 etl/research/video_judge/pilot2_out/
 videos/yt_inventory.*.bak.json
 etl/research/video_judge/pilot2_run.log
+
+# 설계 · 기획 문서 (저장소에 올리지 않음 — 팀 공유 폴더에서 관리)
+docs/

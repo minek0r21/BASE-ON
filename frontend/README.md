@@ -45,4 +45,4 @@ src/
 
 ## 장면 재생
 
-`ScenePlayer`는 썸네일을 먼저 그리고 누를 때 YouTube IFrame 플레이어를 붙인다(자동재생 없음). 구간은 `startSeconds`·`endSeconds`로 주고, 재생 중 250ms마다 종료 지점을 넘었는지 보고 멈춘다(FR-04-02). 다른 장면으로 바꾸면 같은 플레이어에서 `loadVideoById`만 부른다. 어떤 버튼에 어떤 영상이 붙는지는 `docs/장면.md` 6장.
+`ScenePlayer`는 썸네일을 먼저 그리고 누를 때 YouTube IFrame 플레이어를 붙인다(자동재생 없음). 구간은 `startSeconds`·`endSeconds`로 주고, 재생 중 250ms마다 종료 지점을 넘었는지 보고 멈춘다(FR-04-02). 다른 장면으로 바꾸면 같은 플레이어에서 `loadVideoById`만 부른다. 어떤 버튼에 어떤 영상이 붙는지는 팀 문서 「장면.md」 6장.

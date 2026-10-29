@@ -32,10 +32,11 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <footer className="border-t border-line py-6 text-xs leading-relaxed text-muted">
             <div className="mx-auto max-w-5xl px-4">
               <p>
-                경기 기록: slothman3878/kbo_playbyplay (CC BY 4.0) · 선수 프로필 일부: 위키백과 (CC BY-SA) · 영상: KBO
-                공식 채널 임베드
+                경기 기록: Hugging Face slothman3878/kbo_playbyplay (CC BY 4.0 · 리비전 6afc8af 고정) · 원천 정보: NAVER
+                Sports 문자중계 (원문은 저장·공개하지 않음)
               </p>
-              <p>BASE:ON은 KBO·구단과 관계없는 비공식 서비스입니다.</p>
+              <p>선수 프로필 일부: 위키백과 (CC BY-SA 4.0) · 영상: KBO·구단 공식 YouTube 임베드</p>
+              <p>BASE:ON은 KBO·NAVER·각 구단의 공식 서비스가 아니며 제휴 관계가 없는 비상업 수업 프로젝트입니다.</p>
             </div>
           </footer>
         </Providers>
