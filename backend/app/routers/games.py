@@ -1,7 +1,7 @@
 """
 경기 API
    4. GET /games/{game_pk}/plate-appearances?player=   기록 탭: 경기 요약 + 이 선수 타석 목록
-  14. GET /games?date=                                 메인: 날짜별 경기 일정 (+ 그 경기 홈런)
+  14. GET /games?date=                                 메인 · 일정 · 장면: 날짜별 경기 일정 (+ 그 경기 홈런 · 투수 장면)
   15. GET /home-runs?season=&limit=&video_only=       메인: 최근 홈런 장면 (기본: 확정 장면(자동 확정·승인)이 있는 홈런만)
 """
 from datetime import date as Date
@@ -12,7 +12,7 @@ from ..db import run
 from ..errors import ApiError
 from ..events import batting_line, events_ko
 from ..postseason import game_tag, hr_label, period
-from ..scenes import CONFIRMED, game_highlights
+from ..scenes import CONFIRMED, game_highlights, outing_scenes, pa_scenes
 from ..utils import result_of
 
 router = APIRouter(tags=["경기"])
@@ -131,6 +131,16 @@ RETURN toString(prev) AS prev, toString(min(b.date)) AS next
 """
 
 
+# 그날 경기의 등판 (투수 장면 후보). 장면이 붙은 등판만 응답에 넣는다
+Q_DAY_OUTINGS = """
+UNWIND $games AS gpk
+MATCH (p:Player)-[:PITCHED_GAME]->(o:Outing)-[:PART_OF]->(:Game {game_pk: gpk})
+OPTIONAL MATCH (t:Team {team_id: o.team_id})
+RETURN gpk, p.player_id AS player_id, p.name AS name, t.name AS team,
+       o {.outing_id, .outs, .tbf, .so, .bb, .hbp, .h, .hr, .r, .starter, .finisher} AS o
+"""
+
+
 def _line(rows: list[dict], innings: int | None) -> dict:
     n = max([innings or 9, *[r["inn"] for r in rows]])
     out = {"away": [None] * n, "home": [None] * n, "away_h": 0, "home_h": 0}
@@ -141,8 +151,8 @@ def _line(rows: list[dict], innings: int | None) -> dict:
     return out
 
 
-@router.get("/games", summary="14. 날짜별 경기 일정 (메인)")
-def get_games_by_date(  # API 14: 그날 경기 결과와 홈런 (시안 메인 '경기 일정')
+@router.get("/games", summary="14. 날짜별 경기 일정 · 장면 (메인 · 일정 · 장면)")
+def get_games_by_date(  # API 14: 그날 경기 결과 · 홈런 · 투수 장면 (시안 메인 점수 한 줄 · 「그날 장면」 카드, 08 일정, 10 장면)
     date: Date | None = Query(None, description="YYYY-MM-DD. 생략하면 데이터의 마지막 경기일"),
 ):
     if date is None:
@@ -156,8 +166,21 @@ def get_games_by_date(  # API 14: 그날 경기 결과와 홈런 (시안 메인 
     for r in run(Q_LINES, games=pks):
         lines.setdefault(r["gpk"], []).append(r)
     highlights = game_highlights(pks)
+    hr_scenes = pa_scenes([h["pa_id"] for g in rows for h in g["home_runs"]])
+    outings: dict = {}
+    for r in run(Q_DAY_OUTINGS, games=pks):
+        outings.setdefault(r["gpk"], []).append(r)
+    o_scenes = outing_scenes([r["o"]["outing_id"] for rs in outings.values() for r in rs])
     games = []
     for g in rows:
+        pitcher_scenes = [
+            {"outing_id": r["o"]["outing_id"], "pitcher": {"player_id": r["player_id"], "name": r["name"]},
+             "team": r["team"], "role": "선발" if r["o"]["starter"] else "구원",
+             "line": {k: r["o"][k] for k in ("outs", "tbf", "so", "bb", "hbp", "h", "hr", "r")},
+             "scene": o_scenes[r["o"]["outing_id"]]}
+            for r in outings.get(g["game_pk"], []) if r["o"]["outing_id"] in o_scenes
+        ]
+        pitcher_scenes.sort(key=lambda s: (s["role"] != "선발", -(s["line"]["outs"] or 0)))  # 선발 먼저, 오래 던진 순
         games.append({
             "game_pk": g["game_pk"],
             "dh_no": g["dh_no"],
@@ -167,17 +190,25 @@ def get_games_by_date(  # API 14: 그날 경기 결과와 홈런 (시안 메인 
                      "result": result_of(g["away_final"], g["home_final"])},
             "home": {"team": g["home"], "score": g["home_final"],
                      "result": result_of(g["home_final"], g["away_final"])},
-            "home_runs": [{**h, "hr_label": hr_label(g["season"], g["game_type"], h["hr_seq"], h["post_hr_seq"])}
+            "home_runs": [{**h, "hr_label": hr_label(g["season"], g["game_type"], h["hr_seq"], h["post_hr_seq"]),
+                           "scene": hr_scenes.get(h["pa_id"])}  # 재생할 장면 (재생 불가로 확인된 영상은 빠져 null)
                           for h in g["home_runs"]],
+            "pitcher_scenes": pitcher_scenes,  # 장면이 붙은 등판만 (선발 먼저)
             "line": _line(lines.get(g["game_pk"], []), g["innings"]),  # 이닝별 점수 · 안타 (없는 반 이닝은 null = 홈팀이 안 한 말)
             "highlight": highlights.get(g["game_pk"]),
         })
 
     nav = run(Q_PREV_NEXT, date=date)[0]
+    all_hr = [h for g in games for h in g["home_runs"]]
     return {
         "date": str(date),
         "prev_date": nav["prev"],  # 앞뒤로 경기가 있는 날 (화살표용). 없으면 null
         "next_date": nav["next"],
+        "scene_counts": {          # 「홈런 15개 중 장면 11개 · 투수 장면 3개」
+            "home_runs": len(all_hr),
+            "home_run_scenes": sum(1 for h in all_hr if h["scene"]),
+            "pitcher_scenes": sum(len(g["pitcher_scenes"]) for g in games),
+        },
         "games": games,            # 경기 없는 날이면 빈 목록
     }
 

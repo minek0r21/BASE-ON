@@ -63,7 +63,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 6 | GET /matchup?batter=&pitcher=&season= | 맞대결 (1:1) |
 | 11 | GET /players/compare?ids=&season= | 비교 탭 (2~3명) |
 | 13 | GET /standings?season= | 팀 순위 |
-| 14 | GET /games?date= | 날짜별 경기 일정 · 점수판 |
+| 14 | GET /games?date= | 날짜별 경기 일정 · 점수판 · 그날 장면(홈런 `scene`, 등판 `pitcher_scenes`, `scene_counts`) |
 | 15 | GET /home-runs?season=&limit=&video_only= | 최근 홈런 장면 (기본: 확정 장면이 있는 홈런만) |
 | 16 | GET /batters?season=&team=&sort=&qualified=&limit= | 타자 순위표 (`scene_count`: 확정 장면 수) |
 | 17 | GET /players/{id}/matchups?season=&min_pa=&as= | 맞대결 탭 목록 (`as=pitcher`면 이 투수가 상대한 타자) |

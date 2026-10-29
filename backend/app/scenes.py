@@ -35,6 +35,21 @@ RETURN oid AS outing_id, v.video_id AS video_id, v.title AS title, v.duration_se
 """
 
 
+# 타석(홈런 등) 장면 = 확정·재생 가능한 연결 중 rank가 가장 앞선 것. 경기 단위 영상은 타석 장면이 아니다 (API-05와 같은 기준)
+Q_PA_SCENES = """
+UNWIND $pas AS pid
+MATCH (pa:PlateAppearance {pa_id: pid})
+CALL (pa) {
+  MATCH (pa)-[m:MATCHED_TO]->(v:VideoLink)
+  WHERE m.status IN $confirmed AND coalesce(m.precision, 'scene') <> 'game' AND coalesce(v.playable, true)
+  RETURN v, m ORDER BY m.rank, v.published_at LIMIT 1
+}
+RETURN pid AS pa_id, v.video_id AS video_id, v.title AS title, v.duration_sec AS duration_sec,
+       m.start_sec AS start_sec, m.end_sec AS end_sec, coalesce(m.precision, 'scene') AS precision,
+       m.scene_type AS scene_type, coalesce(m.tags, []) AS tags
+"""
+
+
 def scene_of(r: dict) -> dict:
     return {
         "video_id": r["video_id"], "title": r["title"], "duration_sec": r["duration_sec"],
@@ -48,6 +63,13 @@ def outing_scenes(outing_ids: list[str]) -> dict[str, dict]:
     if not outing_ids:
         return {}
     return {r["outing_id"]: scene_of(r) for r in run(Q_OUTING_SCENES, outings=list(outing_ids), confirmed=CONFIRMED)}
+
+
+def pa_scenes(pa_ids: list[str]) -> dict[str, dict]:
+    """타석 ID 목록 → {타석 ID: 장면}. 확정 장면이 없는 타석은 빠진다."""
+    if not pa_ids:
+        return {}
+    return {r["pa_id"]: scene_of(r) for r in run(Q_PA_SCENES, pas=list(pa_ids), confirmed=CONFIRMED)}
 
 
 def game_highlights(game_pks: list[str]) -> dict[str, dict]:
