@@ -59,9 +59,9 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
             홈런 {c.home_runs}개 중 장면 {c.home_run_scenes}개 · 투수 장면 {c.pitcher_scenes}개 · 영상이 있는 장면만
           </p>
         </div>
-        <span className="cursor-not-allowed text-sm font-bold text-white/50" title="장면 화면 준비 중">
+        <Link href={`/scenes/?date=${day.date}`} className="text-sm font-bold text-white hover:underline">
           장면 전체 보기 ›
-        </span>
+        </Link>
       </div>
 
       {!main && !playing ? (
