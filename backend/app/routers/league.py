@@ -6,6 +6,7 @@
   26. GET /pitchers?season=&team=&role=&qualified=&sort=&limit= 투수 목록 (팀 화면 투수 표, 05 능력별 순위 투수 탭)
   28. GET /standings/history?season=                           순위 변동 (달마다 마지막 날 순위, 시안 「순위 변동 보기」)
   29. GET /pitchers/leaders?season=&role=&limit=               투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」)
+  31. GET /players/{player_id}/similar?season=&as=&limit=      가장 강한 지표가 비슷한 선수 (03 · 03b 아래)
 """
 from typing import Literal
 
@@ -399,3 +400,103 @@ def get_standings_history(season: int = Query(..., description="시즌")):
         elif int(nxt[5:7]) != month and month >= 4:  # 3월(개막 몇 경기)은 4월에 합친다
             snapshot(f"{month}월", r["date"])
     return {"season": season, "checkpoints": marks}
+
+
+# ------------------------------------------------------------------ 31. 비슷한 선수
+# 카드 ▶ = 대표 장면 (장면.md 6장): 타자는 그 시즌 확정 홈런 장면 중 최근, 투수는 확정 등판 장면 중 최근
+Q_LATEST_HR_SCENES = """
+UNWIND $ids AS pid
+CALL (pid) {
+  MATCH (:Player {player_id: pid})-[:BATTED_IN]->(pa:PlateAppearance {season: $season, game_type: 'regular', events: 'home_run'})-[m:MATCHED_TO]->(v:VideoLink)
+  WHERE m.status IN $confirmed AND coalesce(m.precision, 'scene') <> 'game' AND coalesce(v.playable, true)
+  RETURN pa, m, v ORDER BY pa.date DESC, pa.at_bat_number DESC, m.rank LIMIT 1
+}
+RETURN pid AS player_id, pa.pa_id AS pa_id, toString(pa.date) AS date, pa.hr_seq AS hr_seq,
+       v.video_id AS video_id, v.title AS title, v.duration_sec AS duration_sec,
+       m.start_sec AS start_sec, m.end_sec AS end_sec, coalesce(m.precision, 'scene') AS precision,
+       m.scene_type AS scene_type, coalesce(m.tags, []) AS tags
+"""
+
+Q_LATEST_OUTING_SCENES = """
+UNWIND $ids AS pid
+CALL (pid) {
+  MATCH (:Player {player_id: pid})-[:PITCHED_GAME]->(o:Outing {season: $season, game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
+  WHERE m.status IN $confirmed AND coalesce(v.playable, true)
+  RETURN o, m, v ORDER BY o.date DESC, m.rank LIMIT 1
+}
+RETURN pid AS player_id, o.outing_id AS outing_id, o.date AS date, o {.outs, .so, .r, .h} AS line,
+       v.video_id AS video_id, v.title AS title, v.duration_sec AS duration_sec,
+       m.start_sec AS start_sec, m.end_sec AS end_sec, m.precision AS precision, m.scene_type AS scene_type,
+       coalesce(m.tags, []) AS tags
+"""
+
+BAT_AXIS_LABEL = {"contact": "삼진회피", "hit": "안타생산", "power": "파워", "eye": "선구안", "consistency": "꾸준함"}
+
+
+def _neighbors(order: list[str], me: str, n: int) -> list[str]:
+    """지표 순위(order, 1위부터)에서 나보다 바로 위 선수를 먼저, 모자라면 바로 아래로 n명. 결과는 순위 순"""
+    i = order.index(me)
+    above = order[max(0, i - n):i]
+    below = order[i + 1:i + 1 + (n - len(above))]
+    return above + below
+
+
+@router.get("/players/{player_id}/similar", summary="31. 비슷한 선수 (가장 강한 지표 기준)")
+def get_similar(  # API 31: 시안 03 「파워가 비슷한 타자」 · 03b 「장타를 잘 안 맞는 비슷한 투수」
+    player_id: str,
+    season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
+    as_: Literal["batter", "pitcher"] | None = Query(None, alias="as", description="생략하면 그 시즌 비교 대상인 쪽 (둘 다면 상대 타자 수 > 타석 수일 때 투수)"),
+    limit: int = Query(4, ge=1, le=10),
+):
+    if season is None:
+        season = run(Q_LATEST_STAT_SEASON)[0]["s"]
+    batters = [b for b in run(Q_BATTERS, season=season) if b["s"].get("qualified")]
+    pitchers = [r for r in _pitcher_rows(season) if r["s"].get("qualified")]
+    me_b = next((b for b in batters if b["player_id"] == player_id), None)
+    me_p = next((r for r in pitchers if r["player_id"] == player_id), None)
+    if as_ is None:
+        as_ = "pitcher" if me_p and (not me_b or (me_p["s"].get("tbf") or 0) > (me_b["s"].get("pa") or 0)) else "batter"
+    empty = {"season": season, "as": as_, "axis": None, "label": None, "players": []}
+
+    if as_ == "batter":
+        if not me_b:
+            return {**empty, "reason": "리그 비교 대상 아님(타석 부족)"}
+        pct = {a: me_b["s"].get(k) for a, k in AXES.items() if me_b["s"].get(k) is not None}
+        axis = max(pct, key=lambda a: pct[a])  # 가장 강한 점 (같으면 지표 순서 앞)
+        ranks = _axis_ranks(batters)
+        order = [b["player_id"] for b in sorted([b for b in batters if b["s"].get(AXES[axis]) is not None],
+                                                  key=lambda b: (ranks[b["player_id"]][axis], b["player_id"]))]
+        by_id = {b["player_id"]: b for b in batters}
+        picked = _neighbors(order, player_id, limit)
+        scenes = {r["player_id"]: {**scene_of(r), "pa_id": r["pa_id"], "date": r["date"], "hr_seq": r["hr_seq"]}
+                  for r in run(Q_LATEST_HR_SCENES, ids=picked, season=season, confirmed=CONFIRMED)}
+        value_key, value_label = LEADER_VALUE[axis]
+        players = [{"player_id": pid, "name": by_id[pid]["name"], "team": by_id[pid]["team"],
+                    "rank": ranks[pid][axis], "value": _round(by_id[pid]["s"].get(value_key), 3),
+                    "percentile": int(by_id[pid]["s"][AXES[axis]]),
+                    "ops": _round(by_id[pid]["s"].get("ops"), 3), "hr": by_id[pid]["s"].get("hr"),
+                    "scene": scenes.get(pid)} for pid in picked]
+        return {"season": season, "as": as_, "axis": axis, "label": BAT_AXIS_LABEL[axis], "value_label": value_label,
+                "my_rank": ranks[player_id][axis], "group_size": len(batters), "players": players}
+
+    if not me_p:
+        return {**empty, "reason": "리그 비교 대상 아님(이닝 부족)"}
+    role = me_p["s"].get("role")
+    group = [r for r in pitchers if r["s"].get("role") == role]
+    pct = {k: me_p["s"].get(a[4]) for k, a in P_AXES.items() if me_p["s"].get(a[4]) is not None}
+    axis = max(pct, key=lambda k: pct[k])
+    label, prop, metric, reverse, pkey = P_AXES[axis]
+    ranks = _pitch_axis_ranks(group)
+    order = [r["player_id"] for r in sorted([r for r in group if r["s"].get(pkey) is not None],
+                                              key=lambda r: (ranks[r["player_id"]][axis], r["player_id"]))]
+    by_id = {r["player_id"]: r for r in group}
+    picked = _neighbors(order, player_id, limit)
+    scenes = {r["player_id"]: {**scene_of(r), "outing_id": r["outing_id"], "date": r["date"], "line": r["line"]}
+              for r in run(Q_LATEST_OUTING_SCENES, ids=picked, season=season, confirmed=CONFIRMED)}
+    players = [{"player_id": pid, "name": by_id[pid]["name"], "team": by_id[pid]["team"],
+                "rank": ranks[pid][axis], "value": _round(by_id[pid]["s"].get(prop), 4),
+                "percentile": int(by_id[pid]["s"][pkey]),
+                "whip": _round(by_id[pid]["s"].get("whip"), 2), "so": by_id[pid]["s"].get("so"),
+                "scene": scenes.get(pid)} for pid in picked]
+    return {"season": season, "as": as_, "axis": axis, "label": label, "metric": metric, "reverse": reverse,
+            "role": role, "my_rank": ranks[player_id][axis], "group_size": len(group), "players": players}
