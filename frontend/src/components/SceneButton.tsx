@@ -12,7 +12,7 @@ export default function SceneButton({ clip, label, onPlay }: { clip: Clip; label
       <button
         onClick={onPlay}
         aria-label={`${label} 재생`}
-        className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-xs font-bold text-black hover:brightness-95"
+        className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-xs font-bold text-white hover:brightness-95"
       >
         ▶
       </button>

@@ -1,10 +1,12 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { ApiError, getPlayer, getPlayerSeasons, qk } from "@/lib/api";
 import { teamColor } from "@/lib/constants";
+import { pushRecentPlayer } from "@/lib/local";
 import Summary from "@/components/player/Summary";
 import GamesTab from "@/components/player/GamesTab";
 import PitcherSummary from "@/components/player/PitcherSummary";
@@ -54,6 +56,12 @@ export default function PlayerView() {
     queryFn: ({ signal }) => getPlayerSeasons(id, signal),
     enabled: id !== "",
   });
+
+  // 메인 「최근 본 선수」 (이 브라우저에만 저장)
+  const loaded = player.data;
+  useEffect(() => {
+    if (loaded) pushRecentPlayer({ id, name: loaded.name, team: loaded.team ?? null });
+  }, [id, loaded]);
 
   if (!id) return <Notice>선수를 검색해 주세요.</Notice>;
   if (player.isPending) return <p className="text-muted">불러오는 중…</p>;

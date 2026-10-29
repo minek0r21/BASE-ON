@@ -190,7 +190,7 @@ function GamePas({
             {p.has_video && (
               <button
                 onClick={() => playPa(p.pa_id, label)}
-                className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-xs font-bold text-black"
+                className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-xs font-bold text-white"
                 aria-label={`${label} 장면 재생`}
               >
                 ▶

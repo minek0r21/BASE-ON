@@ -1,44 +1,29 @@
 import type { Metadata } from "next";
-import Link from "next/link";
-import SearchBox from "@/components/SearchBox";
+import { Big_Shoulders, Geist, Noto_Sans_KR } from "next/font/google";
+import Footer from "@/components/layout/Footer";
+import Nav from "@/components/layout/Nav";
 import Providers from "./providers";
 import "./globals.css";
 
+// 글꼴 (Figma 2.0): 본문 Noto Sans KR · 큰 숫자 Big Shoulders Display · 표 숫자 Geist. 빌드 때 받아 같이 배포한다
+const noto = Noto_Sans_KR({ weight: ["400", "500", "700", "900"], subsets: ["latin"], variable: "--font-noto", display: "swap" });
+const shoulders = Big_Shoulders({ weight: ["800"], subsets: ["latin"], variable: "--font-big-shoulders", display: "swap" });
+const geist = Geist({ weight: ["500", "600", "700"], subsets: ["latin"], variable: "--font-geist", display: "swap" });
+
 export const metadata: Metadata = {
   title: "BASE:ON",
-  description: "KBO 타자 기록과 장면을 한 번에",
+  description: "기록에서 장면으로. KBO 입문 팬을 위한 기록 해석 · 장면 연결 서비스",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ko" className="h-full antialiased">
+    <html lang="ko" className={`h-full antialiased ${noto.variable} ${shoulders.variable} ${geist.variable}`}>
       <body className="flex min-h-full flex-col">
         <Providers>
-          <header className="sticky top-0 z-20 border-b border-line bg-surface/90 backdrop-blur">
-            <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
-              <Link href="/" className="shrink-0 text-lg font-extrabold tracking-tight">
-                BASE<span className="text-accent">:</span>ON
-              </Link>
-              <div className="min-w-0 flex-1">
-                <SearchBox />
-              </div>
-              {/* 기준일: API-20(/meta) 생기면 여기에 (설계 9장 공통) */}
-            </div>
-          </header>
-
-          <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>
-
-          {/* 출처 고지 (NFR-02) */}
-          <footer className="border-t border-line py-6 text-xs leading-relaxed text-muted">
-            <div className="mx-auto max-w-5xl px-4">
-              <p>
-                경기 기록: Hugging Face slothman3878/kbo_playbyplay (CC BY 4.0 · 리비전 6afc8af 고정) · 원천 정보: NAVER
-                Sports 문자중계 (원문은 저장·공개하지 않음)
-              </p>
-              <p>선수 프로필 일부: 위키백과 (CC BY-SA 4.0) · 영상: KBO·구단 공식 YouTube 임베드</p>
-              <p>BASE:ON은 KBO·NAVER·각 구단의 공식 서비스가 아니며 제휴 관계가 없는 비상업 수업 프로젝트입니다.</p>
-            </div>
-          </footer>
+          <Nav />
+          {/* 화면마다 폭이 달라서(메인은 히어로가 화면 끝까지) 폭은 각 화면이 정한다 */}
+          <main className="flex-1">{children}</main>
+          <Footer />
         </Providers>
       </body>
     </html>

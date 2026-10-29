@@ -29,7 +29,7 @@ function SeriesCard({ s, onPlay }: { s: PostSeries; onPlay: (clip: Clip, label: 
                 <div className="relative aspect-video overflow-hidden rounded-lg bg-bg">
                   {/* eslint-disable-next-line @next/next/no-img-element -- 정적 내보내기: next/image 최적화 없음, 썸네일 핫링크(설계 8-2) */}
                   <img src={thumbnailUrl(c.clip.videoId)} alt="" className="h-full w-full object-cover transition group-hover:scale-[1.02]" />
-                  <span className="absolute bottom-1.5 left-1.5 rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-black">
+                  <span className="absolute bottom-1.5 left-1.5 rounded-full bg-accent px-2 py-0.5 text-xs font-bold text-white">
                     {c.clip.precision === "scene" ? "▶" : "▶ 이닝"}
                   </span>
                 </div>

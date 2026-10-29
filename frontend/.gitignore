@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# 선수 사진 · 구단 엠블럼 (scripts/sync_media.py로 복사, 저장소에 넣지 않음)
+/public/media/

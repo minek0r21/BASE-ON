@@ -731,6 +731,12 @@ export const qk = {
   reviewStats: () => ["reviewStats"] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,
+  meta: () => ["meta"] as const,
+  day: (date: string | null) => ["day", date] as const,
+  leaders: (role: "batter" | "pitcher") => ["leaders", role] as const,
+  topBatters: () => ["topBatters"] as const,
+  topPitchers: () => ["topPitchers"] as const,
+  standings: () => ["standings"] as const,
 };
 
 // ------------------------------------------------------------------ API-25 포스트시즌 코너 · API-15 최근 홈런 (메인)
@@ -802,3 +808,95 @@ export type RecentHrs = { season: number; includes_postseason: boolean; home_run
 export async function getRecentHomeRuns(limit = 9, signal?: AbortSignal): Promise<RecentHrs> {
   return get<RecentHrs>("/home-runs", { limit }, signal);
 }
+
+
+// ------------------------------------------------------------------ 메인 2.0 (API-20 · 14 · 18 · 29 · 16 · 26 · 13)
+
+/** API-20 기록 기준일 — 내비 「기록 7.26 기준」 */
+export type Meta = { data_as_of: string | null; season: number | null };
+export const getMeta = (signal?: AbortSignal) => get<Meta>("/meta", {}, signal);
+
+type RawSceneClip = RawClip & { scene_type?: string | null; tags?: string[] };
+type RawDayGame = GameTag & {
+  game_pk: string;
+  dh_no: number;
+  innings: number | null;
+  away: { team: string; score: number; result: "W" | "L" | "D" };
+  home: { team: string; score: number; result: "W" | "L" | "D" };
+  home_runs: { pa_id: string; inning: number; inning_half: "초" | "말"; runs: number; hr_seq: number | null; hr_label: string | null;
+               batter: { player_id: string; name: string }; scene: RawSceneClip | null }[];
+  pitcher_scenes: { outing_id: string; pitcher: { player_id: string; name: string }; team: string; role: "선발" | "구원";
+                    line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number }; scene: RawSceneClip }[];
+  highlight: RawHighlight;
+};
+type RawDay = { date: string; prev_date: string | null; next_date: string | null;
+                scene_counts: { home_runs: number; home_run_scenes: number; pitcher_scenes: number }; games: RawDayGame[] };
+
+/** 그날 장면 한 개 — 홈런(타자) 또는 등판(투수). 제목은 우리 기록으로 만든다 (장면.md · 코드 outingLine) */
+export type DayScene = {
+  kind: "home_run" | "outing";
+  gamePk: string;
+  player: { player_id: string; name: string };
+  team: string;
+  clip: Clip;
+  hrSeq?: number | null;
+  runs?: number;
+  inning?: number;
+  inningHalf?: "초" | "말";
+  role?: "선발" | "구원";
+  line?: OutingLine;
+};
+export type DayGame = Omit<RawDayGame, "home_runs" | "pitcher_scenes" | "highlight"> & {
+  highlight: Clip | null;
+  scenes: DayScene[]; // 등판 장면(선발 먼저) → 홈런 장면(시즌 몇 호가 큰 순)
+};
+export type Day = Omit<RawDay, "games"> & { games: DayGame[] };
+
+/** API-14 날짜별 경기 · 그날 장면. date를 비우면 데이터의 마지막 경기일 */
+export async function getDay(date: string | null, signal?: AbortSignal): Promise<Day> {
+  const r = await get<RawDay>("/games", { date }, signal);
+  return {
+    ...r,
+    games: r.games.map((g) => {
+      const scenes: DayScene[] = [
+        ...g.pitcher_scenes.map((p): DayScene => ({
+          kind: "outing", gamePk: g.game_pk, player: p.pitcher, team: p.team, clip: rawClip(p.scene), role: p.role, line: p.line,
+        })),
+        ...g.home_runs.filter((h) => h.scene).sort((a, b) => (b.hr_seq ?? 0) - (a.hr_seq ?? 0)).map((h): DayScene => ({
+          kind: "home_run", gamePk: g.game_pk, player: h.batter, team: h.inning_half === "초" ? g.away.team : g.home.team,
+          clip: rawClip(h.scene!), hrSeq: h.hr_seq, runs: h.runs, inning: h.inning, inningHalf: h.inning_half,
+        })),
+      ];
+      const { home_runs, pitcher_scenes, ...rest } = g; // eslint-disable-line @typescript-eslint/no-unused-vars
+      return { ...rest, highlight: g.highlight ? toClip(g.highlight) : null, scenes };
+    }),
+  };
+}
+
+/** 메인 능력 카드 한 장 — 타자(API-18) · 투수(API-29) 같은 모양으로 맞춘다 */
+export type LeaderPlayer = { rank: number; player_id: string; name: string; team: string | null; value: number | null; percentile: number };
+export type LeaderCard = { key: string; players: LeaderPlayer[] };
+export type Leaders = { season: number; groupSize: number; cards: LeaderCard[] };
+
+export async function getLeaders(role: "batter" | "pitcher", signal?: AbortSignal): Promise<Leaders> {
+  if (role === "batter") {
+    const r = await get<{ season: number; group_size: number; leaders: Record<string, { players: LeaderPlayer[] }> }>("/leaders", { limit: 3 }, signal);
+    return { season: r.season, groupSize: r.group_size, cards: Object.entries(r.leaders).map(([key, v]) => ({ key, players: v.players })) };
+  }
+  const r = await get<{ season: number; group_size: number; leaders: Record<string, { players: LeaderPlayer[] }> }>("/pitchers/leaders", { limit: 3 }, signal);
+  return { season: r.season, groupSize: r.group_size, cards: Object.entries(r.leaders).map(([key, v]) => ({ key, players: v.players })) };
+}
+
+/** 「지금 가장 잘하는 선수」 — 타자 OPS 순(API-16) · 선발 WHIP 순(API-26) 5명 */
+export type TopBatter = { rank: number; player_id: string; name: string; team: string | null; position: string | null;
+                          back_number: string | number | null; ops: number | null; hr: number | null; scene_count: number };
+export type TopPitcher = { rank: number; player_id: string; name: string; team: string | null; back_number: string | number | null;
+                           whip: number | null; so: number | null; scene_count: number };
+export const getTopBatters = (signal?: AbortSignal) =>
+  get<{ season: number; group_size: number; batters: TopBatter[] }>("/batters", { sort: "ops", limit: 5 }, signal);
+export const getTopPitchers = (signal?: AbortSignal) =>
+  get<{ season: number; group_size: number; pitchers: TopPitcher[] }>("/pitchers", { role: "starter", qualified: true, sort: "whip", limit: 5 }, signal);
+
+/** API-13 팀 순위 */
+export type Standing = { team_id: string; team: string; games: number; w: number; l: number; d: number; pct: number; rank: number; gb: number };
+export const getStandings = (signal?: AbortSignal) => get<{ season: number; teams: Standing[] }>("/standings", {}, signal);
