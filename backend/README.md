@@ -66,7 +66,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 14 | GET /games?date= | 날짜별 경기 일정 · 점수판 · 그날 장면(홈런 `scene`, 등판 `pitcher_scenes`, `scene_counts`) |
 | 15 | GET /home-runs?season=&limit=&video_only= | 최근 홈런 장면 (기본: 확정 장면이 있는 홈런만) |
 | 16 | GET /batters?season=&team=&sort=&qualified=&limit= | 타자 순위표 (`scene_count`: 확정 장면 수) |
-| 17 | GET /players/{id}/matchups?season=&min_pa=&as= | 맞대결 탭 목록 (`as=pitcher`면 이 투수가 상대한 타자) |
+| 17 | GET /players/{id}/matchups?season=&min_pa=&as= | 맞대결 탭 목록 (`as=pitcher`면 이 투수가 상대한 타자) · 정규시즌 누적, 팀은 지금 소속, 「강했어요 · 약했어요」(`tag`, 15타석 이상 중 상대 타율 최고 · 최저) |
 | 18 | GET /leaders?season=&limit= | 지표별 상위 타자 |
 | 19 | GET /players/{id}/seasons | 시즌 기록 탭 (타격 · 투구) |
 | 20 | GET /meta | 기록 기준일 |
@@ -79,6 +79,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 30 | GET /outings/{outing_id}/plate-appearances | 등판 상세: 등판 요약 + 이닝별 상대 타자(결과 · 범례 분류 · 투구 수 · 볼카운트 · 주자 · 아웃) |
 | 31 | GET /players/{id}/similar?season=&as=&limit= | 비슷한 선수: 가장 강한 지표 순위에서 바로 위 선수 먼저, 모자라면 아래 (카드 대표 장면 포함) |
 | 32 | GET /players/{id}/pitching-form?season= | 요즘 투구감: 등판마다 최근 10등판 WHIP, 시즌 · 비교 대상 평균, 판정(.15 기준), 최근 10등판 기간 |
+| 33 | GET /teams/{team}/scenes?season=&limit= | 팀의 최근 장면: 그 팀 타자 홈런 장면 + 투수 등판 장면, 최신순 · 시즌 장면 수 |
 
 **장면 · 검수**
 

@@ -7,6 +7,7 @@
   28. GET /standings/history?season=                           순위 변동 (달마다 마지막 날 순위, 시안 「순위 변동 보기」)
   29. GET /pitchers/leaders?season=&role=&limit=               투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」)
   31. GET /players/{player_id}/similar?season=&as=&limit=      가장 강한 지표가 비슷한 선수 (03 · 03b 아래)
+  33. GET /teams/{team}/scenes?season=&limit=                  팀의 최근 장면 (06 팀 「KIA의 최근 장면」)
 """
 from typing import Literal
 
@@ -500,3 +501,74 @@ def get_similar(  # API 31: 시안 03 「파워가 비슷한 타자」 · 03b �
                 "scene": scenes.get(pid)} for pid in picked]
     return {"season": season, "as": as_, "axis": axis, "label": label, "metric": metric, "reverse": reverse,
             "role": role, "my_rank": ranks[player_id][axis], "group_size": len(group), "players": players}
+
+
+# ------------------------------------------------------------------ 33. 팀의 최근 장면
+# 그 팀 타자의 홈런 장면 + 그 팀 투수의 등판 장면 (잘한 장면만 — 장면.md S8). 타자 팀은 초 = 원정, 말 = 홈
+Q_TEAM_HR_SCENES = """
+MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance {season: $season, game_type: 'regular', events: 'home_run'})-[:PART_OF]->(g:Game)
+MATCH (g)-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team)
+WITH b, pa, g, CASE pa.inning_half WHEN '초' THEN away.name ELSE home.name END AS team,
+     CASE pa.inning_half WHEN '초' THEN home.name ELSE away.name END AS opponent
+WHERE team = $team
+CALL (pa) {
+  MATCH (pa)-[m:MATCHED_TO]->(v:VideoLink)
+  WHERE m.status IN $confirmed AND coalesce(m.precision, 'scene') <> 'game' AND coalesce(v.playable, true)
+  RETURN v, m ORDER BY m.rank, v.published_at LIMIT 1
+}
+RETURN 'home_run' AS kind, toString(pa.date) AS date, g.dh_no AS dh_no, pa.at_bat_number AS seq, opponent,
+       b.player_id AS player_id, b.name AS name, pa.pa_id AS pa_id, pa.hr_seq AS hr_seq, pa.inning AS inning,
+       pa.inning_half AS inning_half, pa.runs_scored AS runs, null AS outing_id, null AS line, null AS role,
+       v.video_id AS video_id, v.title AS title, v.duration_sec AS duration_sec,
+       m.start_sec AS start_sec, m.end_sec AS end_sec, coalesce(m.precision, 'scene') AS precision,
+       m.scene_type AS scene_type, coalesce(m.tags, []) AS tags
+"""
+
+Q_TEAM_OUTING_SCENES = """
+MATCH (t:Team {name: $team})
+MATCH (p:Player)-[:PITCHED_GAME]->(o:Outing {season: $season, game_type: 'regular', team_id: t.team_id})-[:PART_OF]->(g:Game)
+MATCH (g)-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team)
+CALL (o) {
+  MATCH (o)-[m:MATCHED_TO]->(v:VideoLink)
+  WHERE m.status IN $confirmed AND coalesce(v.playable, true)
+  RETURN v, m ORDER BY m.rank LIMIT 1
+}
+RETURN 'outing' AS kind, o.date AS date, g.dh_no AS dh_no, 0 AS seq,
+       CASE WHEN home.team_id = t.team_id THEN away.name ELSE home.name END AS opponent,
+       p.player_id AS player_id, p.name AS name, null AS pa_id, null AS hr_seq, null AS inning, null AS inning_half,
+       null AS runs, o.outing_id AS outing_id, o {.outs, .so, .r, .h} AS line,
+       CASE WHEN o.starter THEN '선발' ELSE '구원' END AS role,
+       v.video_id AS video_id, v.title AS title, v.duration_sec AS duration_sec,
+       m.start_sec AS start_sec, m.end_sec AS end_sec, m.precision AS precision, m.scene_type AS scene_type,
+       coalesce(m.tags, []) AS tags
+"""
+
+Q_TEAM_EXISTS = "MATCH (t:Team {name: $team}) RETURN t.team_id AS id"
+
+
+@router.get("/teams/{team}/scenes", summary="33. 팀의 최근 장면 (06 팀)")
+def get_team_scenes(  # API 33: 그 팀 선수들의 홈런 · 등판 장면, 최신순 + 시즌 장면 수
+    team: str,
+    season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
+    limit: int = Query(12, ge=1, le=100),
+):
+    if not run(Q_TEAM_EXISTS, team=team):
+        raise ApiError(404, "TEAM_NOT_FOUND", "팀을 찾을 수 없습니다")
+    if season is None:
+        season = run(Q_LATEST_STAT_SEASON)[0]["s"]
+    hrs = run(Q_TEAM_HR_SCENES, team=team, season=season, confirmed=CONFIRMED)
+    outs = run(Q_TEAM_OUTING_SCENES, team=team, season=season, confirmed=CONFIRMED)
+    rows = sorted(hrs + outs, key=lambda r: (r["date"], r["dh_no"] or 0, r["seq"] or 0), reverse=True)
+    scenes = []
+    for r in rows[:limit]:
+        item = {"kind": r["kind"], "date": r["date"], "opponent": r["opponent"],
+                "player": {"player_id": r["player_id"], "name": r["name"]}, "scene": scene_of(r)}
+        if r["kind"] == "home_run":
+            item.update({"pa_id": r["pa_id"], "hr_seq": r["hr_seq"], "inning": r["inning"],
+                         "inning_half": r["inning_half"], "runs": r["runs"]})
+        else:
+            item.update({"outing_id": r["outing_id"], "role": r["role"], "line": r["line"]})  # 「6이닝 8K 무실점」 재료
+        scenes.append(item)
+    return {"team": team, "season": season,
+            "counts": {"home_run_scenes": len(hrs), "pitcher_scenes": len(outs), "total": len(hrs) + len(outs)},
+            "scenes": scenes}

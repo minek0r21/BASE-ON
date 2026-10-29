@@ -61,11 +61,11 @@ def get_matchup(  # API 6: 두 선수의 맞대결 요약 + 타석 목록 (최�
 # ------------------------------------------------------------------ 17. 상대한 투수 전체
 Q_VS_PITCHERS = """
 MATCH (b:Player {player_id: $id})-[:BATTED_IN]->(pa:PlateAppearance)<-[:PITCHED_IN]-(pit:Player)
-WHERE $season IS NULL OR pa.season = $season
-WITH pit, collect(pa.events) AS events, max(pa.season) AS last_season
+WHERE ($season IS NULL OR pa.season = $season) AND pa.game_type = 'regular'   // 정규시즌만 (시안 「정규시즌 누적」)
+WITH pit, collect(pa.events) AS events
 WHERE size(events) >= $min_pa
-OPTIONAL MATCH (pit)-[f:PLAYS_FOR {season: last_season}]->(t:Team)
-WITH pit, events, t ORDER BY f.last_date DESC
+OPTIONAL MATCH (pit)-[f:PLAYS_FOR]->(t:Team)                                    // 팀은 지금(가장 최근) 소속
+WITH pit, events, t ORDER BY f.season DESC, f.last_date DESC
 WITH pit, events, head(collect(t.name)) AS team
 RETURN pit.player_id AS player_id, pit.name AS name, team, events
 ORDER BY size(events) DESC, name
@@ -73,11 +73,11 @@ ORDER BY size(events) DESC, name
 
 Q_VS_BATTERS = """
 MATCH (pit:Player {player_id: $id})-[:PITCHED_IN]->(pa:PlateAppearance)<-[:BATTED_IN]-(b:Player)
-WHERE $season IS NULL OR pa.season = $season
-WITH b, collect(pa.events) AS events, max(pa.season) AS last_season
+WHERE ($season IS NULL OR pa.season = $season) AND pa.game_type = 'regular'
+WITH b, collect(pa.events) AS events
 WHERE size(events) >= $min_pa
-OPTIONAL MATCH (b)-[f:PLAYS_FOR {season: last_season}]->(t:Team)
-WITH b, events, t ORDER BY f.last_date DESC
+OPTIONAL MATCH (b)-[f:PLAYS_FOR]->(t:Team)
+WITH b, events, t ORDER BY f.season DESC, f.last_date DESC
 WITH b, events, head(collect(t.name)) AS team
 RETURN b.player_id AS player_id, b.name AS name, team, events
 ORDER BY size(events) DESC, name
@@ -86,12 +86,24 @@ ORDER BY size(events) DESC, name
 Q_EXISTS = "MATCH (p:Player {player_id: $id}) RETURN p.name AS name"
 
 
+def _tag(rows: list[dict], tag_min_pa: int, pitcher_view: bool) -> tuple[str | None, str | None]:
+    """(강했던 상대, 약했던 상대) ID. tag_min_pa타석 이상 상대 중 상대 타율이 가장 높은 / 낮은 선수.
+    타자 화면은 타율이 높으면 강했던 상대, 투수 화면은 반대(상대 타율이 낮으면 강했던 상대). 같으면 타석이 많은 쪽"""
+    pool = [r for r in rows if r["pa"] >= tag_min_pa and r["avg"] is not None]
+    if len(pool) < 2:
+        return None, None
+    hi = max(pool, key=lambda r: (r["avg"], r["pa"]))["player_id"]
+    lo = min(pool, key=lambda r: (r["avg"], -r["pa"]))["player_id"]
+    return (lo, hi) if pitcher_view else (hi, lo)
+
+
 @router.get("/players/{player_id}/matchups", summary="17. 이 타자가 상대한 투수 목록")
 def get_vs_pitchers(  # API 17: 타석 많은 투수 순. 투수를 고르면 API 6으로 자세히
     player_id: str,
     season: int | None = Query(None, description="생략하면 전체 시즌 합계"),
     min_pa: int = Query(10, ge=1, description="이 타석 수 이상 상대한 투수만 (시안 기준 10)"),
     as_: Literal["batter", "pitcher"] = Query("batter", alias="as", description="batter: 이 타자가 상대한 투수 / pitcher: 이 투수가 상대한 타자"),
+    tag_min_pa: int = Query(15, ge=1, description="「강했어요 · 약했어요」를 붙일 최소 타석 (작은 표본 제외)"),
 ):
     who = run(Q_EXISTS, id=player_id)
     if not who:
@@ -103,17 +115,27 @@ def get_vs_pitchers(  # API 17: 타석 많은 투수 순. 투수를 고르면 AP
             line = batting_line(r["events"])
             line["avg"] = avg(line["h"], line["ab"])
             batters.append({"player_id": r["player_id"], "name": r["name"], "team": r["team"], **line})
-        return {"pitcher": {"player_id": player_id, "name": who[0]["name"]}, "season": season, "min_pa": min_pa, "batters": batters}
+        strong, weak = _tag(batters, tag_min_pa, pitcher_view=True)
+        for b in batters:
+            b["tag"] = "strong" if b["player_id"] == strong else "weak" if b["player_id"] == weak else None
+        return {"pitcher": {"player_id": player_id, "name": who[0]["name"]}, "season": season, "min_pa": min_pa,
+                "tag_min_pa": tag_min_pa, "strongest": strong, "weakest": weak, "batters": batters}
 
     pitchers = []
     for r in run(Q_VS_PITCHERS, id=player_id, season=season, min_pa=min_pa):
         line = batting_line(r["events"])
         line["avg"] = avg(line["h"], line["ab"])
         pitchers.append({"player_id": r["player_id"], "name": r["name"], "team": r["team"], **line})
+    strong, weak = _tag(pitchers, tag_min_pa, pitcher_view=False)
+    for x in pitchers:
+        x["tag"] = "strong" if x["player_id"] == strong else "weak" if x["player_id"] == weak else None  # 강했어요 · 약했어요
 
     return {
         "batter": {"player_id": player_id, "name": who[0]["name"]},
         "season": season,
         "min_pa": min_pa,
+        "tag_min_pa": tag_min_pa,
+        "strongest": strong,   # 가장 강했던 상대 ID (없으면 null)
+        "weakest": weak,       # 가장 약했던 상대 ID
         "pitchers": pitchers,
     }
