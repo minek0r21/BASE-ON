@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { Fragment } from "react";
 import { TeamLogo } from "@/components/ui/Media";
 import type { Day } from "@/lib/api";
 import { md } from "@/lib/format";
 import { weekday } from "./common";
 
-/** 점수 한 줄 (메인 a): 그날 경기 점수만. 「일정 전체 ›」는 08 일정 화면을 옮기면 연결한다 */
+/** 점수 한 줄 (메인 a): 그날 경기 점수만. 「일정 전체 ›」는 08 일정의 같은 날짜로 */
 export default function ScoreStrip({ day, isLast }: { day: Day; isLast: boolean }) {
   return (
     <div className="flex flex-wrap items-center gap-y-3 rounded-[20px] border border-line bg-surface px-6 py-4">
@@ -33,9 +34,9 @@ export default function ScoreStrip({ day, isLast }: { day: Day; isLast: boolean 
           ))}
         </ul>
       )}
-      <span className="shrink-0 cursor-not-allowed text-sm text-muted" title="일정 화면 준비 중">
+      <Link href={`/schedule/?date=${day.date}`} className="shrink-0 text-sm font-medium text-fg-2 hover:underline">
         일정 전체 ›
-      </span>
+      </Link>
     </div>
   );
 }

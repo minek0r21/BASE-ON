@@ -6,8 +6,10 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { Wrap, clipLength, sceneTitle } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
-import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
+import InlinePlayer from "@/components/InlinePlayer";
+import { thumbnailUrl } from "@/components/ScenePlayer";
 import WeekStrip from "@/components/schedule/WeekStrip";
+import { Chip, Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo, mmss } from "@/components/ui/Media";
 import { getDay, getMeta, qk, type DayGame, type DayScene } from "@/lib/api";
 import { longDate } from "@/lib/dates";
@@ -160,28 +162,15 @@ function GameCard({ game: g, scenes, mine, playing, onPlay }: {
             <PlayGlyph size={7} /> 이 경기 하이라이트 {mmss(clipLength(g.highlight))}
           </button>
         )}
-        {g.noScene.length > 0 && (
+        {g.homeRuns.some((h) => !h.clip) && (
           <p className="mt-3 text-xs text-muted">
-            영상 없음 · {g.noScene.map((h) => `${h.name}${h.hrSeq ? ` ${h.hrSeq}호` : ""}`).join(", ")}
+            영상 없음 · {g.homeRuns.filter((h) => !h.clip).map((h) => `${h.name}${h.hrSeq ? ` ${h.hrSeq}호` : ""}`).join(", ")}
           </p>
         )}
       </div>
 
       <div className="min-w-0">
-        {playing && (
-          <div className="mb-5 rounded-2xl bg-night p-4 text-white">
-            <div className="mx-auto aspect-video w-full max-w-[720px] overflow-hidden rounded-xl">
-              <ScenePlayer bare clip={playing.clip} label={playing.title} />
-            </div>
-            <div className="mx-auto mt-3 flex max-w-[720px] items-center justify-between gap-4">
-              <p>
-                <span className="text-[17px] font-bold">{playing.title}</span>
-                {playing.sub && <span className="ml-2 text-[13px] text-[#a1a1a8]">{playing.sub}</span>}
-              </p>
-              <button onClick={() => onPlay(null)} className="text-[13px] font-bold text-[#d3d4d8] hover:underline">닫기</button>
-            </div>
-          </div>
-        )}
+        {playing && <InlinePlayer playing={playing} onClose={() => onPlay(null)} className="mb-5" />}
         {scenes.length === 0 ? (
           <p className="py-6 text-sm text-fg-2">이 경기는 확정된 장면이 아직 없어요</p>
         ) : (
@@ -215,30 +204,5 @@ function GameCard({ game: g, scenes, mine, playing, onPlay }: {
         )}
       </div>
     </li>
-  );
-}
-
-function Chip({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      aria-pressed={on}
-      className="flex h-9 items-center gap-1.5 rounded-full border border-line bg-surface px-4 text-[13px] font-medium transition-colors duration-[120ms] hover:bg-surface-2 aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:font-bold aria-pressed:text-white"
-    >
-      {children}
-    </button>
-  );
-}
-
-function Empty({ text, action }: { text: string; action?: { label: string; onClick: () => void } }) {
-  return (
-    <div className="mt-8 flex flex-col items-center gap-4 rounded-3xl border border-line bg-surface py-16 text-sm text-fg-2">
-      {text}
-      {action && (
-        <button onClick={action.onClick} className="rounded-xl bg-surface-2 px-4 py-2 font-bold text-fg hover:bg-surface-3">
-          {action.label}
-        </button>
-      )}
-    </div>
   );
 }
