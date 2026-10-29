@@ -61,11 +61,17 @@ const POLL_MS = 250;
 
 export const thumbnailUrl = (videoId: string) => `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
 
-export default function ScenePlayer({ clip, label, onClose }: { clip: Clip; label: string; onClose: () => void }) {
+export default function ScenePlayer({ clip, label, onClose, bare = false }: {
+  clip: Clip;
+  label: string;
+  onClose?: () => void;
+  /** 화면 안 그 자리에서 바로 재생 (메인 「그날 장면」): 머리줄 · 설명 없이 영상 칸만, 누른 뒤라 바로 시작 */
+  bare?: boolean;
+}) {
   const hostRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<YTPlayer | null>(null);
   const clipRef = useRef(clip);
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(bare);
   // 오류는 영상 ID와 묶어 둔다 → 다른 장면으로 바꾸면 저절로 사라진다
   const [error, setError] = useState<{ videoId: string; message: string } | null>(null);
   const shownError = error?.videoId === clip.videoId ? error.message : null;
@@ -136,11 +142,22 @@ export default function ScenePlayer({ clip, label, onClose }: { clip: Clip; labe
   // 닫을 때 플레이어 정리
   useEffect(() => () => playerRef.current?.destroy(), []);
 
+  if (bare) {
+    return (
+      <div className="relative h-full w-full bg-black" aria-label={`${label} 재생 중`}>
+        <div ref={hostRef} className="absolute inset-0 h-full w-full [&>*]:h-full [&>*]:w-full" />
+        {shownError && (
+          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4 text-center text-sm text-white">{shownError}</div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <section className="overflow-hidden rounded-xl border border-line bg-surface" aria-label="장면 재생">
       <header className="flex items-center justify-between gap-2 px-4 py-2 text-sm">
         <span className="min-w-0 truncate font-semibold">{label}</span>
-        <button onClick={onClose} className="shrink-0 rounded px-2 py-1 text-muted hover:bg-bg" aria-label="닫기">
+        <button onClick={() => onClose?.()} className="shrink-0 rounded px-2 py-1 text-muted hover:bg-bg" aria-label="닫기">
           닫기
         </button>
       </header>

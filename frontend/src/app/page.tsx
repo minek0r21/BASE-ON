@@ -1,10 +1,9 @@
 "use client";
 
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
-import ScenePlayer from "@/components/ScenePlayer";
+import { useState } from "react";
 import AbilityCards from "@/components/home/AbilityCards";
-import DayScenes from "@/components/home/DayScenes";
+import DayScenes, { type Playing } from "@/components/home/DayScenes";
 import Hero from "@/components/home/Hero";
 import PostseasonCorner from "@/components/home/PostseasonCorner";
 import ScoreStrip from "@/components/home/ScoreStrip";
@@ -21,8 +20,13 @@ import { useMyTeam } from "@/lib/local";
  * 날짜는 기록 기준일(마지막 경기일). 같은 장면을 한 화면에 두 번 넣지 않는다
  */
 export default function Home() {
-  const [playing, setPlaying] = useState<{ clip: Clip; label: string } | null>(null);
-  const onPlay = (clip: Clip, label: string) => setPlaying({ clip, label });
+  // 장면은 「그날 장면」 카드의 큰 장면 자리에서 바로 재생한다 (별도 창 없음). 다른 곳에서 누르면 그 자리로 스크롤
+  const [playing, setPlaying] = useState<Playing | null>(null);
+  const play = (p: Playing) => {
+    setPlaying(p);
+    document.getElementById("day-scenes")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const onPlay = (clip: Clip, title: string) => play({ clip, title, sub: clip.precision === "game" ? "경기 하이라이트 · 처음부터" : undefined });
   const [myTeam] = useMyTeam();
 
   const meta = useQuery({ queryKey: qk.meta(), queryFn: ({ signal }) => getMeta(signal) });
@@ -42,14 +46,6 @@ export default function Home() {
     ...(topP.data?.pitchers ?? []).slice(0, 2).map((p) => ({ id: p.player_id, name: p.name, team: p.team })),
   ];
 
-  // 장면 재생 레이어: Esc로 닫기
-  useEffect(() => {
-    if (!playing) return;
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && setPlaying(null);
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [playing]);
-
   return (
     <>
       <Hero day={day.data} recommended={recommended} onPlay={onPlay} />
@@ -63,7 +59,7 @@ export default function Home() {
           ) : day.data ? (
             <>
               <ScoreStrip day={day.data} isLast={day.data.date === asOf} />
-              <DayScenes day={day.data} myTeam={myTeam} onPlay={onPlay} />
+              <DayScenes day={day.data} myTeam={myTeam} playing={playing} onPlay={play} />
             </>
           ) : (
             <div className="h-[560px] animate-pulse rounded-[28px] bg-surface-2" />
@@ -84,14 +80,6 @@ export default function Home() {
 
         <TeamRow teams={standings.data?.teams} sub={[season && `${season} 정규시즌 순위`, asOfMd && `${asOfMd} 기준`].filter(Boolean).join(" · ")} />
       </Wrap>
-
-      {playing && (
-        <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/70 p-4" onClick={() => setPlaying(null)} role="dialog" aria-modal="true" aria-label="장면 재생">
-          <div className="w-full max-w-3xl" onClick={(e) => e.stopPropagation()}>
-            <ScenePlayer clip={playing.clip} label={playing.label} onClose={() => setPlaying(null)} />
-          </div>
-        </div>
-      )}
     </>
   );
 }

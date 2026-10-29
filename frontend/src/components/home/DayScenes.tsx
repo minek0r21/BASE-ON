@@ -3,7 +3,7 @@
 /* eslint-disable @next/next/no-img-element -- 정적 내보내기: 썸네일 핫링크(설계 8-2) */
 import Link from "next/link";
 import { playerHref } from "@/components/SearchBox";
-import { thumbnailUrl } from "@/components/ScenePlayer";
+import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
 import { PlayGlyph, PlayerAvatar, mmss } from "@/components/ui/Media";
 import type { Clip, Day, DayGame, DayScene } from "@/lib/api";
 import { team as teamOf } from "@/lib/teams";
@@ -33,14 +33,23 @@ export function pickScenes(day: Day, myTeam: string | null): { main: Pick | null
   return { main, others };
 }
 
-export default function DayScenes({ day, myTeam, onPlay }: { day: Day; myTeam: string | null; onPlay: (c: Clip, l: string) => void }) {
+/** 지금 재생 중인 영상 — 큰 장면 자리에서 바로 재생한다 (별도 창 없음, 10-29 사용자) */
+export type Playing = { clip: Clip; title: string; sub?: string };
+
+export default function DayScenes({ day, myTeam, playing, onPlay }: {
+  day: Day;
+  myTeam: string | null;
+  playing: Playing | null;
+  onPlay: (p: Playing) => void;
+}) {
   const { main, others } = pickScenes(day, myTeam);
+  const isMain = !!main && (!playing || playing.clip.videoId === main.scene.clip.videoId);
   const c = day.scene_counts;
   const [, mm, dd] = day.date.split("-").map(Number);
   const wk = ["일", "월", "화", "수", "목", "금", "토"][new Date(`${day.date}T00:00:00`).getDay()];
 
   return (
-    <section className="rounded-[28px] bg-night px-6 pt-8 pb-9 text-white sm:px-9" aria-label="그날 장면">
+    <section id="day-scenes" className="scroll-mt-20 rounded-[28px] bg-night px-6 pt-8 pb-9 text-white sm:px-9" aria-label="그날 장면">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
           <h2 className="text-[26px] font-bold">
@@ -55,26 +64,35 @@ export default function DayScenes({ day, myTeam, onPlay }: { day: Day; myTeam: s
         </span>
       </div>
 
-      {!main ? (
+      {!main && !playing ? (
         <p className="py-10 text-center text-sm text-[#a1a1a8]">이날 확정된 장면이 아직 없어요</p>
       ) : (
         <div className="grid gap-8 lg:grid-cols-[680px_1fr]">
           <div>
-            <button
-              onClick={() => onPlay(main.scene.clip, sceneTitle(main.scene))}
-              className="group relative block aspect-video w-full overflow-hidden rounded-2xl"
-              aria-label={`${sceneTitle(main.scene)} 재생`}
-            >
-              <img src={thumbnailUrl(main.scene.clip.videoId)} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
-              <span className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white">
-                <PlayGlyph size={16} />
-              </span>
-              <span className="absolute top-3 right-3 rounded-md bg-black/70 px-1.5 py-0.5 font-num text-[11px] font-semibold">
-                {mmss(clipLength(main.scene.clip))}
-              </span>
-            </button>
-            <p className="mt-4 text-[22px] font-bold">{sceneTitle(main.scene)}</p>
-            <p className="mt-1 text-[13px] text-[#a1a1a8]">{sceneSub(main.scene, main.game)}</p>
+            {playing ? (
+              <div className="aspect-video w-full overflow-hidden rounded-2xl">
+                <ScenePlayer bare clip={playing.clip} label={playing.title} />
+              </div>
+            ) : (
+              main && (
+                <button
+                  onClick={() => onPlay({ clip: main.scene.clip, title: sceneTitle(main.scene), sub: sceneSub(main.scene, main.game) })}
+                  className="group relative block aspect-video w-full overflow-hidden rounded-2xl"
+                  aria-label={`${sceneTitle(main.scene)} 재생`}
+                >
+                  <img src={thumbnailUrl(main.scene.clip.videoId)} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
+                  <span className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white">
+                    <PlayGlyph size={16} />
+                  </span>
+                  <span className="absolute top-3 right-3 rounded-md bg-black/70 px-1.5 py-0.5 font-num text-[11px] font-semibold">
+                    {mmss(clipLength(main.scene.clip))}
+                  </span>
+                </button>
+              )
+            )}
+            <p className="mt-4 text-[22px] font-bold">{playing ? playing.title : main && sceneTitle(main.scene)}</p>
+            <p className="mt-1 text-[13px] text-[#a1a1a8]">{playing ? playing.sub : main && sceneSub(main.scene, main.game)}</p>
+            {main && isMain && (
             <div className="mt-3 flex items-center gap-2.5">
               <PlayerAvatar id={main.scene.player.player_id} name={main.scene.player.name} team={main.scene.team} size={36} />
               <span className="text-[13px] font-medium text-[#d3d4d8]">
@@ -84,12 +102,17 @@ export default function DayScenes({ day, myTeam, onPlay }: { day: Day; myTeam: s
                 선수 보기 ›
               </Link>
             </div>
+            )}
           </div>
 
           <ul className="divide-y divide-[#2c2c30]">
-            {others.map(({ scene, game }) => (
+            {[...(main && !isMain ? [main] : []), ...others].map(({ scene, game }) => (
               <li key={`${game.game_pk}-${scene.clip.videoId}`}>
-                <button onClick={() => onPlay(scene.clip, sceneTitle(scene))} className="group flex w-full items-center gap-4 py-3 text-left">
+                <button
+                  onClick={() => onPlay({ clip: scene.clip, title: sceneTitle(scene), sub: sceneSub(scene, game) })}
+                  aria-current={playing?.clip.videoId === scene.clip.videoId ? "true" : undefined}
+                  className="group flex w-full items-center gap-4 py-3 text-left aria-[current=true]:opacity-50"
+                >
                   <span className="relative aspect-video w-44 shrink-0 overflow-hidden rounded-[10px]">
                     <img src={thumbnailUrl(scene.clip.videoId)} alt="" className="h-full w-full object-cover" />
                     <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-0.5 font-num text-[11px] font-semibold">
