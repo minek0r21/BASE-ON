@@ -72,9 +72,10 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 20 | GET /meta | 기록 기준일 |
 | 23 | GET /players/{id}/outings?season=&month= | 경기 기록 탭 (투수 등판) |
 | 25 | GET /postseason?season= | 메인 포스트시즌 코너 (포스트시즌 기록이 있을 때만) |
-| 26 | GET /pitchers?season=&team=&limit= | 투수 목록 |
+| 26 | GET /pitchers?season=&team=&role=&qualified=&sort=&limit= | 투수 목록 (기본 이닝 순) · 능력별 순위(`sort`=지표 5개 · whip 등, 백분위 · 등수 · 장면 수 · 지표 장면 · 비교 대상 평균) |
 | 27 | GET /players/{id}/form?season= | 요즘 타격감 (최근 20경기 OPS) |
 | 28 | GET /standings/history?season= | 달마다 순위 |
+| 29 | GET /pitchers/leaders?season=&role=&limit= | 투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」, 기본 선발) |
 
 **장면 · 검수**
 

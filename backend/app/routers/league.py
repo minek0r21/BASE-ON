@@ -3,8 +3,9 @@
   13. GET /standings?season=                                  팀 순위
   16. GET /batters?season=&team=&sort=&qualified=&limit=       타자 순위표 (리그 상위 타자, 팀 선수 목록)
   18. GET /leaders?season=&limit=                              지표 5개별 상위 n명 (메인 '이런 타자는 어때요?')
-  26. GET /pitchers?season=&team=&limit=                       투수 목록 (팀 화면 투수 표)
+  26. GET /pitchers?season=&team=&role=&qualified=&sort=&limit= 투수 목록 (팀 화면 투수 표, 05 능력별 순위 투수 탭)
   28. GET /standings/history?season=                           순위 변동 (달마다 마지막 날 순위, 시안 「순위 변동 보기」)
+  29. GET /pitchers/leaders?season=&role=&limit=               투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」)
 """
 from typing import Literal
 
@@ -12,6 +13,8 @@ from fastapi import APIRouter, Query
 
 from ..db import run
 from ..errors import ApiError
+from ..scenes import CONFIRMED, scene_of
+from .players import AXIS_TAGS, PITCH_AXES
 
 router = APIRouter(tags=["리그"])
 
@@ -216,37 +219,147 @@ def get_leaders(  # API 18: 백분위 5개 지표마다 리그 상위 n명을 �
     return {"season": season, "group_size": len(group), "leaders": leaders}
 
 
-# ------------------------------------------------------------------ 26. 투수 목록
+# ------------------------------------------------------------------ 26. 투수 목록 · 29. 투수 지표별 상위
 Q_PITCHERS = """
 MATCH (p:Player)-[:HAS_PITCHING_STAT]->(s:PitcherSeasonStat {season: $season})
 OPTIONAL MATCH (p)-[f:PLAYS_FOR {season: $season}]->(t:Team)
 WITH p, s, t, f ORDER BY f.last_date DESC
 WITH p, s, head(collect(t.name)) AS team
-WHERE $team IS NULL OR team = $team
 RETURN p.player_id AS player_id, p.name AS name, p.back_number AS back_number, p.bats_throws AS bats_throws, team,
-       s {.g, .gs, .outs, .tbf, .h, .hr, .bb, .hbp, .so, .r, .avg, .whip, .role, .qualified} AS s
+       s {.*} AS s
 ORDER BY s.outs DESC
-LIMIT $limit
 """
 
+# 투수마다 그 시즌 확정 등판 장면 수 (메인 순위 「장면 n」)
+Q_PITCHER_SCENE_COUNTS = """
+MATCH (p:Player)-[:PITCHED_GAME]->(:Outing {season: $season, game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
+WHERE m.status IN $confirmed AND coalesce(v.playable, true)
+RETURN p.player_id AS player_id, count(DISTINCT v) AS n
+"""
 
-@router.get("/pitchers", summary="26. 투수 목록 (팀 화면)")
-def get_pitchers(  # API 26: 그 시즌 투수 기록, 이닝 많은 순
+# 지표 옆 ▶ = 그 지표 태그가 붙은 확정 등판 장면 중 가장 최근 것 (API-02 axes[].scene과 같은 기준, 장면.md 6장)
+Q_PITCHER_AXIS_SCENES = """
+UNWIND $ids AS pid
+CALL (pid) {
+  MATCH (:Player {player_id: pid})-[:PITCHED_GAME]->(o:Outing {season: $season, game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
+  WHERE m.status IN $confirmed AND coalesce(v.playable, true) AND $tag IN coalesce(m.tags, [])
+  RETURN o, m, v ORDER BY o.date DESC, m.rank LIMIT 1
+}
+RETURN pid AS player_id, o.outing_id AS outing_id, o.date AS date, o {.outs, .so, .r, .h} AS line,
+       v.video_id AS video_id, v.title AS title, v.duration_sec AS duration_sec,
+       m.start_sec AS start_sec, m.end_sec AS end_sec, m.precision AS precision, m.scene_type AS scene_type,
+       coalesce(m.tags, []) AS tags
+"""
+
+P_AXES = {key: (label, prop, metric, reverse, pct) for key, label, prop, metric, reverse, pct in PITCH_AXES}
+P_SORTS = Literal["outs", "whip", "avg", "so", "strikeout", "control", "chase", "hit_prevention", "power_prevention"]
+
+
+def _pitcher_rows(season: int) -> list[dict]:
+    return run(Q_PITCHERS, season=season)
+
+
+def _pitch_axis_ranks(rows: list[dict]) -> dict:
+    """비교 대상(규정이닝 · 같은 역할) 안에서 지표별 등수. 등수 = 백분위가 나보다 높은 사람 수 + 1 (API-02와 같음)"""
+    ranks: dict = {}
+    for role in {r["s"].get("role") for r in rows}:
+        group = [r for r in rows if r["s"].get("qualified") and r["s"].get("role") == role]
+        for key, (_, _, _, _, pct) in P_AXES.items():
+            vals = [r["s"][pct] for r in group if r["s"].get(pct) is not None]
+            for r in group:
+                p = r["s"].get(pct)
+                if p is not None:
+                    ranks.setdefault(r["player_id"], {})[key] = 1 + sum(1 for v in vals if v > p)
+    return ranks
+
+
+def _round(v, n):
+    return None if v is None else round(v, n)
+
+
+@router.get("/pitchers", summary="26. 투수 목록 (팀 화면 · 능력별 순위)")
+def get_pitchers(  # API 26: 그 시즌 투수 기록. 기본은 이닝 많은 순 (팀 화면 투수 표)
     season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
     team: str | None = Query(None, description="팀 이름 (예: KIA). 생략하면 리그 전체"),
+    role: Literal["starter", "reliever"] | None = Query(None, description="선발 · 불펜. 생략하면 모두"),
+    qualified: bool = Query(False, description="true면 리그 비교 대상(규정이닝)만"),
+    sort: P_SORTS = Query("outs", description="outs · so는 많은 순, whip · avg는 낮은 순, 지표 5개는 백분위 높은 순"),
     limit: int = Query(500, ge=1, le=1000),
 ):
     if season is None:
         season = run(Q_LATEST_STAT_SEASON)[0]["s"]
+    all_rows = _pitcher_rows(season)
+    ranks = _pitch_axis_ranks(all_rows)
+    rows = [r for r in all_rows
+            if (team is None or r["team"] == team)
+            and (role is None or r["s"].get("role") == role)
+            and (not qualified or r["s"].get("qualified"))]
+
+    league_avg = None
+    if sort in P_AXES:
+        pct = P_AXES[sort][4]
+        rows = [r for r in rows if r["s"].get(pct) is not None]
+        rows.sort(key=lambda r: -r["s"][pct])
+        prop = P_AXES[sort][1]
+        group = [r["s"][prop] for r in all_rows if r["s"].get("qualified") and r["s"].get(prop) is not None
+                 and (role is None or r["s"].get("role") == role)]
+        league_avg = _round(sum(group) / len(group), 4) if group else None  # 시안 05 「리그 평균 20.0%」
+    elif sort in ("whip", "avg"):
+        rows = [r for r in rows if r["s"].get(sort) is not None]
+        rows.sort(key=lambda r: r["s"][sort])
+    else:
+        rows.sort(key=lambda r: -(r["s"].get(sort) or 0))
+    rows = rows[:limit]
+
+    scenes = {r["player_id"]: r["n"] for r in run(Q_PITCHER_SCENE_COUNTS, season=season, confirmed=CONFIRMED)}
+    axis_scenes = {}
+    if sort in AXIS_TAGS:  # 지표 옆 ▶가 있는 지표(탈삼진 · 제구 · 안타 억제)로 정렬했을 때만
+        for r in run(Q_PITCHER_AXIS_SCENES, ids=[x["player_id"] for x in rows], season=season,
+                     tag=AXIS_TAGS[sort], confirmed=CONFIRMED):
+            axis_scenes[r["player_id"]] = {**scene_of(r), "outing_id": r["outing_id"], "date": r["date"], "line": r["line"]}
+
     out = []
-    for r in run(Q_PITCHERS, season=season, team=team, limit=limit):
+    for i, r in enumerate(rows, 1):
         s = r["s"]
-        out.append({"player_id": r["player_id"], "name": r["name"], "team": r["team"], "back_number": r["back_number"],
-                    "bats_throws": r["bats_throws"], "role": s.get("role"), "qualified": bool(s.get("qualified")),
+        q = bool(s.get("qualified"))
+        out.append({"rank": i, "player_id": r["player_id"], "name": r["name"], "team": r["team"], "back_number": r["back_number"],
+                    "bats_throws": r["bats_throws"], "role": s.get("role"), "qualified": q,
                     **{k: s.get(k) for k in ("g", "gs", "outs", "tbf", "h", "hr", "bb", "hbp", "so", "r")},
-                    "avg": None if s.get("avg") is None else round(s["avg"], 3),
-                    "whip": None if s.get("whip") is None else round(s["whip"], 2)})
-    return {"season": season, "pitchers": out}
+                    "avg": _round(s.get("avg"), 3),
+                    "whip": _round(s.get("whip"), 2),
+                    "metrics": {k: _round(s.get(a[1]), 4) for k, a in P_AXES.items()},             # 지표 원 수치 (k_pct 등)
+                    "percentiles": {k: (None if s.get(a[4]) is None else int(s[a[4]])) for k, a in P_AXES.items()} if q else None,
+                    "axis_ranks": ranks.get(r["player_id"]),                                       # 같은 역할 비교 대상 안 등수
+                    "scene_count": scenes.get(r["player_id"], 0),                                  # 그 시즌 확정 등판 장면 수
+                    **({"scene": axis_scenes.get(r["player_id"])} if sort in AXIS_TAGS else {})})  # 그 지표 대표 장면 (없으면 null)
+
+    group_size = sum(1 for r in all_rows if r["s"].get("qualified") and (role is None or r["s"].get("role") == role))
+    return {"season": season, "sort": sort, "role": role,
+            "group_size": group_size,   # 비교 대상 인원 (시안 「선발 46명 중」)
+            "league_avg": league_avg,   # 지표로 정렬했을 때 비교 대상 평균 원 수치, 아니면 null
+            "pitchers": out}
+
+
+@router.get("/pitchers/leaders", summary="29. 투수 지표별 상위 (메인)")
+def get_pitcher_leaders(  # API 29: 투수 5지표마다 비교 대상 상위 n명 (API-18의 투수판)
+    season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
+    role: Literal["starter", "reliever"] = Query("starter", description="비교 대상 역할 (시안 메인은 선발)"),
+    limit: int = Query(3, ge=1, le=20, description="지표마다 몇 명"),
+):
+    if season is None:
+        season = run(Q_LATEST_STAT_SEASON)[0]["s"]
+    group = [r for r in _pitcher_rows(season) if r["s"].get("qualified") and r["s"].get("role") == role]
+    ranks = _pitch_axis_ranks(group)
+    leaders = {}
+    for key, (label, prop, metric, reverse, pct) in P_AXES.items():
+        top = sorted([r for r in group if r["s"].get(pct) is not None], key=lambda r: -r["s"][pct])[:limit]
+        leaders[key] = {
+            "label": label, "metric": metric, "reverse": reverse,  # reverse = 원 수치가 낮을수록 좋음
+            "players": [{"rank": ranks[r["player_id"]][key], "player_id": r["player_id"], "name": r["name"],
+                         "team": r["team"], "value": _round(r["s"].get(prop), 4), "percentile": int(r["s"][pct])}
+                        for r in top],
+        }
+    return {"season": season, "role": role, "group_size": len(group), "leaders": leaders}
 
 
 # ------------------------------------------------------------------ 28. 순위 변동
