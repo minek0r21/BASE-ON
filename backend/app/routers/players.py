@@ -5,6 +5,7 @@
   3. GET /players/{player_id}/games?season=&month=  기록 탭 출전 경기 목록
  19. GET /players/{player_id}/seasons             시즌 기록 탭 (시즌별 타격 기록)
  27. GET /players/{player_id}/form?season=        요즘 타격감 (경기마다 최근 20경기 OPS, 시안 F-04)
+ 32. GET /players/{player_id}/pitching-form?season= 요즘 투구감 (등판마다 최근 10등판 WHIP, 시안 03b)
 """
 from typing import Literal
 
@@ -643,4 +644,52 @@ def get_player_form(player_id: str, season: int = Query(..., description="시즌
             "season_ops": None if season_ops is None else round(season_ops, 3),
             "recent_ops": recent, "league_ops": None if league is None else round(league, 3),
             "verdict": verdict,  # up 상승 · flat 유지 · down 하락. 20경기가 안 되면 null
+            "points": points}
+
+
+# ------------------------------------------------------------------ 32. 요즘 투구감
+Q_PITCH_FORM = """
+MATCH (:Player {player_id: $id})-[:PITCHED_GAME]->(o:Outing {season: $season, game_type: 'regular'})-[:PART_OF]->(g:Game)
+RETURN o.date AS date, o.outs AS outs, o.h AS h, o.bb AS bb
+ORDER BY o.date, g.dh_no
+"""
+# 비교 대상(같은 역할 규정이닝) 평균 WHIP — 그래프 기준선
+Q_LEAGUE_WHIP = """
+MATCH (s:PitcherSeasonStat {season: $season}) WHERE s.qualified AND s.role = $role
+RETURN avg(s.whip) AS whip
+"""
+PFORM_WINDOW = 10   # 최근 10등판
+PFORM_POINTS = 30
+PFORM_DIFF = 0.15   # 시즌보다 WHIP가 .15 이상 낮으면 좋아짐, 높으면 나빠짐 (낮을수록 좋다)
+
+
+def _whip(rows: list[dict]) -> float | None:  # (피안타 + 볼넷) ÷ 이닝 — 시즌 기록(etl/prepare.py)과 같은 식
+    outs = sum(r["outs"] or 0 for r in rows)
+    return (sum(r["h"] or 0 for r in rows) + sum(r["bb"] or 0 for r in rows)) / (outs / 3) if outs else None
+
+
+@router.get("/players/{player_id}/pitching-form", summary="32. 요즘 투구감 (최근 10등판 WHIP)")
+def get_pitching_form(player_id: str, season: int = Query(..., description="시즌")):
+    outings = run(Q_PITCH_FORM, id=player_id, season=season)
+    season_whip = _whip(outings)
+    stat = run(Q_PITCHING, id=player_id, season=season)
+    role = stat[0]["s"].get("role") if stat else None
+    league = run(Q_LEAGUE_WHIP, season=season, role=role)[0]["whip"] if role else None
+    points = []
+    for i in range(PFORM_WINDOW - 1, len(outings)):
+        w = _whip(outings[i - PFORM_WINDOW + 1:i + 1])
+        if w is not None:
+            points.append({"date": outings[i]["date"], "whip": round(w, 2)})
+    points = points[-PFORM_POINTS:]
+    recent = points[-1]["whip"] if points else None
+    verdict = None
+    if recent is not None and season_whip is not None:
+        d = recent - season_whip
+        verdict = "up" if d <= -PFORM_DIFF else "down" if d >= PFORM_DIFF else "flat"
+    recent_from = outings[-PFORM_WINDOW]["date"] if len(outings) >= PFORM_WINDOW else None
+    return {"season": season, "outings": len(outings), "window": PFORM_WINDOW, "role": role,
+            "season_whip": _round(season_whip, 2), "recent_whip": recent,
+            "recent_range": [recent_from, outings[-1]["date"]] if recent_from else None,  # 최근 10등판 기간 (시안 「5.27 ~ 7.24」)
+            "league_whip": _round(league, 2),   # 같은 역할 비교 대상 평균
+            "verdict": verdict,  # up 좋아짐(WHIP 낮아짐) · flat 비슷 · down 나빠짐. 10등판이 안 되면 null
             "points": points}
