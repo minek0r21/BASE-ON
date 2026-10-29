@@ -52,7 +52,7 @@ export default function ReviewPage() {
   const reasons = (queue.data?.counts ?? []).filter((c) => !targetKind || c.target_kind === targetKind);
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold">장면 검수</h1>

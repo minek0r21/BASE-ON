@@ -106,10 +106,18 @@ export default function SearchBox({
         }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        className={`w-full rounded-lg border border-line bg-surface px-3 outline-none focus:border-bar ${
-          large ? "py-3 text-lg" : "py-1.5 text-sm"
+        className={`w-full border outline-none focus:border-bar ${
+          large
+            ? "h-[60px] rounded-[18px] border-[#b4b5ba] bg-white pl-14 pr-4 text-[17px] shadow-[0_4px_16px_rgba(0,0,0,0.06)]"
+            : "rounded-lg border-line bg-surface px-3 py-1.5 text-sm"
         }`}
       />
+      {large && (
+        <svg viewBox="0 0 24 24" className="pointer-events-none absolute top-[18px] left-5 h-6 w-6 text-fg-2" aria-hidden>
+          <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
+          <path d="m15.5 15.5 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+      )}
 
       {showLayer && (
         <ul

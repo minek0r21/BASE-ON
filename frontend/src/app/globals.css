@@ -1,53 +1,71 @@
 @import "tailwindcss";
 
+/* 2.0 색 — Figma 변수 컬렉션 「BASE:ON」의 연회색(기본) 모드. 표는 팀 문서 「디자인_2.0_구현.md」 3-1
+   다크 모드는 모바일과 함께 보류(10-29)라 밝은 값만 둔다. 예전 이름(bg · surface · muted …)은 값만 바꿔 그대로 쓴다 */
 :root {
-  --bg: #f6f7f9;
-  --surface: #ffffff;
-  --fg: #111827;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --accent: #f5b301; /* ▶ 확정 장면 노랑 (설계 8-1) */
-  --bar: #2563eb;
-  --bar-track: #e5e7eb;
-  /* 비교 탭 선수 색 — dataviz 기준 팔레트 앞 3칸 (색각 이상까지 검증된 조합) */
+  --bg: #e6e7ea;          /* bg/base 페이지 바탕 */
+  --raised: #f0f0f2;      /* bg/raised 내비 */
+  --surface: #f6f6f7;     /* surface/1 카드 */
+  --surface-2: #ecedef;   /* surface/2 칩 */
+  --surface-3: #e0e1e4;   /* surface/3 막대 트랙 */
+  --fg: #1d1d1f;          /* text/primary */
+  --fg-2: #4d4e54;        /* text/secondary */
+  --muted: #66676d;       /* text/tertiary (대비 4.56:1) */
+  --line: #e2e3e6;        /* line/subtle */
+  --line-strong: #d3d4d8; /* line/strong */
+  --brand: #2b63f0;       /* brand/blue — 홈 · 순위의 포인트 */
+  --brand-text: #2152d6;  /* brand/blue-text — 링크 */
+  --brand-soft: #e1e9ff;
+  --accent: #1d1d1f;      /* scene — 재생 버튼 ▶은 잉크 바탕 + 흰 글자 (예전 노랑에서 바뀜) */
+  --night: #161618;       /* 「그날 장면」 카드 */
+  --bar: #2b63f0;
+  --bar-track: #e0e1e4;
+  /* 비교 탭 선수 색 — dataviz 기준 팔레트 앞 3칸 */
   --s1: #2a78d6;
   --s2: #eb6834;
   --s3: #1baf7a;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0b0f17;
-    --surface: #111827;
-    --fg: #e5e7eb;
-    --muted: #9ca3af;
-    --line: #1f2937;
-    --bar: #60a5fa;
-    --bar-track: #1f2937;
-    --s1: #3987e5;
-    --s2: #d95926;
-    --s3: #199e70;
-  }
-}
-
 @theme inline {
   --color-bg: var(--bg);
+  --color-raised: var(--raised);
   --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
   --color-fg: var(--fg);
+  --color-fg-2: var(--fg-2);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-brand: var(--brand);
+  --color-brand-text: var(--brand-text);
+  --color-brand-soft: var(--brand-soft);
   --color-accent: var(--accent);
+  --color-night: var(--night);
   --color-bar: var(--bar);
   --color-bar-track: var(--bar-track);
   --color-s1: var(--s1);
   --color-s2: var(--s2);
   --color-s3: var(--s3);
-  --font-sans: "Pretendard", -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR",
-    sans-serif;
+  --font-sans: var(--font-noto), -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  --font-display: var(--font-big-shoulders), var(--font-noto), sans-serif; /* 큰 숫자 */
+  --font-num: var(--font-geist), var(--font-noto), sans-serif;             /* 표 숫자 */
 }
 
 body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+}
+
+/* 상태 기준(Figma 187:2112): 키보드 포커스는 파란 2px 테두리 + 2px 띄움 */
+:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition-duration: 0ms !important;
+    animation-duration: 0ms !important;
+  }
 }

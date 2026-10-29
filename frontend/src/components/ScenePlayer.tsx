@@ -149,7 +149,7 @@ export default function ScenePlayer({ clip, label, onClose }: { clip: Clip; labe
           <button onClick={() => setStarted(true)} className="group absolute inset-0" aria-label="재생">
             {/* eslint-disable-next-line @next/next/no-img-element -- 정적 내보내기: next/image 최적화 없음, 썸네일 핫링크(설계 8-2) */}
             <img src={thumbnailUrl(clip.videoId)} alt="" className="h-full w-full object-cover opacity-90" />
-            <span className="absolute inset-0 m-auto flex h-16 w-16 items-center justify-center rounded-full bg-accent text-2xl text-black shadow-lg group-hover:scale-105">
+            <span className="absolute inset-0 m-auto flex h-16 w-16 items-center justify-center rounded-full bg-accent text-2xl text-white shadow-lg group-hover:scale-105">
               ▶
             </span>
           </button>

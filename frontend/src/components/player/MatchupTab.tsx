@@ -109,7 +109,7 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
                     <span className={`flex-1 ${pa.events === "home_run" ? "font-bold" : ""}`}>{pa.events_ko}</span>
                     {pa.has_video && (
                       <button onClick={() => play(pa.pa_id, label)} aria-label={`${label} 장면 재생`}
-                        className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-xs font-bold text-black">▶</button>
+                        className="shrink-0 rounded-full bg-accent px-2.5 py-0.5 text-xs font-bold text-white">▶</button>
                     )}
                   </li>
                 );

@@ -1,4 +1,5 @@
 import type { AxisKey, PitchAxisKey } from "./api";
+import { team } from "./teams";
 
 /** 투수 지표 설명 — 입문 팬용 쉬운 말 (docs/투수.md 8장, P9) */
 export const PITCH_AXIS_HELP: Record<PitchAxisKey, string> = {
@@ -18,18 +19,5 @@ export const AXIS_HELP: Record<AxisKey, string> = {
   consistency: "월별 OPS의 표준편차가 작을수록 높습니다. 20타석 이상인 달이 3개 이상이어야 계산합니다.",
 };
 
-/** 구단 색 — 선수 사진·로고 대신 쓴다 (SEC-06). 키는 API의 팀 이름 */
-export const TEAM_COLORS: Record<string, string> = {
-  KIA: "#EA0029",
-  삼성: "#074CA1",
-  LG: "#C30452",
-  두산: "#131230",
-  KT: "#231F20",
-  SSG: "#CE0E2D",
-  롯데: "#041E42",
-  한화: "#FC4E00",
-  NC: "#315288",
-  키움: "#820024",
-};
-
-export const teamColor = (team: string | null | undefined) => (team && TEAM_COLORS[team]) || "#64748b";
+/** 구단 대표 색 (띠 · 막대). 표 전체는 lib/teams.ts */
+export const teamColor = (name: string | null | undefined) => team(name)?.band ?? "#66676d";
