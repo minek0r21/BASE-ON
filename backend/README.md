@@ -76,6 +76,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 27 | GET /players/{id}/form?season= | 요즘 타격감 (최근 20경기 OPS) |
 | 28 | GET /standings/history?season= | 달마다 순위 |
 | 29 | GET /pitchers/leaders?season=&role=&limit= | 투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」, 기본 선발) |
+| 30 | GET /outings/{outing_id}/plate-appearances | 등판 상세: 등판 요약 + 이닝별 상대 타자(결과 · 범례 분류 · 투구 수 · 볼카운트 · 주자 · 아웃) |
 
 **장면 · 검수**
 
