@@ -13,18 +13,19 @@ import { playerHref } from "@/components/SearchBox";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
 import {
   getMeta, getStandings, getTeamBatters, getTeamGames, getTeamPitchers, getTeamScenes, qk,
-  type Standing, type TeamScene,
+  type TeamScene,
 } from "@/lib/api";
 import { axisCopy } from "@/lib/axes";
 import { weekdayOf } from "@/lib/dates";
 import { innings, md, outingLine, rate3 } from "@/lib/format";
 import { useMyTeam } from "@/lib/local";
-import { TEAM_NAMES, teamHref, team as teamOf, withGwa } from "@/lib/teams";
+import { team as teamOf } from "@/lib/teams";
+import TeamHead from "./TeamHead";
 
 const HR_RUNS = ["", "솔로", "투런", "스리런", "만루"];
 
 /**
- * 06 팀 (Figma 144:832) — 팀 머리 + 순위 카드(API-13) · 최근 경기(API-35) · 최근 장면(API-33) · 타자 표(API-16) · 선발 표(API-26).
+ * 06 팀 (Figma 144:832) — 팀 색 머리 · 가로 순위 띠(API-13, TeamHead) · 최근 경기(API-35) · 최근 장면(API-33) · 타자 표(API-16) · 선발 표(API-26).
  * 장면 · 경기 하이라이트는 누른 구역 바로 아래에서 재생한다 (별도 창 없음)
  */
 export default function TeamView() {
@@ -40,62 +41,19 @@ export default function TeamView() {
   const batters = useQuery({ queryKey: qk.team("batters", name ?? ""), queryFn: ({ signal }) => getTeamBatters(name!, signal), enabled: !!name });
   const pitchers = useQuery({ queryKey: qk.team("pitchers", name ?? ""), queryFn: ({ signal }) => getTeamPitchers(name!, signal), enabled: !!name });
   const [playing, setPlaying] = useState<(Playing & { at: "games" | "scenes" }) | null>(null);
-  const [others, setOthers] = useState(false);
 
   if (!name || !t) return <Wrap className="pt-10 pb-24"><div className="h-[600px] animate-pulse rounded-3xl bg-surface-2" /></Wrap>;
   const st = standings.data?.teams;
   const me = st?.find((x) => x.team === name);
   const asOf = meta.data?.data_as_of;
   const season = standings.data?.season;
+  const sub = [season && `${season} 정규시즌`, asOf && `${md(asOf)} 기준`,
+    me && `${me.games}경기 ${me.w}승 ${me.d}무 ${me.l}패`, me && `승률 ${rate3(me.pct)}`, `홈 ${t.home}`].filter(Boolean).join(" · ");
 
   return (
     <>
-      <div className="h-1" style={{ background: t.band }} aria-hidden />
-      <Wrap className="pt-8 pb-24">
-        <nav className="text-[13px] text-muted" aria-label="위치">
-          팀 <span aria-hidden>›</span> <span style={{ color: t.text }}>{t.full}</span>
-        </nav>
-
-        <div className="mt-5 grid gap-6 lg:grid-cols-[1fr_340px]">
-          <div className="flex gap-7">
-            <div className="flex h-[136px] w-[136px] shrink-0 items-center justify-center rounded-3xl border border-line bg-surface">
-              <TeamLogo team={name} height={72} />
-            </div>
-            <div className="min-w-0">
-              <h1 className="text-[40px] leading-tight font-extrabold tracking-tight">{t.full}</h1>
-              <p className="mt-1.5 text-sm text-fg-2">
-                {[season && `${season} 정규시즌`, asOf && `${md(asOf)} 기준`,
-                  me && `${me.games}경기 ${me.w}승 ${me.d}무 ${me.l}패`, me && `승률 ${rate3(me.pct)}`, `홈 ${t.home}`].filter(Boolean).join(" · ")}
-              </p>
-              {me && st && <RankTags me={me} all={st} soft={t.soft} text={t.text} />}
-              <div className="mt-4 flex flex-wrap gap-2">
-                {myTeam === name ? (
-                  <span className="flex h-10 items-center rounded-full border border-line bg-surface px-4 text-sm font-bold">응원팀</span>
-                ) : (
-                  <button onClick={() => setMyTeam(name)} className="h-10 rounded-full bg-accent px-4 text-sm font-bold text-white hover:opacity-90">
-                    응원팀으로 정하기
-                  </button>
-                )}
-                <button onClick={() => setOthers(!others)} aria-expanded={others} className="h-10 rounded-full border border-line bg-surface px-4 text-sm font-medium hover:bg-surface-2">
-                  다른 팀 보기
-                </button>
-              </div>
-              {others && (
-                <ul className="mt-3 flex flex-wrap gap-2">
-                  {TEAM_NAMES.filter((x) => x !== name).map((x) => (
-                    <li key={x}>
-                      <Link href={teamHref(x)} onClick={() => { setOthers(false); setPlaying(null); }} className="flex h-10 items-center gap-2 rounded-full border border-line bg-surface pr-4 pl-3 text-sm font-medium hover:bg-surface-2">
-                        <TeamLogo team={x} height={18} /> {x}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </div>
-          {st && <StandingCard all={st} me={name} season={season} soft={t.soft} />}
-        </div>
-
+      <TeamHead name={name} t={t} sub={sub} me={me} all={st} season={season} myTeam={myTeam} setMyTeam={setMyTeam} onPick={() => setPlaying(null)} />
+      <Wrap className="pb-24">
         {/* 최근 경기 */}
         <section className="mt-14">
           <SectionHead
@@ -181,51 +139,6 @@ export default function TeamView() {
         </div>
       </Wrap>
     </>
-  );
-}
-
-/** 「정규시즌 4위 · 1위와 8.0경기」 · 「5위 두산과 1.0경기 차」(바로 아래 팀, 꼴찌면 바로 위 팀) */
-function RankTags({ me, all, soft, text }: { me: Standing; all: Standing[]; soft: string; text: string }) {
-  const near = all.find((x) => x.rank === me.rank + 1) ?? all.find((x) => x.rank === me.rank - 1);
-  return (
-    <p className="mt-3 flex flex-wrap gap-2 text-xs font-bold">
-      <span className="rounded-lg px-2.5 py-1" style={{ background: soft, color: text }}>
-        정규시즌 {me.rank}위{me.rank > 1 && ` · 1위와 ${me.gb.toFixed(1)}경기`}
-      </span>
-      {near && (
-        <span className="rounded-lg bg-surface-2 px-2.5 py-1 text-fg-2">
-          {near.rank}위 {withGwa(near.team)} {Math.abs(near.gb - me.gb).toFixed(1)}경기 차
-        </span>
-      )}
-    </p>
-  );
-}
-
-function StandingCard({ all, me, season, soft }: { all: Standing[]; me: string; season?: number; soft: string }) {
-  const [full, setFull] = useState(false);
-  const i = all.findIndex((x) => x.team === me);
-  const from = Math.min(Math.max(0, i - 2), all.length - 5);
-  const rows = full ? all : all.slice(from, from + 5);
-  return (
-    <div className="rounded-3xl border border-line bg-surface p-5">
-      <div className="mb-2 flex items-center justify-between">
-        <p className="text-sm font-bold">{season} 순위</p>
-        <button onClick={() => setFull(!full)} className="text-xs font-bold text-brand-text hover:underline">{full ? "접기" : "전체 순위 ›"}</button>
-      </div>
-      <ol>
-        {rows.map((x) => (
-          <li key={x.team}>
-            <Link href={teamHref(x.team)} className="flex items-center gap-3 rounded-xl px-2 py-2 text-sm hover:bg-surface-2" style={x.team === me ? { background: soft } : undefined}>
-              <span className="w-4 font-display text-lg font-extrabold">{x.rank}</span>
-              <TeamLogo team={x.team} height={18} />
-              <span className={`flex-1 ${x.team === me ? "font-bold" : "font-medium"}`}>{x.team}</span>
-              <span className="font-num text-xs text-fg-2">{x.w}승 {x.l}패</span>
-              <span className="w-8 text-right font-num text-xs text-fg-2">{x.gb === 0 ? "–" : x.gb.toFixed(1)}</span>
-            </Link>
-          </li>
-        ))}
-      </ol>
-    </div>
   );
 }
 

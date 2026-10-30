@@ -9,7 +9,7 @@ import ScenePlayer from "@/components/ScenePlayer";
 import { playerHref } from "@/components/SearchBox";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
 import { getMeta, getRankings, qk, type RankRow } from "@/lib/api";
-import { AXES, GROUP_RULE, rankingsHref, type AxisCopy, type Role } from "@/lib/axes";
+import { AXES, GROUP_RULE, axisGap, gapText, rankingsHref, type AxisCopy, type Role } from "@/lib/axes";
 import { md } from "@/lib/format";
 import { leaguePosition } from "@/lib/position";
 
@@ -18,7 +18,9 @@ const COLS = "grid-cols-[48px_minmax(0,1.5fr)_minmax(0,1.2fr)_110px_70px_70px_70
 
 /**
  * 05 능력별 순위 (Figma 142:805) — 타자 · 투수(선발) 지표 5개마다 비교 대상 전원 순위.
- * 리그 안 위치는 상위 · 하위 규칙(lib/position.ts). 대표 장면은 그 줄 바로 아래에서 재생한다 (별도 창 없음)
+ * 줄마다 「리그 평균 대비」 — 등수만으로는 안 보이는 선수 사이 간격을 보여준다. 숫자는 실제 차이, 막대는 좋은 쪽을
+ * 오른쪽으로 두고 평균을 가운데, 전체에서 가장 먼 차이를 끝으로 잡는다. 상위 · 하위 문구(lib/position.ts)는 마우스를 올리면 나온다.
+ * 대표 장면은 그 줄 바로 아래에서 재생한다 (별도 창 없음)
  */
 export default function RankingsView() {
   const params = useSearchParams();
@@ -36,6 +38,7 @@ export default function RankingsView() {
   const asOf = meta.data?.data_as_of;
   const data = q.data;
   const rows = data ? (more ? data.rows : data.rows.slice(0, FIRST)) : [];
+  const maxGap = data ? Math.max(0, ...data.rows.map((r) => Math.abs(axisGap(axis.copy, r.value, data.leagueAvg) ?? 0))) : 0;
 
   return (
     <Wrap className="pt-10 pb-24">
@@ -87,7 +90,7 @@ export default function RankingsView() {
             <div className={`grid ${COLS} items-center gap-4 border-b border-line px-6 py-3 text-xs font-medium text-muted`}>
               <span>순위</span>
               <span>선수</span>
-              <span>리그 안 위치</span>
+              <span>리그 평균 대비</span>
               <span className="text-right">{axis.copy.metric}</span>
               {data.rows[0]?.stats.map((s) => <span key={s.label} className="text-right">{s.label}</span>)}
               <span className="text-right">대표 장면</span>
@@ -95,7 +98,7 @@ export default function RankingsView() {
             <ol>
               {rows.map((r) => (
                 <Fragment key={r.player_id}>
-                  <Row row={r} copy={axis.copy} n={data.groupSize} playing={playing === r.player_id}
+                  <Row row={r} copy={axis.copy} n={data.groupSize} avg={data.leagueAvg} maxGap={maxGap} playing={playing === r.player_id}
                        onPlay={() => setPlaying(playing === r.player_id ? null : r.player_id)} />
                   {playing === r.player_id && r.scene && (
                     <li className="border-b border-line bg-night px-6 py-6 text-white">
@@ -162,8 +165,12 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function Row({ row, copy, n, playing, onPlay }: { row: RankRow; copy: AxisCopy; n: number; playing: boolean; onPlay: () => void }) {
+function Row({ row, copy, n, avg, maxGap, playing, onPlay }: {
+  row: RankRow; copy: AxisCopy; n: number; avg: number | null; maxGap: number; playing: boolean; onPlay: () => void;
+}) {
   const pos = leaguePosition(row.percentile, row.rank, n);
+  const gap = axisGap(copy, row.value, avg);
+  const w = gap == null || maxGap === 0 ? 0 : (Math.abs(gap) / maxGap) * 50; // 막대 반쪽(50%) 기준
   return (
     <li className={`grid ${COLS} items-center gap-4 border-b border-line px-6 py-3.5 last:border-b-0`}>
       <span className="font-display text-[28px] leading-none font-extrabold">{row.rank}</span>
@@ -176,13 +183,14 @@ function Row({ row, copy, n, playing, onPlay }: { row: RankRow; copy: AxisCopy; 
           <span className="block truncate text-xs text-muted">{row.meta}</span>
         </span>
       </Link>
-      <span title={pos.label}>
-        <span className="flex items-baseline gap-1">
-          <span className="text-xs text-fg-2">{pos.side}</span>
-          <span className="font-display text-[26px] leading-none font-extrabold">{pos.pct}%</span>
-        </span>
-        <span className="mt-1.5 block h-1.5 max-w-[140px] overflow-hidden rounded-full bg-surface-3">
-          <span className={`block h-full rounded-full ${pos.side === "상위" ? "bg-brand" : "bg-line-strong"}`} style={{ width: `${row.percentile}%` }} />
+      <span title={pos.label} className="flex items-center gap-3">
+        <span className={`w-[68px] shrink-0 text-right font-num text-[15px] font-bold ${gap != null && gap < 0 ? "text-muted" : ""}`}>{gapText(copy, row.value, avg)}</span>
+        <span className="relative block h-2 w-full max-w-[160px] rounded-full bg-surface-2">
+          <span className="absolute inset-y-[-3px] left-1/2 w-px bg-line-strong" aria-hidden /> {/* 리그 평균 */}
+          <span
+            className={`absolute inset-y-0 ${gap != null && gap < 0 ? "right-1/2 rounded-l-full bg-line-strong" : "left-1/2 rounded-r-full bg-brand"}`}
+            style={{ width: `${w}%` }}
+          />
         </span>
       </span>
       <span className="text-right font-num text-[15px] font-semibold">{copy.fmt(row.value)}</span>
