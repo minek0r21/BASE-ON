@@ -81,6 +81,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 32 | GET /players/{id}/pitching-form?season= | 요즘 투구감: 등판마다 최근 10등판 WHIP, 시즌 · 비교 대상 평균, 판정(.15 기준), 최근 10등판 기간 |
 | 33 | GET /teams/{team}/scenes?season=&limit= | 팀의 최근 장면: 그 팀 타자 홈런 장면 + 투수 등판 장면, 최신순 · 시즌 장면 수 |
 | 34 | GET /games/days?start=&end= | 날짜마다 경기 수 · 홈런 수 · 장면 수(API-14 `scene_counts`와 같은 규칙), 데이터 첫 · 마지막 경기일 — 08 일정 · 10 장면 위쪽 한 주 띠. 최대 42일 |
+| 35 | GET /teams/{team}/games?season=&limit= | 팀의 최근 경기: 날짜 · 홈/원정 · 상대 · 점수 · 승패 · 경기 하이라이트 (06 「최근 경기」) |
 
 **장면 · 검수**
 
