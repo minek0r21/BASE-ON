@@ -3,6 +3,7 @@
    4. GET /games/{game_pk}/plate-appearances?player=   기록 탭: 경기 요약 + 이 선수 타석 목록
   14. GET /games?date=                                 메인 · 일정 · 장면: 날짜별 경기 일정 (+ 그 경기 홈런 · 투수 장면)
   15. GET /home-runs?season=&limit=&video_only=       메인: 최근 홈런 장면 (기본: 확정 장면(자동 확정·승인)이 있는 홈런만)
+  34. GET /games/days?start=&end=                      일정 · 장면: 날짜마다 경기 수 · 홈런 수 · 장면 수 (위쪽 한 주 띠)
 """
 from datetime import date as Date
 
@@ -210,6 +211,44 @@ def get_games_by_date(  # API 14: 그날 경기 결과 · 홈런 · 투수 장�
             "pitcher_scenes": sum(len(g["pitcher_scenes"]) for g in games),
         },
         "games": games,            # 경기 없는 날이면 빈 목록
+    }
+
+
+# ------------------------------------------------------------------ 34. 날짜별 경기 · 장면 수
+Q_RANGE_GAMES = """
+MATCH (g:Game) WHERE g.date >= $start AND g.date <= $end
+OPTIONAL MATCH (pa:PlateAppearance {events: 'home_run'})-[:PART_OF]->(g)
+WITH g, collect(pa.pa_id) AS hrs
+OPTIONAL MATCH (o:Outing)-[:PART_OF]->(g)
+RETURN g.game_pk AS game_pk, toString(g.date) AS date, hrs, collect(o.outing_id) AS outings
+"""
+
+Q_DATE_RANGE = "MATCH (g:Game) RETURN toString(min(g.date)) AS first, toString(max(g.date)) AS last"
+
+
+@router.get("/games/days", summary="34. 날짜별 경기 · 장면 수 (일정 · 장면 위쪽 한 주)")
+def get_game_days(  # API 34: 시안 08 「5경기 · 홈런 15」, 10 「5경기 · 장면 14」. 장면 수는 API-14 scene_counts와 같은 규칙
+    start: Date = Query(..., description="YYYY-MM-DD"),
+    end: Date = Query(..., description="YYYY-MM-DD (start부터 최대 42일)"),
+):
+    if end < start or (end - start).days > 41:
+        raise ApiError(400, "BAD_RANGE", "기간은 start ≤ end, 최대 42일입니다")
+    rows = run(Q_RANGE_GAMES, start=start, end=end)
+    hr_scenes = pa_scenes([h for r in rows for h in r["hrs"]])
+    o_scenes = outing_scenes([o for r in rows for o in r["outings"]])
+    days: dict = {}
+    for r in rows:
+        d = days.setdefault(r["date"], {"date": r["date"], "games": 0, "home_runs": 0, "home_run_scenes": 0, "pitcher_scenes": 0})
+        d["games"] += 1
+        d["home_runs"] += len(r["hrs"])
+        d["home_run_scenes"] += sum(1 for h in r["hrs"] if h in hr_scenes)
+        d["pitcher_scenes"] += sum(1 for o in r["outings"] if o in o_scenes)
+    rng = run(Q_DATE_RANGE)[0]
+    return {
+        "start": str(start), "end": str(end),
+        "first_date": rng["first"],  # 데이터 안 첫 · 마지막 경기일 (앞뒤 주 화살표를 막을 때)
+        "last_date": rng["last"],
+        "days": sorted(days.values(), key=lambda d: d["date"]),  # 경기가 있는 날만
     }
 
 

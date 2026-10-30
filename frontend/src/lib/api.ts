@@ -740,6 +740,7 @@ export const qk = {
   topPitchers: () => ["topPitchers"] as const,
   standings: () => ["standings"] as const,
   rankings: (role: string, axis: string) => ["rankings", role, axis] as const,
+  gameDays: (start: string) => ["gameDays", start] as const,
 };
 
 // ------------------------------------------------------------------ API-25 포스트시즌 코너 · API-15 최근 홈런 (메인)
@@ -852,6 +853,7 @@ export type DayScene = {
 export type DayGame = Omit<RawDayGame, "home_runs" | "pitcher_scenes" | "highlight"> & {
   highlight: Clip | null;
   scenes: DayScene[]; // 등판 장면(선발 먼저) → 홈런 장면(시즌 몇 호가 큰 순)
+  noScene: { player_id: string; name: string; hrSeq: number | null }[]; // 장면이 없는 홈런 (10 「영상 없음 · 박찬호 13호」)
 };
 export type Day = Omit<RawDay, "games"> & { games: DayGame[] };
 
@@ -871,7 +873,8 @@ export async function getDay(date: string | null, signal?: AbortSignal): Promise
         })),
       ];
       const { home_runs, pitcher_scenes, ...rest } = g; // eslint-disable-line @typescript-eslint/no-unused-vars
-      return { ...rest, highlight: g.highlight ? toClip(g.highlight) : null, scenes };
+      const noScene = g.home_runs.filter((h) => !h.scene).map((h) => ({ ...h.batter, hrSeq: h.hr_seq }));
+      return { ...rest, highlight: g.highlight ? toClip(g.highlight) : null, scenes, noScene };
     }),
   };
 }
@@ -955,3 +958,8 @@ export async function getRankings(role: "batter" | "pitcher", axis: string, sign
     })),
   };
 }
+
+/** API-34 날짜마다 경기 수 · 홈런 수 · 장면 수 (08 일정 · 10 장면 위쪽 한 주 띠). days는 경기가 있는 날만 */
+export type GameDayCount = { date: string; games: number; home_runs: number; home_run_scenes: number; pitcher_scenes: number };
+export type GameDays = { start: string; end: string; first_date: string | null; last_date: string | null; days: GameDayCount[] };
+export const getGameDays = (start: string, end: string, signal?: AbortSignal) => get<GameDays>("/games/days", { start, end }, signal);

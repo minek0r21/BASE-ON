@@ -12,7 +12,7 @@ import { md } from "@/lib/format";
 const MENU: { label: string; href: string | null }[] = [
   { label: "홈", href: "/" },
   { label: "선수", href: "/rankings/" },
-  { label: "장면", href: null },
+  { label: "장면", href: "/scenes/" },
   { label: "팀", href: null },
   { label: "일정", href: null },
 ];
