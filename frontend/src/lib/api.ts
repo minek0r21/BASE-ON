@@ -832,8 +832,11 @@ type RawDayGame = GameTag & {
                batter: { player_id: string; name: string }; scene: RawSceneClip | null }[];
   pitcher_scenes: { outing_id: string; pitcher: { player_id: string; name: string }; team: string; role: "선발" | "구원";
                     line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number }; scene: RawSceneClip }[];
+  line: GameLine;
   highlight: RawHighlight;
 };
+/** 이닝별 점수 · 안타 (API-14 `line`). null = 그 반 이닝이 없음(홈팀이 이겨 안 한 9회말 등) */
+export type GameLine = { away: (number | null)[]; home: (number | null)[]; away_h: number; home_h: number };
 type RawDay = { date: string; prev_date: string | null; next_date: string | null;
                 scene_counts: { home_runs: number; home_run_scenes: number; pitcher_scenes: number }; games: RawDayGame[] };
 
@@ -854,8 +857,9 @@ export type DayScene = {
 export type DayGame = Omit<RawDayGame, "home_runs" | "pitcher_scenes" | "highlight"> & {
   highlight: Clip | null;
   scenes: DayScene[]; // 등판 장면(선발 먼저) → 홈런 장면(시즌 몇 호가 큰 순)
-  noScene: { player_id: string; name: string; hrSeq: number | null }[]; // 장면이 없는 홈런 (10 「영상 없음 · 박찬호 13호」)
+  homeRuns: DayHomeRun[]; // 그 경기 홈런 전부, 나온 순서 (08 일정 홈런 칩 · 10 「영상 없음」)
 };
+export type DayHomeRun = { player_id: string; name: string; hrSeq: number | null; inning: number; inningHalf: "초" | "말"; clip: Clip | null };
 export type Day = Omit<RawDay, "games"> & { games: DayGame[] };
 
 /** API-14 날짜별 경기 · 그날 장면. date를 비우면 데이터의 마지막 경기일 */
@@ -874,8 +878,10 @@ export async function getDay(date: string | null, signal?: AbortSignal): Promise
         })),
       ];
       const { home_runs, pitcher_scenes, ...rest } = g; // eslint-disable-line @typescript-eslint/no-unused-vars
-      const noScene = g.home_runs.filter((h) => !h.scene).map((h) => ({ ...h.batter, hrSeq: h.hr_seq }));
-      return { ...rest, highlight: g.highlight ? toClip(g.highlight) : null, scenes, noScene };
+      const homeRuns = g.home_runs.map((h): DayHomeRun => ({
+        ...h.batter, hrSeq: h.hr_seq, inning: h.inning, inningHalf: h.inning_half, clip: h.scene ? rawClip(h.scene) : null,
+      }));
+      return { ...rest, highlight: g.highlight ? toClip(g.highlight) : null, scenes, homeRuns };
     }),
   };
 }

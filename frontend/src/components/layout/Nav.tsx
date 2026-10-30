@@ -14,7 +14,7 @@ const MENU: { label: string; href: string | null }[] = [
   { label: "선수", href: "/rankings/" },
   { label: "장면", href: "/scenes/" },
   { label: "팀", href: "/teams/" },
-  { label: "일정", href: null },
+  { label: "일정", href: "/schedule/" },
 ];
 
 export function Logo() {

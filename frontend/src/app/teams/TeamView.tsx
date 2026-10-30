@@ -7,7 +7,8 @@ import { useSearchParams } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
 import { SectionHead, Wrap, clipLength } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
-import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
+import InlinePlayer from "@/components/InlinePlayer";
+import { thumbnailUrl } from "@/components/ScenePlayer";
 import { playerHref } from "@/components/SearchBox";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
 import {
@@ -100,7 +101,7 @@ export default function TeamView() {
           <SectionHead
             title="최근 경기"
             sub={games.data?.length ? `${md(games.data.at(-1)!.date)} ~ ${md(games.data[0].date)} · 최근 ${games.data.length}경기` : undefined}
-            right={<Link href="/scenes/" className="text-sm font-bold text-brand-text hover:underline">장면 전체 ›</Link>}
+            right={<Link href="/schedule/" className="text-sm font-bold text-brand-text hover:underline">일정 전체 ›</Link>}
           />
           {!games.data ? (
             <div className="h-[150px] animate-pulse rounded-3xl bg-surface-2" />
@@ -133,7 +134,7 @@ export default function TeamView() {
               ))}
             </ul>
           )}
-          {playing?.at === "games" && <Player playing={playing} onClose={() => setPlaying(null)} />}
+          {playing?.at === "games" && <InlinePlayer playing={playing} onClose={() => setPlaying(null)} className="mt-5" />}
         </section>
 
         {/* 최근 장면 */}
@@ -144,7 +145,7 @@ export default function TeamView() {
             playingId={playing?.at === "scenes" ? playing.title : null}
             onPlay={(clip, title, sub) => setPlaying({ clip, title, sub, at: "scenes" })}
           />
-          {playing?.at === "scenes" && <Player playing={playing} onClose={() => setPlaying(null)} />}
+          {playing?.at === "scenes" && <InlinePlayer playing={playing} onClose={() => setPlaying(null)} className="mt-5" />}
         </section>
 
         {/* 선수 표 */}
@@ -294,22 +295,6 @@ function SceneRow({ team, data, playingId, onPlay }: {
   );
 }
 
-function Player({ playing, onClose }: { playing: Playing; onClose: () => void }) {
-  return (
-    <div className="mt-5 rounded-3xl bg-night p-5 text-white">
-      <div className="mx-auto aspect-video w-full max-w-[760px] overflow-hidden rounded-2xl">
-        <ScenePlayer bare clip={playing.clip} label={playing.title} />
-      </div>
-      <div className="mx-auto mt-3 flex max-w-[760px] items-center justify-between gap-4">
-        <p>
-          <span className="text-[17px] font-bold">{playing.title}</span>
-          {playing.sub && <span className="ml-2 text-[13px] text-[#a1a1a8]">{playing.sub}</span>}
-        </p>
-        <button onClick={onClose} className="text-[13px] font-bold text-[#d3d4d8] hover:underline">닫기</button>
-      </div>
-    </div>
-  );
-}
 
 type TableRow = { id: string; name: string; team: string; meta: string; tag: string | null; value: string; scenes: number };
 
