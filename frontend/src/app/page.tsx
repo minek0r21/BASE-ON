@@ -75,7 +75,7 @@ export default function Home() {
         <TopPlayers
           batters={topB.data?.batters}
           pitchers={topP.data?.pitchers}
-          sub={[season && `${season} 정규시즌`, asOfMd && `${asOfMd} 기준`, "타자는 규정타석 50% 이상, 투수는 규정이닝을 채운 선발"].filter(Boolean).join(" · ")}
+          sub={[season && `${season} 정규시즌`, asOfMd && `${asOfMd} 기준`, "타자는 규정타석 50% 이상, 투수는 규정이닝 50% 이상 선발"].filter(Boolean).join(" · ")}
         />
 
         <TeamRow teams={standings.data?.teams} sub={[season && `${season} 정규시즌 순위`, asOfMd && `${asOfMd} 기준`].filter(Boolean).join(" · ")} />

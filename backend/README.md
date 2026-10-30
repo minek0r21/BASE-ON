@@ -65,14 +65,14 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 13 | GET /standings?season= | 팀 순위 |
 | 14 | GET /games?date= | 날짜별 경기 일정 · 점수판 · 그날 장면(홈런 `scene`, 등판 `pitcher_scenes`, `scene_counts`) |
 | 15 | GET /home-runs?season=&limit=&video_only= | 최근 홈런 장면 (기본: 확정 장면이 있는 홈런만) |
-| 16 | GET /batters?season=&team=&sort=&qualified=&limit= | 타자 순위표 (`scene_count`: 확정 장면 수) |
+| 16 | GET /batters?season=&team=&sort=&qualified=&limit= | 타자 순위표 (`scene_count`: 확정 장면 수). `sort`=지표 5개면 비교 대상 평균(`league_avg`) · 대표 장면(`scene`, 그 시즌 최근 홈런) — 05 능력별 순위 |
 | 17 | GET /players/{id}/matchups?season=&min_pa=&as= | 맞대결 탭 목록 (`as=pitcher`면 이 투수가 상대한 타자) · 정규시즌 누적, 팀은 지금 소속, 「강했어요 · 약했어요」(`tag`, 15타석 이상 중 상대 타율 최고 · 최저) |
 | 18 | GET /leaders?season=&limit= | 지표별 상위 타자 |
 | 19 | GET /players/{id}/seasons | 시즌 기록 탭 (타격 · 투구) |
 | 20 | GET /meta | 기록 기준일 |
 | 23 | GET /players/{id}/outings?season=&month= | 경기 기록 탭 (투수 등판) |
 | 25 | GET /postseason?season= | 메인 포스트시즌 코너 (포스트시즌 기록이 있을 때만) |
-| 26 | GET /pitchers?season=&team=&role=&qualified=&sort=&limit= | 투수 목록 (기본 이닝 순) · 능력별 순위(`sort`=지표 5개 · whip 등, 백분위 · 등수 · 장면 수 · 지표 장면 · 비교 대상 평균) |
+| 26 | GET /pitchers?season=&team=&role=&qualified=&sort=&limit= | 투수 목록 (기본 이닝 순) · 능력별 순위(`sort`=지표 5개 · whip 등, 백분위 · 등수 · 장면 수 · 지표 장면(태그 없는 유인 · 장타 억제는 최근 등판 장면) · 비교 대상 평균) |
 | 27 | GET /players/{id}/form?season= | 요즘 타격감 (최근 20경기 OPS) |
 | 28 | GET /standings/history?season= | 달마다 순위 |
 | 29 | GET /pitchers/leaders?season=&role=&limit= | 투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」, 기본 선발) |
