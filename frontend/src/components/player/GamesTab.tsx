@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState, type ReactNode } from "react";
 import type { Playing } from "@/components/home/DayScenes";
-import { SectionHead } from "@/components/home/common";
+import { SectionHead, gameHref } from "@/components/home/common";
 import InlinePlayer from "@/components/InlinePlayer";
 import StageTag from "@/components/StageTag";
 import { Chip, Empty } from "@/components/ui/Chip";
@@ -62,6 +63,7 @@ export default function GamesTab({ playerId, playerName, season, month, onChange
                     선수 영상
                   </PlayButton>
                 )}
+                <Link href={gameHref(g.gamePk)} className="flex h-8 items-center rounded-full px-2 text-xs font-bold text-brand-text hover:underline">경기 상세 ›</Link>
                 {g.highlight && (
                   <PlayButton on={now?.key === `${key}-hl`} onClick={() => setNow(now?.key === `${key}-hl` ? null : { key: `${key}-hl`, clip: g.highlight!, title: `${where} 하이라이트`, sub: g.stageLabel ?? undefined })}>
                     하이라이트

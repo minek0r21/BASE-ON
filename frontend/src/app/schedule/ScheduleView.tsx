@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Wrap, clipLength } from "@/components/home/common";
+import { Wrap, clipLength, gameHref } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
 import WeekStrip from "@/components/schedule/WeekStrip";
@@ -140,6 +141,7 @@ function GameCard({ game: g, mine, playing, onPlay }: {
             </p>
           ))}
         </div>
+        <Link href={gameHref(g.game_pk)} className="mt-3 inline-block text-xs font-bold text-brand-text hover:underline">경기 상세 ›</Link>
       </div>
 
       <LineScore game={g} />
