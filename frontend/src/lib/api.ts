@@ -259,6 +259,37 @@ export type OutingRow = Omit<RawOutings["outings"][number], "scene" | "highlight
 };
 export type PlayerOutings = { seasons: number[]; season: number | null; months: number[]; month: number | null; outings: OutingRow[] };
 
+// ------------------------------------------------------------------ API-30 등판 상세 (03b)
+
+export type OutingPa = {
+  pa_id: string; batter: { player_id: string; name: string };
+  events: string; events_ko: string; kind: "strikeout" | "on_base" | "out";
+  runs_scored: number | null; pitches: number | null;
+  count: { balls: number | null; strikes: number | null }; outs: number | null;
+  runners: { on_1b: boolean; on_2b: boolean; on_3b: boolean };
+  last_pitch: { name: string | null; speed_kmh: number | null };
+};
+export type OutingInning = {
+  inning: number; inning_half: string;
+  summary: { batters: number; h: number; so: number; bb: number; hbp: number; runs: number };
+  plate_appearances: OutingPa[];
+};
+export type OutingDetail = GameTag & {
+  outing_id: string; game_pk: string; date: string; weekday: string;
+  pitcher: { player_id: string; name: string };
+  team: string; opponent: string; home: boolean;
+  score: { team: number; opponent: number }; result: "W" | "L" | "D"; role: string;
+  line: { outs: number; tbf: number; so: number; bb: number; hbp: number; h: number; hr: number; r: number; pitches: number };
+  scene: Clip | null; highlight: Clip | null; highlightChannel: string | null;
+  innings: OutingInning[];
+};
+
+export async function getOutingDetail(outingId: string, signal?: AbortSignal): Promise<OutingDetail> {
+  const r = await get<Omit<OutingDetail, "scene" | "highlight" | "highlightChannel"> & { scene: RawScene | null; highlight: RawHighlight }>(
+    `/outings/${encodeURIComponent(outingId)}/plate-appearances`, {}, signal);
+  return { ...r, scene: r.scene ? sceneClip(r.scene) : null, highlight: r.highlight ? toClip(r.highlight) : null, highlightChannel: r.highlight?.channel ?? null };
+}
+
 export async function getPlayerOutings(id: string, season: number | null, month: number | null, signal?: AbortSignal): Promise<PlayerOutings> {
   const r = await get<RawOutings>(`/players/${encodeURIComponent(id)}/outings`, { season, month }, signal);
   return {
@@ -757,6 +788,7 @@ export const qk = {
   games: (id: string, season: number | null, month: number | null) => ["games", id, season, month] as const,
   gamePas: (gamePk: string, playerId: string) => ["gamePas", gamePk, playerId] as const,
   outings: (id: string, season: number | null, month: number | null) => ["outings", id, season, month] as const,
+  outingDetail: (outingId: string) => ["outingDetail", outingId] as const,
   compare: (ids: string[], season: number | null, as: "batter" | "pitcher" = "batter") => ["compare", ids.join(","), season, as] as const,
   matchups: (id: string, season: number | null, minPa: number, as: "batter" | "pitcher" = "batter") => ["matchups", id, season, minPa, as] as const,
   matchup: (batter: string, pitcher: string, season: number | null) => ["matchup", batter, pitcher, season] as const,
