@@ -119,8 +119,9 @@ export default function PlayerView() {
   );
   else if (tab === "scenes") body = list;
   else if (tab === "games") body = role === "pitcher" ? (
-    <OutingsTab playerId={p.playerId} playerName={p.name} season={seasonParam} month={monthParam}
-                onChange={(s, m) => setParams({ season: s == null ? null : String(s), month: m == null ? null : String(m) })} />
+    <OutingsTab playerId={p.playerId} playerName={p.name} season={seasonParam} month={monthParam} outing={params.get("outing")}
+                onChange={(s, m) => setParams({ season: s == null ? null : String(s), month: m == null ? null : String(m), outing: null })}
+                onPick={(o) => setParams({ outing: o })} />
   ) : (
     <GamesTab playerId={p.playerId} playerName={p.name} season={seasonParam} month={monthParam}
               onChange={(s, m) => setParams({ season: s == null ? null : String(s), month: m == null ? null : String(m) })} />
