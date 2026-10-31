@@ -25,7 +25,7 @@ const SHOW_RANK = 5;  // 팀 안 순위는 5위 안일 때만 붙인다
 
 /** 한 줄 소개 — 가장 강한 능력의 판정(선수 화면 능력 칸과 같은 문구) + 리그 위치. 비교 대상이 아니면 note만 */
 type Lead = { text: string; pos: string; pct: number } | { note: string };
-type Card = { id: string; name: string; back: string | number | null; meta: string; role: string | null; lead: Lead; main: string; sub: string; scenes: boolean };
+type Card = { id: string; name: string; back: string | number | null; meta: string; role: string | null; lead: Lead; main: string; sub: string; scenes: number };
 type Group = { key: string; title: string; sub: string; cards: Card[] };
 
 /**
@@ -141,7 +141,7 @@ function groupsOf(batters: RosterBatter[], pitchers: RosterPitcher[]): Group[] {
       lead: lead(b.percentiles, "리그", "타석이 적어 리그 비교는 아직이에요"),
       main: top ? withRank(top.text, top.r) : `${b.pa ?? 0}타석`,
       sub: `${rest} · ${b.games ?? "–"}경기 출전`,
-      scenes: b.scene_count > 0,
+      scenes: b.scene_count,
     };
   };
   const pCard = (p: RosterPitcher): Card => {
@@ -157,7 +157,7 @@ function groupsOf(batters: RosterBatter[], pitchers: RosterPitcher[]): Group[] {
       lead: lead(p.percentiles, starter ? "선발 중" : "구원 중", "이닝이 적어 리그 비교는 아직이에요"),
       main: withRank(top.text, top.r),
       sub: starter ? `${other.text} · 선발 ${p.gs}경기` : `${other.text} · ${innings(p.outs)}이닝`,
-      scenes: p.scene_count > 0,
+      scenes: p.scene_count,
     };
   };
 
@@ -209,10 +209,10 @@ function RosterCard({ c, team }: { c: Card; team: string }) {
             <p className="truncate text-xs text-muted">{c.lead.note}</p>
           )}
         </div>
-        {c.scenes && (
-          <Link href={playerHref(c.id, { tab: "scenes" })} aria-label={`${c.name} 장면 보기`}
+        {c.scenes > 0 && ( // 장면 수 = 선수 화면 장면 탭(투수는 등판 탭 「장면 있음」)과 같은 기준 (API-16 · 26)
+          <Link href={playerHref(c.id, { tab: "scenes" })} aria-label={`${c.name} 장면 ${c.scenes}개 보기`}
                 className="relative z-10 flex h-7 shrink-0 items-center gap-1 rounded-full bg-accent px-2.5 text-[11px] font-bold text-white hover:brightness-95">
-            <PlayGlyph size={7} /> 장면
+            <PlayGlyph size={7} /> 장면 {c.scenes}
           </Link>
         )}
       </div>

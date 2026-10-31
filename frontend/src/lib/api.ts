@@ -453,8 +453,10 @@ export type BattingLine = { pa: number; ab: number; h: number; hr: number; bb: n
 export type VsPitcher = BattingLine & { player_id: string; name: string; team: string | null };
 export type Matchups = { season: number | null; min_pa: number; pitchers: VsPitcher[] };
 
-export async function getMatchups(id: string, season: number | null, minPa: number, signal?: AbortSignal): Promise<Matchups> {
-  return get<Matchups>(`/players/${encodeURIComponent(id)}/matchups`, { season, min_pa: minPa }, signal);
+/** as=pitcher면 이 투수가 상대한 타자 (응답 batters) — 화면이 같은 모양으로 쓰게 pitchers 자리에 담는다 */
+export async function getMatchups(id: string, season: number | null, minPa: number, signal?: AbortSignal, as: "batter" | "pitcher" = "batter"): Promise<Matchups> {
+  const r = await get<Matchups & { batters?: VsPitcher[] }>(`/players/${encodeURIComponent(id)}/matchups`, { season, min_pa: minPa, as }, signal);
+  return { season: r.season, min_pa: r.min_pa, pitchers: r.pitchers ?? r.batters ?? [] };
 }
 
 export type MatchupPa = GameTag & { pa_id: string; date: string; inning: number; inning_half: string; events: string; events_ko: string; has_video: boolean };
@@ -759,7 +761,7 @@ export const qk = {
   gamePas: (gamePk: string, playerId: string) => ["gamePas", gamePk, playerId] as const,
   outings: (id: string, season: number | null, month: number | null) => ["outings", id, season, month] as const,
   compare: (ids: string[], season: number | null) => ["compare", ids.join(","), season] as const,
-  matchups: (id: string, season: number | null, minPa: number) => ["matchups", id, season, minPa] as const,
+  matchups: (id: string, season: number | null, minPa: number, as: "batter" | "pitcher" = "batter") => ["matchups", id, season, minPa, as] as const,
   matchup: (batter: string, pitcher: string, season: number | null) => ["matchup", batter, pitcher, season] as const,
   forecast: (batter: string, pitcher: string, season: number) => ["forecast", batter, pitcher, season] as const,
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,

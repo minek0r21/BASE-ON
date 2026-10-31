@@ -5,6 +5,8 @@
 from .db import run
 
 CONFIRMED = ["auto_confirmed", "approved"]
+# 장면으로 보여 주는 타석 = 잘한 것만 (홈런 · 안타 · 볼넷 · 몸에 맞는 공, 장면.md S8). API-36 목록과 API-16 장면 수가 같이 쓴다
+GOOD_EVENTS = ["home_run", "single", "double", "triple", "walk", "hit_by_pitch"]
 
 # 경기마다 기본층 「이 경기 하이라이트」 = 확정·재생 가능한 연결 중 rank가 가장 앞선 것 (KBO 공식 > 티빙 > 구단)
 Q_GAME_HIGHLIGHTS = """

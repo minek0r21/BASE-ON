@@ -17,7 +17,7 @@ from fastapi import APIRouter, Query
 from ..db import run
 from ..errors import ApiError
 from ..postseason import game_tag
-from ..scenes import CONFIRMED, game_highlights, scene_of
+from ..scenes import CONFIRMED, GOOD_EVENTS, game_highlights, scene_of
 from ..utils import result_of
 from .players import AXIS_TAGS, PITCH_AXES
 
@@ -88,11 +88,14 @@ RETURN p.player_id AS player_id, p.name AS name, p.bats_throws AS bats_throws, p
        p.back_number AS back_number, team, games, s {.*} AS s
 """
 
-# 선수마다 그 시즌 승인된 장면(영상) 수 — 카드의 '장면 N' 표시
+# 선수마다 그 시즌 장면 수 — 카드의 '장면 N'. 선수 화면 「장면」 탭(API-36)과 같은 기준:
+# 잘한 타석(GOOD_EVENTS) 중 확정 · 재생 가능한 타석 장면(경기 단위 영상 제외)이 있는 타석 수, 정규 · 포스트시즌 함께 (11-01 사용자)
 Q_SCENE_COUNTS = """
-MATCH (p:Player)-[:BATTED_IN]->(:PlateAppearance {season: $season, game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
-WHERE m.status IN ['auto_confirmed', 'approved']
-RETURN p.player_id AS player_id, count(DISTINCT v) AS n
+MATCH (p:Player)-[:BATTED_IN]->(pa:PlateAppearance {season: $season})
+WHERE pa.events IN $events
+  AND EXISTS { (pa)-[m:MATCHED_TO]->(v:VideoLink)
+               WHERE m.status IN $confirmed AND coalesce(m.precision, 'scene') <> 'game' AND coalesce(v.playable, true) }
+RETURN p.player_id AS player_id, count(pa) AS n
 """
 
 AXES = {  # 응답 이름: DB 속성 (백분위, 클수록 좋음)
@@ -139,7 +142,7 @@ def get_batters(  # API 16: 리그 상위 타자 / 지표별 TOP / 팀 타자 �
     rows.sort(key=lambda b: -b["s"][key])
     rows = rows[:limit]
 
-    scenes = {r["player_id"]: r["n"] for r in run(Q_SCENE_COUNTS, season=season)}
+    scenes = {r["player_id"]: r["n"] for r in run(Q_SCENE_COUNTS, season=season, events=GOOD_EVENTS, confirmed=CONFIRMED)}
     league_avg, hr_scenes = None, {}
     if sort in AXES:  # 지표로 정렬하면 05 능력별 순위: 비교 대상 평균 원 수치 + 대표 장면(그 시즌 최근 홈런 장면)
         vk = LEADER_VALUE[sort][0]
@@ -173,7 +176,7 @@ def get_batters(  # API 16: 리그 상위 타자 / 지표별 TOP / 팀 타자 �
             "percentiles": {a: (None if s.get(k) is None else int(s[k])) for a, k in AXES.items()} if r else None,
             "axis_ranks": r,                                    # {"power": 2, ...} 또는 null
             "strengths": [{"axis": a, "rank": n} for a, n in best],  # 잘하는 것 2개
-            "scene_count": scenes.get(b["player_id"], 0),           # 확정 장면 수 (자동 확정·승인)
+            "scene_count": scenes.get(b["player_id"], 0),           # 장면 수 (선수 화면 장면 탭과 같은 기준)
             **({"scene": hr_scenes.get(b["player_id"])} if sort in AXES else {}),  # 대표 장면 (없으면 null)
         })
 
@@ -244,11 +247,12 @@ RETURN p.player_id AS player_id, p.name AS name, p.back_number AS back_number, p
 ORDER BY s.outs DESC
 """
 
-# 투수마다 그 시즌 확정 등판 장면 수 (메인 순위 「장면 n」)
+# 투수마다 그 시즌 등판 장면 수 (메인 순위 「장면 n」). 선수 화면 「등판」 탭 「장면 있음」(API-36)과 같은 기준:
+# 확정 · 재생 가능한 장면이 있는 등판 수 (영상 수가 아니라 등판 수), 정규 · 포스트시즌 함께
 Q_PITCHER_SCENE_COUNTS = """
-MATCH (p:Player)-[:PITCHED_GAME]->(:Outing {season: $season, game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
-WHERE m.status IN $confirmed AND coalesce(v.playable, true)
-RETURN p.player_id AS player_id, count(DISTINCT v) AS n
+MATCH (p:Player)-[:PITCHED_GAME]->(o:Outing {season: $season})
+WHERE EXISTS { (o)-[m:MATCHED_TO]->(v:VideoLink) WHERE m.status IN $confirmed AND coalesce(v.playable, true) }
+RETURN p.player_id AS player_id, count(o) AS n
 """
 
 # 지표 옆 ▶ = 그 지표 태그가 붙은 확정 등판 장면 중 가장 최근 것 (API-02 axes[].scene과 같은 기준, 장면.md 6장)
@@ -347,7 +351,7 @@ def get_pitchers(  # API 26: 그 시즌 투수 기록. 기본은 이닝 많은 �
                     "metrics": {k: _round(s.get(a[1]), 4) for k, a in P_AXES.items()},             # 지표 원 수치 (k_pct 등)
                     "percentiles": {k: (None if s.get(a[4]) is None else int(s[a[4]])) for k, a in P_AXES.items()} if q else None,
                     "axis_ranks": ranks.get(r["player_id"]),                                       # 같은 역할 비교 대상 안 등수
-                    "scene_count": scenes.get(r["player_id"], 0),                                  # 그 시즌 확정 등판 장면 수
+                    "scene_count": scenes.get(r["player_id"], 0),                                  # 장면이 있는 등판 수 (등판 탭 「장면 있음」과 같음)
                     **({"scene": axis_scenes.get(r["player_id"])} if sort in P_AXES else {})})  # 그 지표 대표 장면 (없으면 null)
 
     group_size = sum(1 for r in all_rows if r["s"].get("qualified") and (role is None or r["s"].get("role") == role))

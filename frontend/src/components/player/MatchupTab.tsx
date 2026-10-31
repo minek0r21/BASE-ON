@@ -11,9 +11,11 @@ import Help from "@/components/ui/Help";
 import { PlayGlyph, PlayerAvatar, TeamLogo } from "@/components/ui/Media";
 import { getMatchup, getMatchups, getPaClip, qk, type VsPitcher } from "@/lib/api";
 import { md, rate3 } from "@/lib/format";
+import type { Role } from "./Hero";
 import { ForecastPicker, NextTime } from "./Forecast";
 
-// BO-PB-05 맞대결 (API-17 상대한 투수 → API-06 타석 목록). 10타석 미만은 성적보다 타석별 결과로 보여 준다 (시안 v9)
+// BO-PB-05 맞대결 (API-17 상대한 투수 → API-06 타석 목록). 10타석 미만은 타율을 매기지 않는다 (시안 v9).
+// role=pitcher면 투수 화면: 이 투수가 상대한 타자(API-17 as=pitcher). 숫자는 상대 타자 기록이라 타율이 낮을수록 투수에게 좋다 (11-01 사용자)
 // 06 팀 화면 표와 같은 틀 — 섹션 제목 + 기간 칩 · 이름 찾기, 요약 카드 3장(타율 가장 높은 · 낮은 · 홈런 많이 친 투수), 팀 칩, 칸 머리 정렬.
 // 줄을 누르면 그 줄 아래에 「다음에 붙으면」 예상 + 타석 목록 · 재생. 표 위 「이 투수와 붙으면」은 리그 투수 누구나 (API-37). 타율 .300 이상은 구단 글자색 (10-31 사용자)
 const MIN_PA = 10;
@@ -22,7 +24,9 @@ type SortKey = "pa" | "ab" | "h" | "hr" | "bb" | "so" | "avg";
 const COLS: [SortKey, string][] = [["pa", "타석"], ["ab", "타수"], ["h", "안타"], ["hr", "홈런"], ["bb", "볼넷"], ["so", "삼진"], ["avg", "타율"]];
 const avgOf = (p: VsPitcher) => (p.pa >= MIN_PA ? p.avg : null); // 10타석 미만은 타율을 매기지 않는다
 
-export default function MatchupTab({ playerId, playerName, season }: { playerId: string; playerName: string; season: number | null }) {
+export default function MatchupTab({ playerId, playerName, season, role = "batter" }: { playerId: string; playerName: string; season: number | null; role?: Role }) {
+  const pit = role === "pitcher";
+  const who = pit ? "타자" : "투수"; // 상대 쪽
   const [scope, setScope] = useState<"all" | "season">("all");
   const [picked, setPicked] = useState<VsPitcher | null>(null);
   const [filter, setFilter] = useState("");
@@ -31,7 +35,7 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
   const [more, setMore] = useState(false);
   const s = scope === "season" ? season : null;
 
-  const list = useQuery({ queryKey: qk.matchups(playerId, s, 1), queryFn: ({ signal }) => getMatchups(playerId, s, 1, signal) });
+  const list = useQuery({ queryKey: qk.matchups(playerId, s, 1, role), queryFn: ({ signal }) => getMatchups(playerId, s, 1, signal, role) });
 
   if (list.isPending) return <div className="h-[560px] animate-pulse rounded-3xl bg-surface-2" />;
   if (list.isError) return <Empty text="맞대결 기록을 불러오지 못했어요" action={{ label: "다시 시도", onClick: () => list.refetch() }} />;
@@ -64,21 +68,21 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
   return (
     <section>
       <SectionHead
-        title="상대한 투수"
-        sub={`${scopeLabel} · ${MIN_PA}타석 이상 맞붙은 투수 ${many.length}명`}
+        title={`상대한 ${who}`}
+        sub={`${scopeLabel} · ${MIN_PA}타석 이상 맞붙은 ${who} ${many.length}명`}
         right={
           <div className="flex flex-wrap items-center gap-2">
             {([["all", "2024~2026 누적"], ["season", `${season ?? ""} 시즌`]] as const).map(([k, l]) => (
               <Chip key={k} on={scope === k} onClick={() => { setScope(k); reset(); }}>{l}</Chip>
             ))}
-            <input value={filter} onChange={(e) => { setFilter(e.target.value); setTeam(null); }} placeholder={`그 밖 ${few.length}명 이름으로 찾기`} aria-label="상대 투수 이름"
+            <input value={filter} onChange={(e) => { setFilter(e.target.value); setTeam(null); }} placeholder={`그 밖 ${few.length}명 이름으로 찾기`} aria-label={`상대 ${who} 이름`}
                    className="h-9 w-52 rounded-full border border-line bg-surface px-4 text-[13px]" />
           </div>
         }
       />
-      <Highlights rows={many} onOpen={open} />
+      <Highlights rows={many} onOpen={open} pit={pit} />
       {season != null && (
-        <ForecastPicker key={playerId} batter={playerId} season={season}
+        <ForecastPicker key={`${playerId}-${role}`} player={playerId} side={role} season={season}
                         initial={all[0] ? { id: all[0].player_id, name: all[0].name, team: all[0].team } : null} />
       )}
       <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="상대 팀">
@@ -95,7 +99,7 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
           <table className="w-full min-w-[720px] text-sm">
             <thead className="text-xs text-fg-2">
               <tr className="border-b border-line">
-                <th className="py-3 text-left font-semibold">투수</th>
+                <th className="py-3 text-left font-semibold">{who}</th>
                 <th className="py-3 text-left font-semibold">팀</th>
                 {COLS.map(([k, h]) => (
                   <th key={k} className="py-3 pl-2 text-right font-semibold" aria-sort={sort.key === k ? (sort.desc ? "descending" : "ascending") : undefined}>
@@ -127,7 +131,7 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
                       </td>
                       {COLS.map(([k]) => (
                         <td key={k} className={`py-2.5 pl-2 text-right font-num ${
-                          k === "avg" && avg != null && avg >= 0.3 ? "font-bold text-(--team-text)" : k === sort.key ? "font-bold" : ""}`}>
+                          k === "avg" && avg != null && (pit ? avg <= 0.2 : avg >= 0.3) ? "font-bold text-(--team-text)" : k === sort.key ? "font-bold" : ""}`}>
                           {k === "avg" ? (avg == null ? "–" : rate3(avg)) : p[k]}
                         </td>
                       ))}
@@ -136,7 +140,7 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
                     {on && (
                       <tr className="border-b border-line">
                         <td colSpan={COLS.length + 3} className="py-3">
-                          <Detail playerId={playerId} playerName={playerName} p={p} season={s} forecastSeason={season} />
+                          <Detail playerId={playerId} playerName={playerName} p={p} season={s} forecastSeason={season} pit={pit} />
                         </td>
                       </tr>
                     )}
@@ -144,7 +148,7 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
                 );
               })}
               {shown.length === 0 && (
-                <tr><td colSpan={COLS.length + 3} className="py-10 text-center text-fg-2">{f ? "그 이름의 상대 투수가 없어요" : `${MIN_PA}타석 이상 상대한 투수가 없어요`}</td></tr>
+                <tr><td colSpan={COLS.length + 3} className="py-10 text-center text-fg-2">{f ? `그 이름의 상대 ${who}가 없어요` : `${MIN_PA}타석 이상 상대한 ${who}가 없어요`}</td></tr>
               )}
             </tbody>
           </table>
@@ -160,15 +164,19 @@ export default function MatchupTab({ playerId, playerName, season }: { playerId:
 }
 
 /** 요약 3장 — 10타석 이상 상대 중 타율 최고 · 최저, 홈런 최다(같으면 타석 많은 쪽). 누르면 표의 그 줄을 펼친다 */
-function Highlights({ rows, onOpen }: { rows: VsPitcher[]; onOpen: (p: VsPitcher) => void }) {
+function Highlights({ rows, onOpen, pit }: { rows: VsPitcher[]; onOpen: (p: VsPitcher) => void; pit: boolean }) {
   const rated = rows.filter((p) => p.avg != null);
   if (rated.length < 2) return null;
   const byAvg = [...rated].sort((a, b) => b.avg! - a.avg! || b.pa - a.pa);
   const hr = [...rows].sort((a, b) => b.hr - a.hr || b.pa - a.pa)[0];
   const cards = [
-    { label: "타율이 가장 높은 투수", p: byAvg[0], big: rate3(byAvg[0].avg), strong: true },
-    { label: "타율이 가장 낮은 투수", p: byAvg.at(-1)!, big: rate3(byAvg.at(-1)!.avg), strong: false },
-    ...(hr.hr > 0 ? [{ label: "홈런을 가장 많이 친 투수", p: hr, big: `${hr.hr}홈런`, strong: true }] : []),
+    // 구단 색(strong)은 지금 화면의 선수에게 좋은 쪽 — 투수 화면은 타율이 낮은 타자 쪽
+    ...(pit
+      ? [{ label: "타율이 가장 낮은 타자", p: byAvg.at(-1)!, big: rate3(byAvg.at(-1)!.avg), strong: true },
+         { label: "타율이 가장 높은 타자", p: byAvg[0], big: rate3(byAvg[0].avg), strong: false }]
+      : [{ label: "타율이 가장 높은 투수", p: byAvg[0], big: rate3(byAvg[0].avg), strong: true },
+         { label: "타율이 가장 낮은 투수", p: byAvg.at(-1)!, big: rate3(byAvg.at(-1)!.avg), strong: false }]),
+    ...(hr.hr > 0 ? [{ label: pit ? "홈런을 가장 많이 맞은 타자" : "홈런을 가장 많이 친 투수", p: hr, big: `${hr.hr}홈런`, strong: !pit }] : []),
   ];
   return (
     <ul className="mb-8 grid gap-4 md:grid-cols-3">
@@ -192,13 +200,14 @@ function Highlights({ rows, onOpen }: { rows: VsPitcher[]; onOpen: (p: VsPitcher
 }
 
 /** 그 투수 상대 타석 — 홈런은 구단 글자색, 확정 장면이 있으면 ▶ (그 자리에서 재생) */
-function Detail({ playerId, playerName, p, season, forecastSeason }: {
-  playerId: string; playerName: string; p: VsPitcher; season: number | null; forecastSeason: number | null;
+function Detail({ playerId, playerName, p, season, forecastSeason, pit }: {
+  playerId: string; playerName: string; p: VsPitcher; season: number | null; forecastSeason: number | null; pit: boolean;
 }) {
+  const [batter, pitcher] = pit ? [p.player_id, playerId] : [playerId, p.player_id];
   const [playing, setPlaying] = useState<(Playing & { id: string }) | null>(null);
   const q = useQuery({
-    queryKey: qk.matchup(playerId, p.player_id, season),
-    queryFn: ({ signal }) => getMatchup(playerId, p.player_id, season, signal),
+    queryKey: qk.matchup(batter, pitcher, season),
+    queryFn: ({ signal }) => getMatchup(batter, pitcher, season, signal),
   });
 
   const play = async (paId: string, title: string, sub: string) => {
@@ -209,7 +218,7 @@ function Detail({ playerId, playerName, p, season, forecastSeason }: {
 
   return (
     <div className="space-y-3 rounded-2xl bg-surface-2 p-3">
-      {forecastSeason != null && <NextTime batter={playerId} pitcher={p.player_id} season={forecastSeason} />}
+      {forecastSeason != null && <NextTime batter={batter} pitcher={pitcher} season={forecastSeason} side={pit ? "pitcher" : "batter"} />}
       <div className="px-2">
         <p className="text-[13px] font-bold">
           {p.name} 상대 {p.pa}타석

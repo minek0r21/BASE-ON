@@ -129,9 +129,7 @@ export default function PlayerView() {
   else if (tab === "seasons") body = (
     <SeasonsTab playerId={p.playerId} onScenes={(s, r) => setParams({ season: String(s), month: null, tab: "scenes", view: p.isBatter && p.pitching ? r : null })} />
   );
-  else if (tab === "matchup") body = p.isBatter
-    ? <MatchupTab playerId={p.playerId} playerName={p.name} season={p.season} />
-    : <Notice inline>맞대결은 타자 기준으로 보여 줘요. 이 시즌 타자 기록이 없어요.</Notice>;
+  else if (tab === "matchup") body = <MatchupTab key={role} playerId={p.playerId} playerName={p.name} season={p.season} role={role} />; // 투수 화면은 상대한 타자
   else body = (
     <CompareTab playerId={p.playerId} season={p.season} withIds={(params.get("with") ?? "").split(",").filter(Boolean)}
                 onChange={(ids) => setParams({ with: ids.length ? ids.join(",") : null })} />
