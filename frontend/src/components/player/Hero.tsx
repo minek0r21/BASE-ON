@@ -6,6 +6,7 @@ import { useState } from "react";
 import { clipLength } from "@/components/home/common";
 import ScenePlayer from "@/components/ScenePlayer";
 import { PlayGlyph, TeamLogo, mmss } from "@/components/ui/Media";
+import ShareButton, { BTN } from "@/components/ui/ShareButton";
 import type { Clip, PlayerSummary } from "@/lib/api";
 import { axisCopy } from "@/lib/axes";
 import { innings, md, rate3 } from "@/lib/format";
@@ -13,7 +14,6 @@ import { photoUrl, team as teamOf, teamHref } from "@/lib/teams";
 
 export type Role = "batter" | "pitcher";
 
-const BTN = "h-10 rounded-full border border-line bg-surface px-4 text-sm font-bold hover:bg-surface-2"; // 06 팀 머리 버튼과 같은 크기
 
 /**
  * 03 · 03b 선수 머리 (Figma 138:519 · 139:1127) — 왼쪽 사진 · 이름 · 프로필 한 줄 · 꼬리표 2개 · 비교하기 / 공유,
@@ -107,22 +107,6 @@ function Photo({ id, name }: { id: string; name: string }) {
         <img src={photoUrl(id)} alt={`${name} 사진`} className="h-full w-full object-cover object-top" onError={() => setFailed(true)} />
       )}
     </div>
-  );
-}
-
-function ShareButton() {
-  const [done, setDone] = useState(false);
-  const share = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setDone(true);
-      setTimeout(() => setDone(false), 1600);
-    } catch { /* 클립보드 권한이 없으면 조용히 넘긴다 */ }
-  };
-  return (
-    <button onClick={share} className={BTN} aria-live="polite">
-      {done ? "링크 복사됨" : "공유"}
-    </button>
   );
 }
 

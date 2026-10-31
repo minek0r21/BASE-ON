@@ -800,6 +800,7 @@ export const qk = {
   recentHrs: (limit: number) => ["recentHrs", limit] as const,
   meta: () => ["meta"] as const,
   day: (date: string | null) => ["day", date] as const,
+  gameBox: (gamePk: string) => ["gameBox", gamePk] as const,
   leaders: (role: "batter" | "pitcher") => ["leaders", role] as const,
   topBatters: () => ["topBatters"] as const,
   topPitchers: () => ["topPitchers"] as const,
@@ -928,8 +929,21 @@ export type DayGame = Omit<RawDayGame, "home_runs" | "pitcher_scenes" | "highlig
   scenes: DayScene[]; // 등판 장면(선발 먼저) → 홈런 장면(시즌 몇 호가 큰 순)
   homeRuns: DayHomeRun[]; // 그 경기 홈런 전부, 나온 순서 (08 일정 홈런 칩 · 10 「영상 없음」)
 };
-export type DayHomeRun = { player_id: string; name: string; hrSeq: number | null; inning: number; inningHalf: "초" | "말"; clip: Clip | null };
+export type DayHomeRun = { player_id: string; name: string; hrSeq: number | null; inning: number; inningHalf: "초" | "말"; clip: Clip | null;
+                            runs: number; label: string | null };
 export type Day = Omit<RawDay, "games"> & { games: DayGame[] };
+
+// ------------------------------------------------------------------ API-38 경기 박스스코어 (04 경기 상세)
+
+export type BoxBatter = { player_id: string; name: string; position: string | null; pa: number; ab: number; h: number; hr: number; bb: number; so: number };
+export type BoxPitcher = { player_id: string; name: string; outing_id: string; role: "선발" | "구원";
+                           outs: number; tbf: number; h: number; hr: number; bb: number; hbp: number; so: number; r: number };
+export type BoxTeam = { team: string; score: number; result: "W" | "L" | "D"; batters: BoxBatter[]; pitchers: BoxPitcher[] };
+export type GameBox = GameTag & { game_pk: string; date: string; season: number; innings: number | null; away: BoxTeam; home: BoxTeam };
+export const getGameBox = (gamePk: string, signal?: AbortSignal) => get<GameBox>(`/games/${encodeURIComponent(gamePk)}/box`, {}, signal);
+
+/** 경기번호 앞 8자리가 날짜 (20260726WOHT02026 → 2026-07-26) */
+export const gameDate = (gamePk: string) => `${gamePk.slice(0, 4)}-${gamePk.slice(4, 6)}-${gamePk.slice(6, 8)}`;
 
 /** API-14 날짜별 경기 · 그날 장면. date를 비우면 데이터의 마지막 경기일 */
 export async function getDay(date: string | null, signal?: AbortSignal): Promise<Day> {
@@ -949,6 +963,7 @@ export async function getDay(date: string | null, signal?: AbortSignal): Promise
       const { home_runs, pitcher_scenes, ...rest } = g; // eslint-disable-line @typescript-eslint/no-unused-vars
       const homeRuns = g.home_runs.map((h): DayHomeRun => ({
         ...h.batter, hrSeq: h.hr_seq, inning: h.inning, inningHalf: h.inning_half, clip: h.scene ? rawClip(h.scene) : null,
+        runs: h.runs, label: h.hr_label,
       }));
       return { ...rest, highlight: g.highlight ? toClip(g.highlight) : null, scenes, homeRuns };
     }),

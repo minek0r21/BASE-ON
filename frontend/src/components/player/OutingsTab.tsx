@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 /* eslint-disable @next/next/no-img-element -- 정적 내보내기: 썸네일 핫링크(설계 8-2) */
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { Fragment, useState, type ReactNode } from "react";
 import type { Playing } from "@/components/home/DayScenes";
-import { clipLength } from "@/components/home/common";
+import { clipLength, gameHref } from "@/components/home/common";
 import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
 import StageTag from "@/components/StageTag";
@@ -130,7 +131,8 @@ function Detail({ id, playerName }: { id: string; playerName: string }) {
               <TeamLogo team={d.team} height={30} /> {d.team} {d.score.team} : {d.score.opponent} {d.opponent} <TeamLogo team={d.opponent} height={30} />
               <span className={`ml-1 rounded-md px-2 py-0.5 font-sans text-xs font-bold ${d.result === "W" ? "bg-(--team) text-white" : "bg-surface-3 text-fg-2"}`}>팀 {RESULT_KO[d.result]}</span>
             </p>
-            <p className="mt-2 text-sm font-bold">{playerName} · {d.role} · {innings(l.outs)}이닝 {l.r === 0 ? "무실점" : `${l.r}실점`}</p>
+            <p className="mt-2 flex flex-wrap items-center gap-3 text-sm font-bold">{playerName} · {d.role} · {innings(l.outs)}이닝 {l.r === 0 ? "무실점" : `${l.r}실점`}
+              <Link href={gameHref(d.game_pk)} className="text-xs text-brand-text hover:underline">경기 상세 ›</Link></p>
           </div>
           {d.highlight && (
             <div className="text-right">

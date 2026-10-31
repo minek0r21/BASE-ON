@@ -4,6 +4,7 @@
   14. GET /games?date=                                 메인 · 일정 · 장면: 날짜별 경기 일정 (+ 그 경기 홈런 · 투수 장면)
   15. GET /home-runs?season=&limit=&video_only=       메인: 최근 홈런 장면 (기본: 확정 장면(자동 확정·승인)이 있는 홈런만)
   34. GET /games/days?start=&end=                      일정 · 장면: 날짜마다 경기 수 · 홈런 수 · 장면 수 (위쪽 한 주 띠)
+  38. GET /games/{game_pk}/box                         04 경기 상세: 두 팀 타자 · 투수 기록 (박스스코어)
 """
 from datetime import date as Date
 
@@ -314,3 +315,58 @@ def get_recent_home_runs(  # API 15: 리그 전체 최근 홈런 (시안 메인 
             "video": {"video_id": r["video_id"], "title": r["video_title"]} if r["video_id"] else None,
         })
     return {"season": season, "video_only": video_only, "includes_postseason": with_post, "home_runs": home_runs}
+
+
+# ------------------------------------------------------------------ 38. 경기 박스스코어 (04 경기 상세)
+# 타자: 타석마다 묶는다. 팀은 공격 쪽(초 = 원정, 말 = 홈), 순서는 첫 타석 순서(선발 타순 → 교체 순).
+# 타점은 원천에 없다 — 「그 타석에 들어온 점수」는 실책 · 병살 득점이 섞여 타점과 달라 내지 않는다
+Q_BOX_BATTERS = """
+MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance)-[:PART_OF]->(:Game {game_pk: $game})
+RETURN b.player_id AS player_id, b.name AS name, b.position AS position,
+       pa.inning_half AS half, pa.events AS e, pa.at_bat_number AS n
+ORDER BY n
+"""
+# 투수: 등판(Outing) 기록 그대로, 순서는 처음 상대한 타석 순서
+Q_BOX_PITCHERS = """
+MATCH (p:Player)-[:PITCHED_GAME]->(o:Outing)-[:PART_OF]->(g:Game {game_pk: $game})
+OPTIONAL MATCH (t:Team {team_id: o.team_id})
+OPTIONAL MATCH (p)-[:PITCHED_IN]->(pa:PlateAppearance)-[:PART_OF]->(g)
+RETURN p.player_id AS player_id, p.name AS name, t.name AS team, min(pa.at_bat_number) AS first,
+       o {.outing_id, .outs, .tbf, .so, .bb, .hbp, .h, .hr, .r, .starter} AS o
+ORDER BY first
+"""
+
+
+@router.get("/games/{game_pk}/box", summary="38. 경기 박스스코어 (04 경기 상세)")
+def get_game_box(game_pk: str):  # API 38: 두 팀 타자(타석 · 타수 · 안타 · 홈런 · 볼넷 · 삼진) · 투수(등판 기록) — 원정 · 홈 순
+    g = run(Q_GAME, game=game_pk)
+    if not g:
+        raise ApiError(404, "GAME_NOT_FOUND", "경기를 찾을 수 없습니다")
+    g = g[0]
+
+    batters: dict[str, dict] = {}
+    for r in run(Q_BOX_BATTERS, game=game_pk):
+        side = "away" if r["half"] == "초" else "home"
+        key = f"{side}:{r['player_id']}"
+        if key not in batters:
+            batters[key] = {"side": side, "player_id": r["player_id"], "name": r["name"], "position": r["position"], "events": []}
+        batters[key]["events"].append(r["e"])
+    teams = {"away": {"team": g["away"], "batters": [], "pitchers": []}, "home": {"team": g["home"], "batters": [], "pitchers": []}}
+    for b in batters.values():  # dict는 넣은 순서 = 첫 타석 순서
+        line = batting_line(b["events"])
+        teams[b["side"]]["batters"].append({"player_id": b["player_id"], "name": b["name"], "position": b["position"], **line})
+
+    for r in run(Q_BOX_PITCHERS, game=game_pk):
+        side = "home" if r["team"] == g["home"] else "away"
+        o = r["o"]
+        teams[side]["pitchers"].append({
+            "player_id": r["player_id"], "name": r["name"], "outing_id": o["outing_id"],
+            "role": "선발" if o["starter"] else "구원",
+            **{k: o[k] for k in ("outs", "tbf", "h", "hr", "bb", "hbp", "so", "r")},
+        })
+
+    return {
+        "game_pk": game_pk, "date": g["date"], "season": g["season"], "innings": g["innings"], **game_tag(g),
+        "away": {**teams["away"], "score": g["away_final"], "result": result_of(g["away_final"], g["home_final"])},
+        "home": {**teams["home"], "score": g["home_final"], "result": result_of(g["home_final"], g["away_final"])},
+    }

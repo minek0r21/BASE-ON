@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useRef, useState, type ReactNode } from "react";
-import { SectionHead, Wrap, clipLength } from "@/components/home/common";
+import { SectionHead, Wrap, clipLength, gameHref } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
@@ -79,7 +79,10 @@ export default function TeamView() {
                     <span className="font-display text-[34px] leading-none font-extrabold">{g.score.team} : {g.score.opponent}</span>
                     <TeamLogo team={g.opponent} height={22} />
                   </p>
-                  <p className="mt-2 text-xs text-fg-2">vs {g.opponent}{g.stage_label ? ` · ${g.stage_label}` : ""}</p>
+                  <p className="mt-2 flex items-center justify-between text-xs text-fg-2">
+                    <span>vs {g.opponent}{g.stage_label ? ` · ${g.stage_label}` : ""}</span>
+                    <Link href={gameHref(g.game_pk)} className="font-bold text-brand-text hover:underline">경기 상세 ›</Link>
+                  </p>
                   {g.highlight && (
                     <button
                       onClick={() => setPlaying({ clip: g.highlight!, title: `${md(g.date)} ${name} ${g.score.team} : ${g.score.opponent} ${g.opponent}`, sub: "경기 하이라이트 · 처음부터", at: "games" })}

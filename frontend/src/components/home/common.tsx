@@ -25,6 +25,9 @@ const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 export const weekday = (iso: string) => WEEK[new Date(`${iso}T00:00:00`).getDay()];
 
 /** 「키움 8 : 3 KIA」 (원정 먼저) */
+/** 04 경기 상세 주소 */
+export const gameHref = (gamePk: string) => `/games/?${new URLSearchParams({ id: gamePk })}`;
+
 export const scoreText = (g: DayGame) => `${g.away.team} ${g.away.score} : ${g.home.score} ${g.home.team}`;
 
 const HR_RUNS = ["", "솔로", "투런", "스리런", "만루"];

@@ -1,10 +1,11 @@
 "use client";
 
+import Link from "next/link";
 /* eslint-disable @next/next/no-img-element -- 정적 내보내기: 썸네일 핫링크(설계 8-2) */
 import { useQuery } from "@tanstack/react-query";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
-import { Wrap, clipLength, sceneTitle } from "@/components/home/common";
+import { Wrap, clipLength, gameHref, sceneTitle } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
@@ -154,6 +155,7 @@ function GameCard({ game: g, scenes, mine, playing, onPlay }: {
             </p>
           ))}
         </div>
+        <Link href={gameHref(g.game_pk)} className="mt-3 inline-block text-xs font-bold text-brand-text hover:underline">경기 상세 ›</Link>
         {g.highlight && (
           <button
             onClick={() => onPlay({ clip: g.highlight!, title: `${g.away.team} : ${g.home.team} 경기 하이라이트`, sub: "처음부터" })}
