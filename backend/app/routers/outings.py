@@ -22,7 +22,7 @@ RETURN o.season AS season, collect(DISTINCT toInteger(substring(o.date, 5, 2))) 
 
 Q_OUTINGS = """
 MATCH (:Player {player_id: $id})-[:PITCHED_GAME]->(o:Outing {season: $season})-[:PART_OF]->(g:Game)
-WHERE toInteger(substring(o.date, 5, 2)) = $month
+WHERE $month IS NULL OR toInteger(substring(o.date, 5, 2)) = $month   // null = 시즌 전체 (API-36)
 MATCH (g)-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team)
 WITH o, g, home, away, COUNT { (:Player {player_id: $id})-[:PITCHED_IN]->(x:PlateAppearance)-[:PART_OF]->(g) } AS n,
      reduce(s = 0, x IN [(:Player {player_id: $id})-[:PITCHED_IN]->(q:PlateAppearance)-[:PART_OF]->(g) | coalesce(q.pitch_count, 0)] | s + x) AS pitches
@@ -54,6 +54,12 @@ def get_player_outings(  # API 23: 시즌·월 + 그 달 등판
     elif month not in months:
         raise ApiError(404, "MONTH_NOT_FOUND", f"{season}년 {month}월에 등판 기록이 없습니다")
 
+    out = outing_rows(player_id, season, month)
+    return {"seasons": seasons, "season": season, "months": months, "month": month, "outings": out}
+
+
+def outing_rows(player_id: str, season: int, month: int | None) -> list[dict]:
+    """등판 목록 (최근부터). month가 None이면 시즌 전체 — API-23 · API-36이 같이 쓴다"""
     rows = run(Q_OUTINGS, id=player_id, season=season, month=month)
     scenes = outing_scenes([r["o"]["outing_id"] for r in rows])
     highlights = game_highlights([r["game_pk"] for r in rows])
@@ -73,7 +79,7 @@ def get_player_outings(  # API 23: 시즌·월 + 그 달 등판
             "scene": scenes.get(o["outing_id"]),         # 보너스층: 이 등판의 확정 장면 (없으면 null)
             "highlight": highlights.get(r["game_pk"]),   # 기본층: 이 경기 하이라이트
         })
-    return {"seasons": seasons, "season": season, "months": months, "month": month, "outings": out}
+    return out
 
 
 Q_OUTING_VIDEOS = """

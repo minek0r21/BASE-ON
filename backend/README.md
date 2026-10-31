@@ -57,7 +57,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | # | 주소 | 화면 |
 | --- | --- | --- |
 | 1 | GET /players?q=&role= | 검색. 초성(ㄱㄷㅇ · 김ㄷㅇ), 개명 선수 옛 이름, 많이 뛴 선수 먼저 |
-| 2 | GET /players/{id}?season= | 선수 요약. 타자 5축 백분위 · 최근 홈런 · 축 장면, 투수면 `pitching`(5지표 · 선발/불펜) |
+| 2 | GET /players/{id}?season= | 선수 요약. 타자 5축 백분위 · 최근 홈런 · 축 장면 · 시즌 기록 등수(`stat_ranks`: 홈런 · 장타율 · OPS · 출루율 · 타율), 투수면 `pitching`(5지표 · 선발/불펜 · `stat_ranks`: 이닝 · 탈삼진 · WHIP · 피안타율) |
 | 3 | GET /players/{id}/games?season=&month= | 경기 기록 탭 (타자) |
 | 4 | GET /games/{game_pk}/plate-appearances?player= | 경기 요약 + 이 선수 타석 |
 | 6 | GET /matchup?batter=&pitcher=&season= | 맞대결 (1:1) |
@@ -82,6 +82,8 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 33 | GET /teams/{team}/scenes?season=&limit= | 팀의 최근 장면: 그 팀 타자 홈런 장면 + 투수 등판 장면, 최신순 · 시즌 장면 수 |
 | 34 | GET /games/days?start=&end= | 날짜마다 경기 수 · 홈런 수 · 장면 수(API-14 `scene_counts`와 같은 규칙), 데이터 첫 · 마지막 경기일 — 08 일정 · 10 장면 위쪽 한 주 띠. 최대 42일 |
 | 35 | GET /teams/{team}/games?season=&limit= | 팀의 최근 경기: 날짜 · 홈/원정 · 상대 · 점수 · 승패 · 경기 하이라이트 (06 「최근 경기」) |
+| 36 | GET /players/{id}/scenes?season=&as= | 선수의 장면 목록 (03 「장면」 · 03b 「등판」). 타자: 확정 장면이 있는 홈런 · 안타 · 볼넷 · 몸에 맞는 공(잘한 장면만) 최신순 + 홈런 수 · 장면 수. `as=pitcher`: 시즌 등판 전부(등판 장면 · 경기 하이라이트) + 무실점 · 7이닝 이상 · 장면 있음 수 |
+| 37 | GET /matchup/forecast?batter=&pitcher=&season= | 맞대결 예상(다음에 붙으면): 타석 결과 6갈래(1루타 · 2·3루타 · 홈런 · 볼넷+사구 · 삼진 · 아웃) 확률 — log5(타자 오즈 × 투수 오즈 ÷ 리그 오즈). 타자는 그 투수 손 상대, 투수는 그 타자 쪽 상대 비율(표본이 작으면 시즌 · 리그 쪽으로 당김), 리그는 같은 좌우 조합 평균. 직접 맞대결은 n ÷ (n + 100)만큼 섞음. 예상 타율 · 출루율 · 장타율 · OPS, 같은 좌우 리그 평균, 우세(OPS ±8%), 직접 맞대결 |
 
 **장면 · 검수**
 

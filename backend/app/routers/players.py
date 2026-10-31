@@ -6,6 +6,7 @@
  19. GET /players/{player_id}/seasons             시즌 기록 탭 (시즌별 타격 기록)
  27. GET /players/{player_id}/form?season=        요즘 타격감 (경기마다 최근 20경기 OPS, 시안 F-04)
  32. GET /players/{player_id}/pitching-form?season= 요즘 투구감 (등판마다 최근 10등판 WHIP, 시안 03b)
+ 36. GET /players/{player_id}/scenes?season=&as=  선수의 장면 목록 (03 「장면」 · 03b 「등판」)
 """
 from typing import Literal
 
@@ -15,8 +16,9 @@ from ..db import run
 from ..errors import ApiError
 from ..events import HITS, NOT_AB, batting_line
 from ..postseason import game_tag
-from ..scenes import CONFIRMED, game_highlights, scene_of
+from ..scenes import CONFIRMED, game_highlights, pa_scenes, scene_of
 from ..utils import batter_is_home, result_of, weekday_ko
+from .outings import outing_rows
 
 router = APIRouter(tags=["선수"])
 
@@ -128,6 +130,28 @@ WHERE s.qualified
 RETURN s {.pct_contact, .pct_hit, .pct_power, .pct_eye, .pct_consistency} AS p
 """
 
+# 시즌 기록 카드 「리그 n위」(시안 03 · 03b): 비교 대상 안에서 나보다 좋은 사람 수 + 1 (공동 순위)
+Q_BAT_GROUP_STATS = """
+MATCH (s:BatterSeasonStat {season: $season}) WHERE s.qualified
+RETURN s {.hr, .slg, .ops, .obp, .avg} AS s
+"""
+Q_PITCH_GROUP_STATS = """
+MATCH (s:PitcherSeasonStat {season: $season, role: $role}) WHERE s.qualified
+RETURN s {.outs, .so, .whip, .avg} AS s
+"""
+BAT_RANK_STATS = {"hr": False, "slg": False, "ops": False, "obp": False, "avg": False}  # 값: 낮을수록 좋은가
+PITCH_RANK_STATS = {"outs": False, "so": False, "whip": True, "avg": True}
+
+
+def _stat_ranks(me: dict, group: list[dict], keys: dict[str, bool]) -> dict:
+    out = {}
+    for k, low in keys.items():
+        v = me.get(k)
+        out[k] = None if v is None else 1 + sum(
+            1 for g in group if g.get(k) is not None and (g[k] < v if low else g[k] > v))
+    return out
+
+
 STAT_INTS = ["pa", "ab", "h", "hr"]
 STAT_RATES = ["avg", "obp", "slg", "ops", "bb_pct", "k_pct", "iso", "ops_sd"]
 PCT_KEYS = {  # 응답 이름: DB 속성
@@ -230,6 +254,8 @@ def _pitching(player_id: str, season: int | None) -> dict | None:
     group = g["group"] if qualified else []
     league_velo = sum(g["velos"]) / len(g["velos"]) if g["velos"] else None  # 비교 대상 투수 평균 (P8)
     recent_scene, axis_scenes = _pitch_scenes(player_id, season)
+    stat_ranks = (_stat_ranks(s, [r["s"] for r in run(Q_PITCH_GROUP_STATS, season=season, role=s.get("role"))],
+                              PITCH_RANK_STATS) if qualified else None)
     axes = []
     for key, label, prop, metric, reverse, pct in PITCH_AXES:
         p = s.get(pct) if qualified else None
@@ -248,6 +274,7 @@ def _pitching(player_id: str, season: int | None) -> dict | None:
         "avg_velo": s.get("avg_velo"), "league_avg_velo": _round(league_velo, 1),
         "qualified": qualified, "group_size": len(group) if qualified else None,
         "axes": axes,
+        "stat_ranks": stat_ranks,  # 시즌 기록 등수 {outs, so, whip, avg} — 같은 역할 비교 대상 안. 대상 밖이면 null
         "not_qualified_message": None if qualified else "리그 비교 대상 아님(이닝 부족)",
         "recent_scene": recent_scene,  # 그 시즌 가장 최근 확정 등판 장면 (없으면 null)
     }
@@ -359,6 +386,7 @@ def get_player(  # API 2: 정보 화면 데이터 한 번에
     season = _pick_season(season, stats_all, teams)
     s = next((x for x in stats_all if x["season"] == season), None)
 
+    stat_ranks = None
     if s is None:  # 투수만 했거나 그 시즌 타자 기록이 없음
         stats, qualified, percentiles, axis_ranks, group_size = None, False, None, None, None
     else:
@@ -377,6 +405,7 @@ def get_player(  # API 2: 정보 화면 데이터 한 번에
                     else 1 + sum(1 for g in group if g.get(db) is not None and g[db] > s[db]))
                 for k, db in PCT_KEYS.items()
             }
+            stat_ranks = _stat_ranks(s, [r["s"] for r in run(Q_BAT_GROUP_STATS, season=season)], BAT_RANK_STATS)
 
     # ② 최근 홈런 (last_hr: 그냥 가장 최근 홈런 / last_hr_video: 영상이 있는 홈런 중 가장 최근)
     def hr_of(with_video):
@@ -431,6 +460,7 @@ def get_player(  # API 2: 정보 화면 데이터 한 번에
         "percentiles": percentiles,
         "axis_ranks": axis_ranks,   # 지표별 등수 {"power": 2, ...}. 비교 대상이 아니면 null
         "group_size": group_size,   # 비교 대상 인원 ("150명 중 2위"의 150)
+        "stat_ranks": stat_ranks,   # 시즌 기록 등수 {hr, slg, ops, obp, avg} — 같은 비교 대상 안. 대상 밖이면 null
         "last_hr": last_hr,              # 그 시즌 가장 최근 홈런 (영상 여부 상관없음)
         "last_hr_video": last_hr_video,  # 그 시즌 확정 장면(자동 확정·승인)이 있는 홈런 중 가장 최근 (없으면 null)
         "axis_scenes": _bat_axis_scenes(player_id, season) if stats else {},  # 축 옆 ▶ {hit: 안타 장면, eye: 볼넷 장면}, 없는 축은 빠짐
@@ -693,3 +723,72 @@ def get_pitching_form(player_id: str, season: int = Query(..., description="시�
             "league_whip": _round(league, 2),   # 같은 역할 비교 대상 평균
             "verdict": verdict,  # up 좋아짐(WHIP 낮아짐) · flat 비슷 · down 나빠짐. 10등판이 안 되면 null
             "points": points}
+
+
+# ------------------------------------------------------------------ 36. 선수의 장면 목록
+# 타자: 그 시즌 확정 장면이 있는 타석 중 잘한 것만 (홈런 · 안타 · 볼넷 · 몸에 맞는 공, 장면.md S8). 최근부터
+GOOD_EVENTS = ["home_run", "single", "double", "triple", "walk", "hit_by_pitch"]
+Q_PLAYER_PAS = """
+MATCH (:Player {player_id: $id})-[:BATTED_IN]->(pa:PlateAppearance {season: $season})-[:PART_OF]->(g:Game)
+WHERE pa.events IN $events
+MATCH (g)-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team), (pit:Player)-[:PITCHED_IN]->(pa)
+RETURN pa {.pa_id, .inning, .inning_half, .at_bat_number, .events, .hr_seq, .runs_scored, .outs_when_up,
+           .final_balls, .final_strikes} AS pa,
+       toString(pa.date) AS date, g.game_pk AS game_pk, g.dh_no AS dh_no,
+       g.game_type AS game_type, g.stage AS stage, g.series_game_no AS series_game_no,
+       home.name AS home, away.name AS away, pit.player_id AS pitcher_id, pit.name AS pitcher_name
+ORDER BY date DESC, dh_no DESC, pa.at_bat_number DESC   // RETURN 뒤 pa는 위 맵이라 date가 없다 → 별칭으로 정렬
+"""
+
+
+@router.get("/players/{player_id}/scenes", summary="36. 선수의 장면 목록")
+def get_player_scenes(
+    player_id: str,
+    season: int = Query(..., description="시즌"),
+    as_: Literal["batter", "pitcher"] = Query("batter", alias="as", description="batter 타석 장면 / pitcher 등판 목록"),
+):
+    if as_ == "pitcher":  # 등판은 장면이 없어도 경기 하이라이트(기본층)가 있으니 시즌 등판 전부를 준다
+        outings = outing_rows(player_id, season, None)
+        return {
+            "season": season, "as": "pitcher",
+            "counts": {
+                "outings": len(outings),
+                "highlights": sum(1 for o in outings if o["highlight"]),
+                "scenes": sum(1 for o in outings if o["scene"]),
+                "scoreless": sum(1 for o in outings if o["line"]["r"] == 0),
+                "seven_plus": sum(1 for o in outings if o["line"]["outs"] >= 21),
+            },
+            "outings": outings,
+        }
+
+    rows = run(Q_PLAYER_PAS, id=player_id, season=season, events=GOOD_EVENTS)
+    scenes = pa_scenes([r["pa"]["pa_id"] for r in rows])
+    out = []
+    for r in rows:
+        pa = r["pa"]
+        scene = scenes.get(pa["pa_id"])
+        if not scene:
+            continue
+        home = batter_is_home(pa["inning_half"])
+        out.append({
+            "pa_id": pa["pa_id"], "date": r["date"], "weekday": weekday_ko(r["date"]), "game_pk": r["game_pk"],
+            **game_tag(r),
+            "opponent": r["away"] if home else r["home"], "home": home,
+            "inning": pa["inning"], "inning_half": pa["inning_half"],
+            "events": pa["events"], "kind": "home_run" if pa["events"] == "home_run" else "on_base",
+            "hr_seq": pa["hr_seq"], "runs": pa["runs_scored"],
+            "outs": pa["outs_when_up"], "count": {"balls": pa["final_balls"], "strikes": pa["final_strikes"]},
+            "pitcher": {"player_id": r["pitcher_id"], "name": r["pitcher_name"]},
+            "scene": scene,
+        })
+    hr_total = sum(1 for r in rows if r["pa"]["events"] == "home_run")
+    return {
+        "season": season, "as": "batter",
+        "counts": {
+            "scenes": len(out),
+            "home_runs": hr_total,                                   # 그 시즌 홈런 (장면 여부 상관없음)
+            "home_run_scenes": sum(1 for x in out if x["kind"] == "home_run"),
+            "on_base_scenes": sum(1 for x in out if x["kind"] == "on_base"),
+        },
+        "scenes": out,
+    }

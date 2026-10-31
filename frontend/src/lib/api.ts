@@ -59,8 +59,8 @@ export type PlayerHit = RawSearch["players"][number];
 /** 검색어 규칙: 공백 제거 후 1~20자 (설계 6-1) */
 export const normalizeQuery = (q: string) => q.replace(/\s+/g, "").slice(0, 20);
 
-export async function searchPlayers(q: string, signal?: AbortSignal): Promise<PlayerHit[]> {
-  const raw = await get<RawSearch>("/players", { q: normalizeQuery(q) }, signal);
+export async function searchPlayers(q: string, signal?: AbortSignal, role?: "batter" | "pitcher"): Promise<PlayerHit[]> {
+  const raw = await get<RawSearch>("/players", { q: normalizeQuery(q), role }, signal);
   return raw.players;
 }
 
@@ -101,6 +101,7 @@ type RawPlayer = {
   percentiles: Record<RawPctKey, number | null> | null;
   axis_ranks: Record<RawPctKey, number | null> | null;
   group_size: number | null;
+  stat_ranks?: Partial<Record<"hr" | "slg" | "ops" | "obp" | "avg", number | null>> | null;
   last_hr: RawHr | null;
   last_hr_video: RawHr | null;
   recent_video: { video_id: string; title: string; date: string; opponent: string; pa_id: string } | null;
@@ -133,6 +134,7 @@ type RawPitching = {
     scene?: RawPitchScene | null;
   }[];
   not_qualified_message: string | null;
+  stat_ranks?: Partial<Record<"outs" | "so" | "whip" | "avg", number | null>> | null;
   recent_scene?: RawPitchScene | null;
 };
 
@@ -195,6 +197,8 @@ export type PitchingSummary = {
   groupSize: number | null;
   axes: PitchAxis[];
   notQualifiedMessage: string | null;
+  /** 시즌 기록 등수 (같은 역할 비교 대상 안). 대상 밖이면 null */
+  statRanks: NonNullable<RawPitching["stat_ranks"]> | null;
   recentScene: PitchScene | null;
 };
 
@@ -209,6 +213,7 @@ function toPitching(p: RawPitching): PitchingSummary {
       scene: scene ? toPitchScene(scene) : null,
     })),
     notQualifiedMessage: p.not_qualified_message,
+    statRanks: p.stat_ranks ?? null,
     recentScene: p.recent_scene ? toPitchScene(p.recent_scene) : null,
   };
 }
@@ -239,7 +244,7 @@ type RawOutings = {
     score: { team: number; opponent: number };
     result: "W" | "L" | "D";
     role: string;
-    line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number };
+    line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number; pitches: number };
     scene: RawScene | null;
     highlight: RawHighlight;
   })[];
@@ -315,6 +320,8 @@ export type PlayerSummary = {
   stats: RawStats | null;
   qualified: boolean;
   groupSize: number | null;
+  /** 시즌 기록 등수 (비교 대상 안). 대상 밖이면 null */
+  statRanks: NonNullable<RawPlayer["stat_ranks"]> | null;
   axes: Axis[];
   notQualifiedMessage: string | null;
   lastHr: RawHr | null;
@@ -396,6 +403,7 @@ function toPlayerSummary(r: RawPlayer): PlayerSummary {
     stats: r.stats,
     qualified: r.qualified,
     groupSize: r.group_size,
+    statRanks: r.stat_ranks ?? null,
     axes,
     notQualifiedMessage: r.stats != null && !r.qualified ? NOT_QUALIFIED : null,
     lastHr: r.last_hr,
@@ -460,6 +468,30 @@ export type Matchup = {
 
 export async function getMatchup(batter: string, pitcher: string, season: number | null, signal?: AbortSignal): Promise<Matchup> {
   return get<Matchup>("/matchup", { batter, pitcher, season }, signal);
+}
+
+// ------------------------------------------------------------------ API-37 맞대결 예상
+
+export type ForecastKey = "single" | "xbh" | "home_run" | "bb" | "so" | "out";
+type ForecastLine = { avg: number | null; obp: number; slg: number; ops: number };
+export type Forecast = {
+  season: number;
+  batter: { player_id: string; name: string; team: string | null; bats: string | null };
+  pitcher: { player_id: string; name: string; team: string | null; throws: string | null };
+  /** 「우타 vs 우투」 — 투타 정보가 없으면 null (좌우 빼고 계산) */
+  platoon: string | null;
+  basis: { batter_pa: number; pitcher_tbf: number; h2h_pa: number; h2h_weight: number };
+  /** 타석당 확률 6갈래 (합 1) */
+  probs: Record<ForecastKey, number>;
+  expected: ForecastLine;
+  /** 같은 좌우 조합 리그 평균 */
+  league: ForecastLine & { probs: Record<ForecastKey, number> };
+  edge: "batter" | "even" | "pitcher";
+  h2h: { pa: number; ab: number; h: number; hr: number; avg: number | null };
+};
+
+export async function getForecast(batter: string, pitcher: string, season: number, signal?: AbortSignal): Promise<Forecast> {
+  return get<Forecast>("/matchup/forecast", { batter, pitcher, season }, signal);
 }
 
 // ------------------------------------------------------------------ 장면 (영상 구간)
@@ -729,6 +761,8 @@ export const qk = {
   compare: (ids: string[], season: number | null) => ["compare", ids.join(","), season] as const,
   matchups: (id: string, season: number | null, minPa: number) => ["matchups", id, season, minPa] as const,
   matchup: (batter: string, pitcher: string, season: number | null) => ["matchup", batter, pitcher, season] as const,
+  forecast: (batter: string, pitcher: string, season: number) => ["forecast", batter, pitcher, season] as const,
+  searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
   postseason: () => ["postseason"] as const,
@@ -739,9 +773,13 @@ export const qk = {
   topBatters: () => ["topBatters"] as const,
   topPitchers: () => ["topPitchers"] as const,
   standings: () => ["standings"] as const,
+  roster: (team: string) => ["roster", team] as const,
   rankings: (role: string, axis: string) => ["rankings", role, axis] as const,
   gameDays: (start: string) => ["gameDays", start] as const,
   team: (kind: string, team: string) => ["team", kind, team] as const,
+  playerScenes: (id: string, season: number | null, as: "batter" | "pitcher") => ["playerScenes", id, season, as] as const,
+  form: (id: string, season: number | null, as: "batter" | "pitcher") => ["form", id, season, as] as const,
+  similar: (id: string, season: number | null, as: "batter" | "pitcher") => ["similar", id, season, as] as const,
 };
 
 // ------------------------------------------------------------------ API-25 포스트시즌 코너 · API-15 최근 홈런 (메인)
@@ -831,7 +869,7 @@ type RawDayGame = GameTag & {
   home_runs: { pa_id: string; inning: number; inning_half: "초" | "말"; runs: number; hr_seq: number | null; hr_label: string | null;
                batter: { player_id: string; name: string }; scene: RawSceneClip | null }[];
   pitcher_scenes: { outing_id: string; pitcher: { player_id: string; name: string }; team: string; role: "선발" | "구원";
-                    line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number }; scene: RawSceneClip }[];
+                    line: OutingLine & { tbf: number; bb: number; hbp: number; hr: number; pitches: number }; scene: RawSceneClip }[];
   line: GameLine;
   highlight: RawHighlight;
 };
@@ -1005,3 +1043,111 @@ export type TeamPitcher = { player_id: string; name: string; back_number: string
                             so: number; whip: number | null; qualified: boolean; scene_count: number; axis_ranks: Record<string, number> | null };
 export const getTeamPitchers = (team: string, signal?: AbortSignal) =>
   get<{ group_size: number; pitchers: TeamPitcher[] }>("/pitchers", { team, role: "starter", sort: "outs", limit: 30 }, signal);
+
+/** 선수 탭 「팀별 선수」 — 그 시즌 그 팀에서 뛴 선수 전원 (API-16 `qualified=false` + API-26). 트레이드면 마지막 팀 */
+type Pcts = Record<string, number | null> | null; // 지표 백분위 (비교 대상이 아니면 null)
+export type RosterBatter = TeamBatter & { bats_throws: string | null; qualified: boolean; games: number | null; avg: number | null; h: number | null;
+                                          percentiles: Pcts; axis_ranks: Record<string, number> | null };
+export type RosterPitcher = TeamPitcher & { bats_throws: string | null; role: "starter" | "reliever" | null; percentiles: Pcts };
+export type Roster = { season: number; batters: RosterBatter[]; pitchers: RosterPitcher[] };
+export async function getRoster(team: string, signal?: AbortSignal): Promise<Roster> {
+  const [b, p] = await Promise.all([
+    get<{ season: number; batters: RosterBatter[] }>("/batters", { team, qualified: false, sort: "pa", limit: 500 }, signal),
+    get<{ pitchers: RosterPitcher[] }>("/pitchers", { team, sort: "outs", limit: 500 }, signal),
+  ]);
+  return { season: b.season, batters: b.batters, pitchers: p.pitchers };
+}
+
+// ------------------------------------------------------------------ API-36 선수의 장면 목록 · API-27/32 요즘 타격감 · 투구감 · API-31 비슷한 선수
+
+export type PlayerPaScene = GameTag & {
+  paId: string; date: string; weekday: string; gamePk: string;
+  opponent: string; home: boolean; inning: number; inningHalf: string;
+  events: string; kind: "home_run" | "on_base"; hrSeq: number | null; runs: number | null;
+  outs: number | null; count: { balls: number | null; strikes: number | null };
+  pitcher: { player_id: string; name: string };
+  clip: Clip;
+};
+export type PlayerScenes = {
+  counts: { scenes: number; home_runs: number; home_run_scenes: number; on_base_scenes: number };
+  scenes: PlayerPaScene[];
+};
+
+export async function getPlayerScenes(id: string, season: number, signal?: AbortSignal): Promise<PlayerScenes> {
+  type Raw = { counts: PlayerScenes["counts"]; scenes: (Omit<PlayerPaScene, "paId" | "gamePk" | "inningHalf" | "hrSeq" | "clip"> & {
+    pa_id: string; game_pk: string; inning_half: string; hr_seq: number | null; scene: RawScene })[] };
+  const r = await get<Raw>(`/players/${encodeURIComponent(id)}/scenes`, { season }, signal);
+  return {
+    counts: r.counts,
+    scenes: r.scenes.map(({ pa_id, game_pk, inning_half, hr_seq, scene, ...x }) => ({
+      ...x, paId: pa_id, gamePk: game_pk, inningHalf: inning_half, hrSeq: hr_seq, clip: sceneClip(scene),
+    })),
+  };
+}
+
+export type PitcherOutings = {
+  counts: { outings: number; highlights: number; scenes: number; scoreless: number; seven_plus: number };
+  outings: OutingRow[];
+};
+
+export async function getPitcherOutings(id: string, season: number, signal?: AbortSignal): Promise<PitcherOutings> {
+  const r = await get<{ counts: PitcherOutings["counts"]; outings: RawOutings["outings"] }>(
+    `/players/${encodeURIComponent(id)}/scenes`, { season, as: "pitcher" }, signal);
+  return {
+    counts: r.counts,
+    outings: r.outings.map(({ outing_id, scene, highlight, ...o }) => ({
+      ...o, outingId: outing_id, scene: scene ? sceneClip(scene) : null, highlight: highlight ? toClip(highlight) : null,
+    })),
+  };
+}
+
+/** 요즘 타격감(최근 20경기 OPS) · 투구감(최근 10등판 WHIP) — 한 모양으로 맞춘다 */
+export type Form = {
+  kind: "batter" | "pitcher";
+  window: number;
+  season: number | null; recent: number | null; league: number | null;
+  verdict: "up" | "down" | "flat" | null;
+  range: [string, string] | null;
+  points: { date: string; value: number }[];
+};
+
+export async function getForm(id: string, season: number, as: "batter" | "pitcher", signal?: AbortSignal): Promise<Form> {
+  if (as === "batter") {
+    const r = await get<{ window: number; season_ops: number | null; recent_ops: number | null; league_ops: number | null;
+      verdict: Form["verdict"]; points: { date: string; ops: number }[] }>(`/players/${encodeURIComponent(id)}/form`, { season }, signal);
+    const pts = r.points.slice(-r.window);
+    return {
+      kind: "batter", window: r.window, season: r.season_ops, recent: r.recent_ops, league: r.league_ops, verdict: r.verdict,
+      range: pts.length ? [pts[0].date, pts[pts.length - 1].date] : null,
+      points: r.points.map((p) => ({ date: p.date, value: p.ops })),
+    };
+  }
+  const r = await get<{ window: number; season_whip: number | null; recent_whip: number | null; league_whip: number | null;
+    verdict: Form["verdict"]; recent_range: [string, string] | null; points: { date: string; whip: number }[] }>(
+    `/players/${encodeURIComponent(id)}/pitching-form`, { season }, signal);
+  return {
+    kind: "pitcher", window: r.window, season: r.season_whip, recent: r.recent_whip, league: r.league_whip, verdict: r.verdict,
+    range: r.recent_range, points: r.points.map((p) => ({ date: p.date, value: p.whip })),
+  };
+}
+
+export type SimilarPlayer = {
+  player_id: string; name: string; team: string | null; rank: number; value: number | null;
+  ops?: number | null; hr?: number | null; whip?: number | null; so?: number | null;
+  clip: Clip | null; sceneTitle: string | null;
+};
+export type Similar = { axis: string; label: string; myRank: number | null; groupSize: number | null; players: SimilarPlayer[] };
+
+export async function getSimilar(id: string, season: number, as: "batter" | "pitcher", signal?: AbortSignal): Promise<Similar> {
+  type RawSim = { axis: string; label: string; my_rank: number | null; group_size: number | null;
+    players: (Omit<SimilarPlayer, "clip" | "sceneTitle"> & { scene: (RawScene & { date: string; hr_seq?: number | null; line?: OutingLine }) | null })[] };
+  const r = await get<RawSim>(`/players/${encodeURIComponent(id)}/similar`, { season, as }, signal);
+  return {
+    axis: r.axis, label: r.label, myRank: r.my_rank, groupSize: r.group_size,
+    players: r.players.map(({ scene, ...p }) => ({
+      ...p,
+      clip: scene ? sceneClip(scene) : null,
+      sceneTitle: scene ? `${p.name} ${scene.line ? outingLine(scene.line) : `${scene.hr_seq ? `${scene.hr_seq}호 ` : ""}홈런`}` : null,
+    })),
+  };
+}
