@@ -106,8 +106,11 @@ export default function TeamView() {
           {playing?.at === "scenes" && <InlinePlayer playing={playing} onClose={() => setPlaying(null)} className="mt-5" />}
         </section>
 
-        {/* 선수 표 */}
-        <div className="mt-14 grid gap-5 lg:grid-cols-2">
+        {/* 선수 표 — 전원 명단은 선수 탭 「팀별 선수」로 */}
+        <div className="mt-14 mb-3 flex justify-end">
+          <Link href={`/rankings/?${new URLSearchParams({ team: name })}`} className="text-sm font-bold text-brand-text hover:underline">선수 전체 ›</Link>
+        </div>
+        <div className="grid gap-5 lg:grid-cols-2">
           <PlayerTable
             title="타자"
             sub={`OPS 순 · ${asOf ? `${md(asOf)} 기준 · ` : ""}규정타석 50% 이상`}

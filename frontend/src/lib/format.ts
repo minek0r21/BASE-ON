@@ -12,7 +12,7 @@ export const md = (iso: string) => `${Number(iso.slice(5, 7))}.${Number(iso.slic
 
 /** 등판 한 줄: 「6이닝 8K 무실점」 (장면을 제목 대신 우리 기록으로 표기, docs/장면.md 6장) */
 export const outingLine = (l: { outs: number; so: number; r: number }) =>
-  `${innings(l.outs)}이닝 ${l.so}K ${l.r === 0 ? "무실점" : `${l.r}실점`}`;
+  `${innings(l.outs)}이닝 · 삼진 ${l.so} · ${l.r === 0 ? "무실점" : `${l.r}실점`}`; // K 약자 대신 글자로 (11-01 사용자)
 
 /** 아웃 수 → 이닝 표기: 542 → 180⅔ */
 export const innings = (outs: number | null | undefined) =>

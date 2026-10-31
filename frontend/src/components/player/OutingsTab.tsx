@@ -2,115 +2,70 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
-import { getPlayerOutings, qk, type Clip } from "@/lib/api";
-import { md, outingLine } from "@/lib/format";
-import ScenePlayer from "@/components/ScenePlayer";
-import StageTag from "@/components/StageTag";
-import SceneButton from "@/components/SceneButton";
+import { SectionHead } from "@/components/home/common";
+import InlinePlayer from "@/components/InlinePlayer";
+import { Empty } from "@/components/ui/Chip";
+import { getPlayerOutings, qk } from "@/lib/api";
+import { innings, md, outingLine } from "@/lib/format";
+import { GameLine, GameList, MonthChips, PlayButton, type Now } from "./GamesTab";
 
-const RESULT_KO = { W: "승", L: "패", D: "무" } as const;
-
-// 투수 경기 기록 (API-23). 기본층: 등판마다 「이 경기 하이라이트」, 보너스층: 확정 등판 장면 (docs/장면.md 6장)
-export default function OutingsTab({
-  playerId,
-  playerName,
-  season,
-  month,
-  onChange,
-}: {
+/**
+ * 투수 경기 기록 (API-23) — 경기 기록 탭과 같은 줄 모양. 섹션 제목에 그 달 등판 · 이닝 · 탈삼진 · 실점, 무실점 등판은 구단 글자색.
+ * 기본층: 등판마다 「하이라이트」, 보너스층: 확정 등판 장면 (docs/장면.md 6장). 재생은 그 줄 바로 아래
+ */
+export default function OutingsTab({ playerId, playerName, season, month, onChange }: {
   playerId: string;
   playerName: string;
   season: number | null;
   month: number | null;
   onChange: (season: number | null, month: number | null) => void;
 }) {
-  const [playing, setPlaying] = useState<{ clip: Clip; label: string } | null>(null);
+  const [now, setNow] = useState<Now>(null);
   const q = useQuery({
     queryKey: qk.outings(playerId, season, month),
     queryFn: ({ signal }) => getPlayerOutings(playerId, season, month, signal),
     placeholderData: keepPreviousData,
   });
 
-  if (q.isPending) return <p className="text-muted">불러오는 중…</p>;
-  if (q.isError) return <p className="text-muted">등판 기록을 불러오지 못했습니다.</p>;
+  if (q.isPending) return <div className="h-[420px] animate-pulse rounded-3xl bg-surface-2" />;
+  if (q.isError) return <Empty text="등판 기록을 불러오지 못했어요" action={{ label: "다시 시도", onClick: () => q.refetch() }} />;
   const d = q.data;
-  if (!d.season) return <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">등판 기록이 없습니다.</p>;
+  if (!d.season) return <Empty text="등판 기록이 없어요" />;
+
+  const sum = d.outings.reduce((a, o) => ({ outs: a.outs + o.line.outs, so: a.so + o.line.so, r: a.r + o.line.r }), { outs: 0, so: 0, r: 0 });
+  const sub = [`${d.season} 시즌 ${d.month}월 ${d.outings.length}경기`, `${innings(sum.outs)}이닝`, `탈삼진 ${sum.so}`, `실점 ${sum.r}`, "최신순"].join(" · ");
 
   return (
-    <div className="space-y-4">
-      {playing && (
-        <div className="sticky top-16 z-10">
-          <ScenePlayer clip={playing.clip} label={playing.label} onClose={() => setPlaying(null)} />
-        </div>
-      )}
-
-      <div className="flex flex-wrap items-center gap-2">
-        <label className="text-sm">
-          <span className="sr-only">시즌</span>
-          <select
-            value={d.season}
-            onChange={(e) => onChange(Number(e.target.value), null)}
-            className="rounded-lg border border-line bg-surface px-2 py-1.5"
-          >
-            {d.seasons.map((s) => (
-              <option key={s} value={s}>
-                {s} 시즌
-              </option>
-            ))}
-          </select>
-        </label>
-        <div className="flex flex-wrap gap-1" role="group" aria-label="월">
-          {d.months.map((m) => (
-            <button
-              key={m}
-              onClick={() => onChange(d.season, m)}
-              aria-pressed={m === d.month}
-              className={`rounded-full border px-3 py-1 text-sm ${
-                m === d.month ? "border-fg bg-fg text-bg" : "border-line bg-surface text-muted hover:text-fg"
-              }`}
-            >
-              {m}월
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <ul className="divide-y divide-line overflow-hidden rounded-xl border border-line bg-surface">
+    <section>
+      <SectionHead title="경기 기록" sub={sub} right={<MonthChips months={d.months} month={d.month} onPick={(m) => { setNow(null); onChange(d.season, m); }} />} />
+      <GameList>
         {d.outings.map((o) => {
-          const where = `${md(o.date)} ${o.home ? "vs" : "@"} ${o.opponent}`;
+          const key = o.outingId;
+          const where = `${md(o.date)} ${o.opponent}전`;
           const line = outingLine(o.line);
+          const toggle = (k: string, p: Now) => setNow(now?.key === k ? null : p);
           return (
-            <li key={o.outingId} className="flex flex-wrap items-center gap-x-3 gap-y-1 px-4 py-3 text-sm">
-              <span className="w-16 shrink-0 tabular-nums text-muted">
-                {md(o.date)} ({o.weekday})
-              </span>
-              <StageTag label={o.stage_label} />
-              <span className="shrink-0 font-semibold">
-                {o.home ? "vs" : "@"} {o.opponent}
-              </span>
-              <span className="shrink-0 text-xs text-muted">{o.role}</span>
-              <span className={`shrink-0 tabular-nums ${o.result === "W" ? "text-fg" : "text-muted"}`}>
-                {RESULT_KO[o.result]} {o.score.team}:{o.score.opponent}
-              </span>
-              <span className="min-w-0 flex-1 truncate tabular-nums">{line}</span>
-              {o.scene && (
-                <SceneButton
-                  clip={o.scene}
-                  label={`${playerName} ${where} 등판 장면`}
-                  onPlay={() => setPlaying({ clip: o.scene!, label: `${playerName} · ${where} · ${line}` })}
-                />
-              )}
-              {o.highlight && (
-                <SceneButton
-                  clip={o.highlight}
-                  label={`${where} 경기 하이라이트`}
-                  onPlay={() => setPlaying({ clip: o.highlight!, label: `${where} · 경기 하이라이트` })}
-                />
-              )}
+            <li key={key}>
+              <GameLine
+                date={`${md(o.date)} (${o.weekday})`} opponent={o.opponent} home={o.home} stage={o.stage_label} result={o.result} score={o.score} role={o.role}
+                line={<span className={o.line.r === 0 ? "font-bold text-(--team-text)" : ""}>{line}</span>}
+              >
+                {o.scene && (
+                  <PlayButton on={now?.key === `${key}-sc`} onClick={() => toggle(`${key}-sc`, { key: `${key}-sc`, clip: o.scene!, title: `${playerName} 등판 장면`, sub: `${where} · ${line}` })}>
+                    등판 장면
+                  </PlayButton>
+                )}
+                {o.highlight && (
+                  <PlayButton on={now?.key === `${key}-hl`} onClick={() => toggle(`${key}-hl`, { key: `${key}-hl`, clip: o.highlight!, title: `${where} 하이라이트`, sub: o.stage_label ?? undefined })}>
+                    하이라이트
+                  </PlayButton>
+                )}
+              </GameLine>
+              {now?.key.startsWith(`${key}-`) && <InlinePlayer playing={now} onClose={() => setNow(null)} className="mx-3 mb-3" />}
             </li>
           );
         })}
-      </ul>
-    </div>
+      </GameList>
+    </section>
   );
 }

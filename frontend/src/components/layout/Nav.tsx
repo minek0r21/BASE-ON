@@ -49,7 +49,7 @@ export default function Nav() {
               <Link
                 key={m.label}
                 href={m.href}
-                aria-current={(m.href === "/" ? path === "/" : path.startsWith(m.href.replace(/\/$/, ""))) ? "page" : undefined}
+                aria-current={(m.href === "/" ? path === "/" : path.startsWith(m.href.replace(/\/$/, "")) || (m.label === "선수" && path.startsWith("/players"))) ? "page" : undefined}
                 className="rounded-lg px-3 py-1.5 text-[15px] font-medium text-fg-2 transition-colors duration-[120ms] hover:bg-surface-2 aria-[current=page]:font-bold aria-[current=page]:text-fg"
               >
                 {m.label}

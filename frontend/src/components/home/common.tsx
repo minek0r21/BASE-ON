@@ -8,7 +8,7 @@ export function Wrap({ children, className = "" }: { children: ReactNode; classN
 }
 
 /** 섹션 제목 — 기준 · 수치만 (AI 말투 부제 금지, 디자인_2.0_구현 6장) */
-export function SectionHead({ title, sub, right }: { title: string; sub?: string; right?: ReactNode }) {
+export function SectionHead({ title, sub, right }: { title: string; sub?: ReactNode; right?: ReactNode }) {
   return (
     <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
       <div>

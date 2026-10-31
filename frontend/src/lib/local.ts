@@ -4,11 +4,12 @@ import { useSyncExternalStore } from "react";
 
 /**
  * 이 브라우저에만 저장하는 값 — 로그인이 없다 (화면에 「이 브라우저에만 저장돼요」를 적는다, 디자인_2.0_구현 6장)
- *   응원팀: 팀 이름 하나 / 최근 본 선수: 선수 화면을 열 때마다 앞에 넣고 최대 6명
+ *   응원팀: 팀 이름 하나 / 최근 본 선수: 선수 화면을 열 때마다 앞에 넣고 최대 6명 / 선수 탭에서 마지막으로 고른 팀
  * 저장소가 막혀 있어도(사생활 보호 창 등) 화면은 빈 값으로 그려진다.
  */
 const KEY_TEAM = "baseon.myTeam";
 const KEY_RECENT = "baseon.recentPlayers";
+const KEY_ROSTER = "baseon.rosterTeam";
 const RECENT_MAX = 6;
 
 export type RecentPlayer = { id: string; name: string; team: string | null };
@@ -43,6 +44,12 @@ function write(key: string, value: string | null) {
 export function useMyTeam(): [string | null, (team: string | null) => void] {
   const v = useSyncExternalStore(subscribe, () => read(KEY_TEAM), () => null);
   return [v, (t) => write(KEY_TEAM, t)];
+}
+
+/** 선수 탭 「팀별 선수」에서 마지막으로 고른 팀 */
+export function useRosterTeam(): [string | null, (team: string) => void] {
+  const v = useSyncExternalStore(subscribe, () => read(KEY_ROSTER), () => null);
+  return [v, (t) => write(KEY_ROSTER, t)];
 }
 
 let recentCache: { raw: string | null; list: RecentPlayer[] } = { raw: null, list: [] };

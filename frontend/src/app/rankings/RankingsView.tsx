@@ -12,15 +12,23 @@ import { getMeta, getRankings, qk, type RankRow } from "@/lib/api";
 import { AXES, GROUP_RULE, axisGap, gapText, rankingsHref, type AxisCopy, type Role } from "@/lib/axes";
 import { md } from "@/lib/format";
 import { leaguePosition } from "@/lib/position";
+import { useRosterTeam } from "@/lib/local";
+import { team as teamOf } from "@/lib/teams";
+import { josa } from "@/lib/abilities";
+import Help from "@/components/ui/Help";
+import { GROUP_HELP } from "@/lib/constants";
+import PlayersHead from "./PlayersHead";
+import TeamPicker from "./TeamPicker";
 
 const FIRST = 10; // 처음엔 10위까지, 「11 ~ n위 더 보기」로 전부
 const COLS = "grid-cols-[48px_minmax(0,1.5fr)_minmax(0,1.2fr)_110px_70px_70px_70px_150px]";
 
 /**
- * 05 능력별 순위 (Figma 142:805) — 타자 · 투수(선발) 지표 5개마다 비교 대상 전원 순위.
+ * 05 능력별 순위 (Figma 142:805) — 선수 탭의 두 번째 탭 (첫 화면은 팀별 선수, 10-31 사용자). 타자 · 투수(선발) 지표 5개마다 비교 대상 전원 순위.
  * 줄마다 「리그 평균 대비」 — 등수만으로는 안 보이는 선수 사이 간격을 보여준다. 숫자는 실제 차이, 막대는 좋은 쪽을
  * 오른쪽으로 두고 평균을 가운데, 전체에서 가장 먼 차이를 끝으로 잡는다. 상위 · 하위 문구(lib/position.ts)는 마우스를 올리면 나온다.
- * 대표 장면은 그 줄 바로 아래에서 재생한다 (별도 창 없음)
+ * 대표 장면은 그 줄 바로 아래에서 재생한다 (별도 창 없음).
+ * 팀 로고 줄(?team=)로 한 팀만 걸러 본다 — 등수는 리그 등수 그대로, 막대 눈금도 리그 전체 기준 (10-31 사용자)
  */
 export default function RankingsView() {
   const params = useSearchParams();
@@ -28,7 +36,15 @@ export default function RankingsView() {
   const role: Role = params.get("role") === "pitcher" ? "pitcher" : "batter";
   const axes = AXES[role];
   const axis = axes.find((a) => a.key === params.get("axis")) ?? axes[0];
-  const go = (r: Role, a?: string) => router.replace(rankingsHref(r, a), { scroll: false });
+  const teamF = teamOf(params.get("team"))?.name ?? null;
+  const [, setLastTeam] = useRosterTeam();
+  const href = (r: Role, a: string | undefined, t: string | null) => `${rankingsHref(r, a)}${t ? `&${new URLSearchParams({ team: t })}` : ""}`;
+  const go = (r: Role, a?: string) => router.replace(href(r, a, teamF), { scroll: false });
+  const pickTeam = (t: string | null) => {
+    if (t) setLastTeam(t); // 팀별 선수 탭도 이 팀으로
+    setMore(false); setPlaying(null);
+    router.replace(href(role, axis.key, t), { scroll: false });
+  };
 
   const meta = useQuery({ queryKey: qk.meta(), queryFn: ({ signal }) => getMeta(signal) });
   const q = useQuery({ queryKey: qk.rankings(role, axis.key), queryFn: ({ signal }) => getRankings(role, axis.key, signal) });
@@ -37,16 +53,13 @@ export default function RankingsView() {
 
   const asOf = meta.data?.data_as_of;
   const data = q.data;
-  const rows = data ? (more ? data.rows : data.rows.slice(0, FIRST)) : [];
+  const list = data ? (teamF ? data.rows.filter((r) => r.team === teamF) : data.rows) : [];
+  const rows = teamF || more ? list : list.slice(0, FIRST); // 한 팀이면 전부
   const maxGap = data ? Math.max(0, ...data.rows.map((r) => Math.abs(axisGap(axis.copy, r.value, data.leagueAvg) ?? 0))) : 0;
 
   return (
     <Wrap className="pt-10 pb-24">
-      <nav className="text-[13px] text-muted" aria-label="위치">
-        선수 <span aria-hidden>›</span> 능력별 순위
-      </nav>
-      <h1 className="mt-3 text-[40px] font-extrabold tracking-tight">능력별 순위</h1>
-      <p className="mt-1.5 text-sm text-fg-2">{[data?.season && `${data.season} 정규시즌`, asOf && `${md(asOf)} 기준`].filter(Boolean).join(" · ")}</p>
+      <PlayersHead tab="rank" sub={[data?.season && `${data.season} 정규시즌`, asOf && `${md(asOf)} 기준`].filter(Boolean).join(" · ")} />
 
       <div className="mt-7 flex flex-wrap items-center gap-3">
         <div className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
@@ -75,7 +88,9 @@ export default function RankingsView() {
         </div>
       </div>
 
-      <Summary copy={axis.copy} role={role} data={data} shown={rows} />
+      <div className="mt-4"><TeamPicker value={teamF} onPick={pickTeam} withAll /></div>
+
+      <Summary copy={axis.copy} role={role} data={data} shown={rows} team={teamF} />
 
       {q.isError ? (
         <div className="mt-5 flex items-center justify-between rounded-3xl border border-line bg-surface px-6 py-5 text-sm">
@@ -95,6 +110,9 @@ export default function RankingsView() {
               {data.rows[0]?.stats.map((s) => <span key={s.label} className="text-right">{s.label}</span>)}
               <span className="text-right">대표 장면</span>
             </div>
+            {teamF && rows.length === 0 && (
+              <p className="px-6 py-10 text-center text-sm text-fg-2">{teamF} 선수 중 {josa(GROUP_RULE[role], "이", "가")} 없어요</p>
+            )}
             <ol>
               {rows.map((r) => (
                 <Fragment key={r.player_id}>
@@ -119,7 +137,7 @@ export default function RankingsView() {
                 </Fragment>
               ))}
             </ol>
-            {!more && data.rows.length > FIRST && (
+            {!teamF && !more && data.rows.length > FIRST && (
               <button onClick={() => setMore(true)} className="w-full py-4 text-[13px] font-medium text-fg-2 hover:bg-surface-2">
                 {FIRST + 1} ~ {data.rows.length}위 더 보기
               </button>
@@ -131,8 +149,10 @@ export default function RankingsView() {
   );
 }
 
-function Summary({ copy, role, data, shown }: { copy: AxisCopy; role: Role; data?: { groupSize: number; leagueAvg: number | null; rows: RankRow[] }; shown: RankRow[] }) {
-  const first = data?.rows[0];
+function Summary({ copy, role, data, shown, team }: {
+  copy: AxisCopy; role: Role; data?: { groupSize: number; leagueAvg: number | null; rows: RankRow[] }; shown: RankRow[]; team: string | null;
+}) {
+  const first = team ? shown[0] : data?.rows[0];
   const withScene = shown.filter((r) => r.scene).length;
   return (
     <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-3xl border border-line bg-surface px-7 py-6">
@@ -142,14 +162,15 @@ function Summary({ copy, role, data, shown }: { copy: AxisCopy; role: Role; data
         </h2>
         <p className="mt-1.5 text-[13px] text-fg-2">
           {copy.sub}
-          {data && ` · ${GROUP_RULE[role]} ${data.groupSize}명 비교`}
+          {data && <> · {GROUP_RULE[role]} {data.groupSize}명 비교 <Help title={role === "pitcher" ? "규정이닝" : "규정타석"} body={GROUP_HELP[role]} inline /></>}
+          {team && data && ` · ${team} ${shown.length}명만 보기`}
         </p>
       </div>
       {data && (
         <dl className="flex gap-9">
           <Stat label="리그 평균" value={copy.fmt(data.leagueAvg)} />
-          <Stat label="1위" value={first ? copy.fmt(first.value) : "–"} />
-          <Stat label="장면 있는 선수" value={`${withScene} / ${shown.length}`} />
+          <Stat label={team ? `${team} 최고 (리그 ${first?.rank ?? "–"}위)` : "1위"} value={first ? copy.fmt(first.value) : "–"} />
+          <Stat label={`장면 볼 수 있는 선수 (${shown.length}명 중)`} value={`${withScene}명`} />
         </dl>
       )}
     </div>
