@@ -659,22 +659,19 @@ export function reportUnplayable(videoId: string): void {
 
 // ------------------------------------------------------------------ API-11 타자 비교
 
-type RawCompare = {
-  season: number;
-  group_size: number;
-  players: {
-    player_id: string; name: string; team: string | null;
-    has_stats: boolean; qualified: boolean;
-    stats: RawStats | null;
-    axes: { key: AxisKey; label: string; metric: StatKey; reverse: boolean; value: number | null; percentile: number | null; rank: number | null }[];
-    message: string | null;
-  }[];
+/** 07 비교 — 타자끼리(as=batter) · 투수끼리(as=pitcher). 투수는 백분위 · 등수가 각자 역할(선발 · 불펜) 안 기준이라 group_size가 선수마다 */
+export type ComparePlayer = {
+  player_id: string; name: string; team: string | null; position: string | null;
+  has_stats: boolean; qualified: boolean;
+  role?: string | null; role_label?: string | null; group_size?: number | null;
+  stats: Record<string, number | null> | null;
+  axes: { key: AxisKey | PitchAxisKey; label: string; metric: string; reverse: boolean; value: number | null; percentile: number | null; rank: number | null }[];
+  message: string | null;
 };
-export type CompareResult = RawCompare;
-export type ComparePlayer = RawCompare["players"][number];
+export type CompareResult = { season: number; group_size?: number; players: ComparePlayer[] };
 
-export async function getCompare(ids: string[], season: number | null, signal?: AbortSignal): Promise<CompareResult> {
-  return get<RawCompare>("/players/compare", { ids: ids.join(","), season }, signal);
+export async function getCompare(ids: string[], season: number | null, signal?: AbortSignal, as: "batter" | "pitcher" = "batter"): Promise<CompareResult> {
+  return get<CompareResult>("/players/compare", { ids: ids.join(","), season, as }, signal);
 }
 
 // ------------------------------------------------------------------ 관리자 검수 (/admin/review, 설계 6-4·8-4)
@@ -760,7 +757,7 @@ export const qk = {
   games: (id: string, season: number | null, month: number | null) => ["games", id, season, month] as const,
   gamePas: (gamePk: string, playerId: string) => ["gamePas", gamePk, playerId] as const,
   outings: (id: string, season: number | null, month: number | null) => ["outings", id, season, month] as const,
-  compare: (ids: string[], season: number | null) => ["compare", ids.join(","), season] as const,
+  compare: (ids: string[], season: number | null, as: "batter" | "pitcher" = "batter") => ["compare", ids.join(","), season, as] as const,
   matchups: (id: string, season: number | null, minPa: number, as: "batter" | "pitcher" = "batter") => ["matchups", id, season, minPa, as] as const,
   matchup: (batter: string, pitcher: string, season: number | null) => ["matchup", batter, pitcher, season] as const,
   forecast: (batter: string, pitcher: string, season: number) => ["forecast", batter, pitcher, season] as const,

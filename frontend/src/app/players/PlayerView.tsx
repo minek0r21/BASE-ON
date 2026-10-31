@@ -6,7 +6,6 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Wrap } from "@/components/home/common";
 import Abilities from "@/components/player/Abilities";
-import CompareTab from "@/components/player/CompareTab";
 import GamesTab from "@/components/player/GamesTab";
 import Hero, { teamCrumb, type Role } from "@/components/player/Hero";
 import MatchupTab from "@/components/player/MatchupTab";
@@ -22,13 +21,13 @@ import { pushRecentPlayer } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
 
 const TABS = ["overview", "scenes", "games", "seasons", "matchup"] as const;
-type Tab = (typeof TABS)[number] | "compare";
+type Tab = (typeof TABS)[number];
 
 /**
  * 03 타자 · 03b 투수 (Figma 138:519 · 139:1125) — 구단 색 4px 띠 · 머리(+ 대표 장면 플레이어) · 시즌 기록 띠 · 리그 안 위치 5칸 · 탭(개요 · 장면/등판 · 경기 기록 · 시즌 기록 · 맞대결).
  * 06 팀 화면과 같은 틀 (10-31 사용자 A안). 구단 색은 데이터에만 — --team(띠 · 막대 · 선) · --team-text(강한 숫자) · --team-soft(연한 바탕).
  * 개요 = 장면(투수는 등판) 4열 카드 → 요즘 타격감 · 시즌별 기록 반반 → 비슷한 선수.
- * 비교(07)는 머리 「비교하기」로 들어간다(?tab=compare). 장면은 누른 자리에서 바로 재생 (별도 창 없음).
+ * 비교(07)는 머리 「비교하기」로 별도 화면 /compare/?ids=&as= (11-01 사용자). 장면은 누른 자리에서 바로 재생 (별도 창 없음).
  */
 export default function PlayerView() {
   const params = useSearchParams();
@@ -39,7 +38,7 @@ export default function PlayerView() {
   const seasonParam = Number(params.get("season")) || null;
   const monthParam = Number(params.get("month")) || null;
   const tabParam = params.get("tab");
-  const tab: Tab = tabParam === "compare" ? "compare" : (TABS.find((t) => t === tabParam) ?? "overview");
+  const tab: Tab = TABS.find((t) => t === tabParam) ?? "overview";
 
   const setParams = (changes: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
@@ -129,11 +128,7 @@ export default function PlayerView() {
   else if (tab === "seasons") body = (
     <SeasonsTab playerId={p.playerId} onScenes={(s, r) => setParams({ season: String(s), month: null, tab: "scenes", view: p.isBatter && p.pitching ? r : null })} />
   );
-  else if (tab === "matchup") body = <MatchupTab key={role} playerId={p.playerId} playerName={p.name} season={p.season} role={role} />; // 투수 화면은 상대한 타자
-  else body = (
-    <CompareTab playerId={p.playerId} season={p.season} withIds={(params.get("with") ?? "").split(",").filter(Boolean)}
-                onChange={(ids) => setParams({ with: ids.length ? ids.join(",") : null })} />
-  );
+  else body = <MatchupTab key={role} playerId={p.playerId} playerName={p.name} season={p.season} role={role} />; // 투수 화면은 상대한 타자
 
   const tabs: { key: Tab; label: string; n?: number | null }[] = [
     { key: "overview", label: "개요" },
@@ -141,7 +136,6 @@ export default function PlayerView() {
     { key: "games", label: "경기 기록" },
     { key: "seasons", label: "시즌 기록" },
     { key: "matchup", label: "맞대결" },
-    ...(tab === "compare" ? [{ key: "compare" as const, label: "비교" }] : []),
   ];
 
   return (
@@ -152,7 +146,7 @@ export default function PlayerView() {
           <Link href="/rankings/" className="hover:underline">선수</Link> {t && <><span aria-hidden>›</span> {teamCrumb(p.team)}</>}
         </nav>
         <div className="mt-5">
-          <Hero key={`${id}-${season}-${role}`} p={p} role={role} asOf={asOf} onCompare={() => goTab("compare")} />
+          <Hero key={`${id}-${season}-${role}`} p={p} role={role} asOf={asOf} onCompare={() => router.push(`/compare/?${new URLSearchParams({ ids: id, as: role })}`)} />
         </div>
         {has && <div className="mt-8"><SeasonStrip p={p} role={role} seasons={seasons.data} asOf={asOf} /></div>}
         {has && <div className="mt-14"><Abilities p={p} role={role} asOf={asOf} /></div>}
