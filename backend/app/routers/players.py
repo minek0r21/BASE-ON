@@ -16,7 +16,7 @@ from ..db import run
 from ..errors import ApiError
 from ..events import HITS, NOT_AB, batting_line
 from ..postseason import game_tag
-from ..scenes import CONFIRMED, game_highlights, pa_scenes, scene_of
+from ..scenes import CONFIRMED, GOOD_EVENTS, game_highlights, pa_scenes, scene_of
 from ..utils import batter_is_home, result_of, weekday_ko
 from .outings import outing_rows
 
@@ -726,8 +726,7 @@ def get_pitching_form(player_id: str, season: int = Query(..., description="시�
 
 
 # ------------------------------------------------------------------ 36. 선수의 장면 목록
-# 타자: 그 시즌 확정 장면이 있는 타석 중 잘한 것만 (홈런 · 안타 · 볼넷 · 몸에 맞는 공, 장면.md S8). 최근부터
-GOOD_EVENTS = ["home_run", "single", "double", "triple", "walk", "hit_by_pitch"]
+# 타자: 그 시즌 확정 장면이 있는 타석 중 잘한 것만 (GOOD_EVENTS). 최근부터
 Q_PLAYER_PAS = """
 MATCH (:Player {player_id: $id})-[:BATTED_IN]->(pa:PlateAppearance {season: $season})-[:PART_OF]->(g:Game)
 WHERE pa.events IN $events
