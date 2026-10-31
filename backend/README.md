@@ -61,7 +61,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 3 | GET /players/{id}/games?season=&month= | 경기 기록 탭 (타자) |
 | 4 | GET /games/{game_pk}/plate-appearances?player= | 경기 요약 + 이 선수 타석 |
 | 6 | GET /matchup?batter=&pitcher=&season= | 맞대결 (1:1) |
-| 11 | GET /players/compare?ids=&season= | 비교 탭 (2~3명) |
+| 11 | GET /players/compare?ids=&season=&as= | 선수 비교 2~3명 (07). `as=batter`(기본) 타자 능력 5개 백분위 · 등수 · 원 수치 · 기록, `as=pitcher` 투수 능력 5개 · 이닝 · 탈삼진 · WHIP · 피안타율(백분위 · 등수는 각자 역할 안 기준). 대상 밖 선수는 원 수치만 · `position` |
 | 13 | GET /standings?season= | 팀 순위 |
 | 14 | GET /games?date= | 날짜별 경기 일정 · 점수판 · 그날 장면(홈런 `scene`, 등판 `pitcher_scenes`, `scene_counts`) |
 | 15 | GET /home-runs?season=&limit=&video_only= | 최근 홈런 장면 (기본: 확정 장면이 있는 홈런만) |

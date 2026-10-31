@@ -324,10 +324,11 @@ BAT_AXES = [("contact", "삼진회피", "k_pct", True), ("hit", "안타생산", 
 COMPARE_MAX = 3
 
 
-@router.get("/players/compare", summary="11. 타자 비교 (2~3명)")  # /players/{player_id}보다 먼저 등록해야 한다
+@router.get("/players/compare", summary="11. 선수 비교 (2~3명, 타자끼리 · 투수끼리)")  # /players/{player_id}보다 먼저 등록해야 한다
 def compare_players(  # API 11: 백분위·원 수치. 대상 밖 선수는 원 수치만 (설계 6-2, FR-06)
     ids: str = Query(..., description="선수 ID 2~3개, 쉼표로 (예: 53123,52605)"),
     season: int | None = Query(None, description="생략하면 첫 선수가 뛴 가장 최근 시즌"),
+    as_: Literal["batter", "pitcher"] = Query("batter", alias="as", description="batter 타자끼리 / pitcher 투수끼리 (07 비교, 11-01)"),
 ):
     pids = list(dict.fromkeys(i.strip() for i in ids.split(",") if i.strip()))
     if not 2 <= len(pids) <= COMPARE_MAX:
@@ -338,6 +339,8 @@ def compare_players(  # API 11: 백분위·원 수치. 대상 밖 선수는 원 
         if not rows:
             raise ApiError(404, "PLAYER_NOT_FOUND", f"선수를 찾을 수 없습니다: {pid}")
         loaded.append(rows[0])
+    if as_ == "pitcher":
+        return _compare_pitchers(loaded, season)
     if season is None:
         first = [s["season"] for s in loaded[0]["stats"]]
         if not first:
@@ -362,12 +365,35 @@ def compare_players(  # API 11: 백분위·원 수치. 대상 밖 선수는 원 
             })
         players.append({
             "player_id": r["player"]["player_id"], "name": r["player"]["name"], "team": _team_of(season, teams),
-            "has_stats": s is not None, "qualified": qualified,
+            "position": r["player"]["position"], "has_stats": s is not None, "qualified": qualified,
             "stats": None if s is None else {**{k: s.get(k) for k in STAT_INTS}, **{k: _round(s.get(k)) for k in STAT_RATES}},
             "axes": axes,
             "message": None if qualified else ("리그 비교 대상 아님(타석 부족)" if s else f"{season} 시즌 타자 기록 없음"),
         })
     return {"season": season, "group_size": len(group), "players": players}
+
+
+def _compare_pitchers(loaded: list[dict], season: int | None) -> dict:
+    """투수끼리 비교 — API-02 pitching 칸과 같은 값. 백분위 · 등수는 각자 역할(선발 · 불펜) 비교 대상 안 기준"""
+    if season is None:
+        first = run(Q_PITCH_SEASONS, id=loaded[0]["player"]["player_id"])
+        if not first:
+            raise ApiError(404, "SEASON_NOT_FOUND", "첫 선수의 투구 기록이 없습니다")
+        season = first[0]["s"]["season"]
+    players = []
+    for r in loaded:
+        pid = r["player"]["player_id"]
+        pi = _pitching(pid, season)
+        teams = [t for t in r["teams"] if t["season"] is not None]
+        players.append({
+            "player_id": pid, "name": r["player"]["name"], "team": _team_of(season, teams), "position": r["player"]["position"],
+            "has_stats": pi is not None, "qualified": bool(pi and pi["qualified"]),
+            "role": pi and pi["role"], "role_label": pi and pi["role_label"], "group_size": pi and pi["group_size"],
+            "stats": None if pi is None else {k: pi[k] for k in ("g", "gs", "outs", "tbf", "h", "hr", "bb", "hbp", "so", "r", "avg", "whip")},
+            "axes": [] if pi is None else [{k: a[k] for k in ("key", "label", "metric", "reverse", "value", "percentile", "rank")} for a in pi["axes"]],
+            "message": None if pi and pi["qualified"] else ("리그 비교 대상 아님(이닝 부족)" if pi else f"{season} 시즌 투구 기록 없음"),
+        })
+    return {"season": season, "as": "pitcher", "players": players}
 
 
 @router.get("/players/{player_id}", summary="2. 선수 정보 (정보 화면)")
