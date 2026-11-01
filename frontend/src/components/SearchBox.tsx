@@ -29,10 +29,13 @@ const choOf = (ch: string) => {
 /** 이름에서 검색어와 맞는 글자를 굵게 — 초성(ㄱㄷㅇ)이면 초성이 이어서 맞는 자리, 아니면 그대로 들어 있는 자리. 옛 이름으로 찾은 것은 그대로 */
 function Marked({ name, q }: { name: string; q: string }) {
   const chars = [...name];
+  const pos = chars.flatMap((c, i) => (c === " " ? [] : [i])); // 띄어쓰기를 뺀 글자의 원래 자리 (「코엔 윈」 ↔ 「ㅋㅇㅇ」)
+  const bare = pos.map((i) => chars[i]);
   const cho = /^[ㄱ-ㅎ]+$/.test(q);
-  const at = cho ? chars.map(choOf).join("").indexOf(q) : name.indexOf(q);
+  const at = cho ? bare.map(choOf).join("").indexOf(q) : bare.join("").indexOf(q);
   if (!q || at < 0) return <>{name}</>;
-  return <>{chars.slice(0, at).join("")}<b className="font-extrabold">{chars.slice(at, at + q.length).join("")}</b>{chars.slice(at + q.length).join("")}</>;
+  const from = pos[at], to = pos[at + q.length - 1] + 1;
+  return <>{chars.slice(0, from).join("")}<b className="font-extrabold">{chars.slice(from, to).join("")}</b>{chars.slice(to).join("")}</>;
 }
 
 export const playerHref = (id: string, extra: Record<string, string> = {}) =>

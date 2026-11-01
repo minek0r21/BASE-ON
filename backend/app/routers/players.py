@@ -23,7 +23,6 @@ from .outings import outing_rows
 
 router = APIRouter(tags=["선수"])
 
-SEARCH_LIMIT = 20  # 검색 결과 최대 개수 (명세 미정 → 일단 20)
 
 
 # ------------------------------------------------------------------ 1. 검색
@@ -48,7 +47,9 @@ def name_pattern(q: str) -> str:
 
 Q_SEARCH = """
 MATCH (p:Player)
-WHERE p.name =~ ('.*' + $pattern + '.*') OR any(x IN coalesce(p.former_names, []) WHERE x =~ ('.*' + $pattern + '.*'))
+// 이름의 띄어쓰기는 빼고 맞춘다 (검색어도 띄어쓰기를 뺀다 — 「코엔 윈」 ↔ 「ㅋㅇㅇ」)
+WITH p, replace(p.name, ' ', '') AS bare
+WHERE bare =~ ('.*' + $pattern + '.*') OR any(x IN coalesce(p.former_names, []) WHERE replace(x, ' ', '') =~ ('.*' + $pattern + '.*'))
 WITH p,
      EXISTS { (p)-[:BATTED_IN]->() }  AS is_batter,
      EXISTS { (p)-[:PITCHED_IN]->() } AS is_pitcher
@@ -63,9 +64,8 @@ WITH p, head(collect(t.name)) AS team, max(f.season) AS last_season
 WITH p, team, last_season, COUNT { (p)-[:BATTED_IN]->() } + COUNT { (p)-[:PITCHED_IN]->() } AS played
 RETURN p.player_id AS player_id, p.name AS name, team, p.position AS position, p.bats_throws AS bats_throws,   // 공식 투타 (예: 우투좌타)
        last_season, coalesce(p.former_names, []) AS former_names
-ORDER BY name <> $q, NOT name =~ ($pattern + '.*'), played DESC, name    // 이름이 같은 선수 → 앞부분이 맞는 선수 → 많이 뛴 순
-LIMIT $limit
-"""         # 선수ID/이름/가장최근소속팀/타격방향/던지는 손 리턴
+ORDER BY replace(name, ' ', '') <> $q, NOT replace(name, ' ', '') =~ ($pattern + '.*'), played DESC, name    // 이름이 같은 선수 → 앞부분이 맞는 선수 → 많이 뛴 순
+"""  # 상한 없음 (FR-01-02): 「ㅇㅈㅎ」처럼 겹치는 초성도 덜 뛴 선수까지 모두         # 선수ID/이름/가장최근소속팀/타격방향/던지는 손 리턴
 
 
 @router.get("/players", summary="1. 선수 이름 검색")
@@ -74,7 +74,7 @@ def search_players(  # API 1: 이름으로 선수 검색
     role: Literal["batter", "pitcher"] | None = Query(None, description="batter / pitcher / 생략하면 전체"),
 ):
     q = "".join(q.split())
-    rows = run(Q_SEARCH, q=q, pattern=name_pattern(q), role=role, limit=SEARCH_LIMIT)
+    rows = run(Q_SEARCH, q=q, pattern=name_pattern(q), role=role)
     return {"players": rows}
 
 
