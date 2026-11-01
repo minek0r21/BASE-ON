@@ -24,8 +24,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
       - run: npm run lint
+      - run: npm run build   # 정적 내보내기(out/)가 만들어지는지. LayoutProps 같은 Next 생성 타입도 이때 생긴다
       - run: npx tsc --noEmit
-      - run: npm run build   # 정적 내보내기(out/)가 만들어지는지
 
   python:
     runs-on: ubuntu-latest
