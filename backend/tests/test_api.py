@@ -64,6 +64,10 @@ class ApiTest(unittest.TestCase):
         self.assertIn("52605", ids("김도영"))
         self.assertIn("52605", ids("ㄱㄷㅇ"))  # 초성
         self.assertEqual(ids("이종범"), [])     # 2024~2026 기록 없음 → 빈 목록 (오류 아님)
+        names = lambda q: {p["name"] for p in self.ok("/players", {"q": q})["players"]}  # noqa: E731
+        self.assertTrue({"이주형", "이진하", "이정현", "윤정현"} <= names("ㅇㅈㅎ"))  # 상한 없음: 겹치는 초성도 모두
+        self.assertIn("코엔 윈", names("ㅋㅇㅇ"))  # 이름의 띄어쓰기는 빼고 맞춘다
+        self.assertIn("코엔 윈", names("코엔윈"))
 
     # ---------------------------------------------------------------- 선수 (API-02)
     def test_batter_summary(self):
