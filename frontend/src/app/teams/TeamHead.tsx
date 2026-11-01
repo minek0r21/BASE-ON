@@ -7,6 +7,7 @@ import { Retry } from "@/components/ui/Chip";
 import { TeamLogo } from "@/components/ui/Media";
 import type { Standing } from "@/lib/api";
 import { TEAM_NAMES, teamHref, withGwa, type Team } from "@/lib/teams";
+import RankFlow from "./RankFlow";
 
 const NAV = 64; // 위 메뉴 높이 (top-16)
 const BAR = 48; // 따라오는 팀 막대 높이 (h-12)
@@ -132,14 +133,26 @@ function Tags({ me, all, t }: { me: Standing; all: Standing[]; t: Team }) {
   );
 }
 
-/** 가로 순위 띠 — 10팀 한 줄. 이 팀 칸만 팀 색 */
+/** 가로 순위 띠 — 10팀 한 줄. 이 팀 칸만 팀 색. 「순위 변동 보기」를 누르면 아래에 순위 변동 그래프(처음엔 접힘) */
 function StandingStrip({ all, me, t, season }: { all?: Standing[]; me: string; t: Team; season?: number }) {
+  const [flow, setFlow] = useState(false);
   if (!all) return <div className="mt-8 h-[92px] animate-pulse rounded-3xl bg-surface-2" />;
   return (
     <section className="mt-8">
-      <p className="mb-2.5 flex items-baseline gap-2 text-sm font-bold">
-        {season} 순위 <span className="text-xs font-medium text-muted">오른쪽 숫자는 1위와 경기 차</span>
-      </p>
+      <div className="mb-2.5 flex items-baseline justify-between gap-3">
+        <p className="flex items-baseline gap-2 text-sm font-bold">
+          {season} 순위 <span className="text-xs font-medium text-muted">오른쪽 숫자는 1위와 경기 차</span>
+        </p>
+        {season != null && (
+          <button onClick={() => setFlow(!flow)} aria-expanded={flow} className="group flex items-center gap-1 text-sm font-bold text-brand-text hover:underline">
+            순위 변동 {flow ? "접기" : "보기"}
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"
+                 className="transition-transform duration-200 group-aria-expanded:rotate-180" aria-hidden>
+              <path d="m6 9 6 6 6-6" />
+            </svg>
+          </button>
+        )}
+      </div>
       <ol className="grid grid-cols-5 gap-1.5 lg:grid-cols-10">
         {all.map((x) => {
           const on = x.team === me;
@@ -164,6 +177,7 @@ function StandingStrip({ all, me, t, season }: { all?: Standing[]; me: string; t
           );
         })}
       </ol>
+      {flow && season != null && <RankFlow name={me} t={t} season={season} />}
     </section>
   );
 }

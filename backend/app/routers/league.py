@@ -4,11 +4,13 @@
   16. GET /batters?season=&team=&sort=&qualified=&limit=       타자 순위표 (리그 상위 타자, 팀 선수 목록)
   18. GET /leaders?season=&limit=                              지표 5개별 상위 n명 (메인 '이런 타자는 어때요?')
   26. GET /pitchers?season=&team=&role=&qualified=&sort=&limit= 투수 목록 (팀 화면 투수 표, 05 능력별 순위 투수 탭)
+  28. GET /standings/history?season=                           순위 변동 (주마다 마지막 경기일 순위, 06 팀 「순위 변동 보기」)
   29. GET /pitchers/leaders?season=&role=&limit=               투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」)
   31. GET /players/{player_id}/similar?season=&as=&limit=      가장 강한 지표가 비슷한 선수 (03 · 03b 아래)
   33. GET /teams/{team}/scenes?season=&limit=                  팀의 최근 장면 (06 팀 「KIA의 최근 장면」)
   35. GET /teams/{team}/games?season=&limit=                   팀의 최근 경기 (06 팀 「최근 경기」)
 """
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Query
@@ -73,6 +75,53 @@ def get_standings(  # API 13: 시즌 팀 순위 (승률 = 승 ÷ (승+패), 무�
         t["gb"] = ((top["w"] - t["w"]) + (t["l"] - top["l"])) / 2  # 게임차. 1위는 0
 
     return {"seasons": seasons, "season": season, "teams": teams}
+
+
+# ------------------------------------------------------------------ 28. 순위 변동
+Q_SEASON_RESULTS = """
+MATCH (g:Game {season: $season, game_type: 'regular'})-[:HOME]->(h:Team), (g)-[:AWAY]->(a:Team)
+RETURN toString(g.date) AS date, h.name AS home, a.name AS away, g.home_final AS hs, g.away_final AS as_
+ORDER BY date
+"""
+
+
+MIN_GAMES = 5  # 개막 주(2경기 안팎)는 공동 순위가 많아 다음 주에 합친다
+
+
+@router.get("/standings/history", summary="28. 순위 변동 (주마다)")
+def get_standings_history(  # API 28: 주(월~일)마다 마지막 경기일의 순위. 순위 매기는 법은 API-13과 같다
+    season: int | None = Query(None, description="생략하면 가장 최근 시즌"),
+):
+    if season is None:
+        seasons = [r["season"] for r in run(Q_SEASONS)]
+        if not seasons:
+            raise ApiError(404, "NO_GAMES", "경기 데이터가 없습니다")
+        season = seasons[-1]
+    rows = run(Q_SEASON_RESULTS, season=season)
+    if not rows:
+        raise ApiError(404, "SEASON_NOT_FOUND", f"{season} 시즌 경기가 없습니다")
+
+    rec: dict = {}  # 팀 이름 → 승 · 패
+    points = []
+    for i, r in enumerate(rows):
+        for t, mine, opp in ((r["home"], r["hs"], r["as_"]), (r["away"], r["as_"], r["hs"])):
+            x = rec.setdefault(t, {"w": 0, "l": 0, "g": 0})
+            x["g"] += 1
+            if mine != opp:
+                x["w" if mine > opp else "l"] += 1
+        nxt = rows[i + 1]["date"] if i + 1 < len(rows) else None
+        if nxt and _week(nxt) == _week(r["date"]):
+            continue
+        if nxt and (len(rec) < 10 or min(x["g"] for x in rec.values()) < MIN_GAMES):
+            continue
+        pct = {t: x["w"] / (x["w"] + x["l"]) if x["w"] + x["l"] else 0.0 for t, x in rec.items()}
+        order = sorted(rec, key=lambda t: (-pct[t], -rec[t]["w"]))
+        points.append({"date": r["date"], "ranks": dict(zip(order, _rank([pct[t] for t in order])))})
+    return {"season": season, "teams": len(rec), "points": points}
+
+
+def _week(day: str) -> tuple:  # "2026-04-05" → (2026, 14) ISO 주. KBO는 월요일이 쉬는 날이라 주 끝 = 일요일
+    return date.fromisoformat(day).isocalendar()[:2]
 
 
 # ------------------------------------------------------------------ 16. 타자 순위표

@@ -814,6 +814,7 @@ export const qk = {
   topBatters: () => ["topBatters"] as const,
   topPitchers: () => ["topPitchers"] as const,
   standings: () => ["standings"] as const,
+  standingsHistory: (season: number) => ["standingsHistory", season] as const,
   roster: (team: string) => ["roster", team] as const,
   rankings: (role: string, axis: string) => ["rankings", role, axis] as const,
   gameDays: (start: string) => ["gameDays", start] as const,
@@ -1006,6 +1007,11 @@ export const getTopPitchers = (signal?: AbortSignal) =>
 /** API-13 팀 순위 */
 export type Standing = { team_id: string; team: string; games: number; w: number; l: number; d: number; pct: number; rank: number; gb: number };
 export const getStandings = (signal?: AbortSignal) => get<{ season: number; teams: Standing[] }>("/standings", {}, signal);
+
+/** API-28 순위 변동 — 주마다 마지막 경기일의 순위 (ranks: 팀 이름 → 순위, 공동 순위 있음) */
+export type StandingsHistory = { season: number; teams: number; points: { date: string; ranks: Record<string, number> }[] };
+export const getStandingsHistory = (season: number, signal?: AbortSignal) =>
+  get<StandingsHistory>("/standings/history", { season }, signal);
 
 /** 05 능력별 순위 — 타자(API-16 `sort=지표`) · 선발(API-26 `role=starter&qualified=true&sort=지표`)을 같은 줄 모양으로 */
 export type RankRow = {
