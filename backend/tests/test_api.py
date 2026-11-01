@@ -122,9 +122,19 @@ class ApiTest(unittest.TestCase):
         self.assertTrue({"video_id", "start_sec", "end_sec", "precision"} <= set(v["videos"][0]))
         self.error(404, "PA_NOT_FOUND", "/plate-appearances/zzz/video")
 
+    def test_standings_history(self):
+        h = self.ok("/standings/history", {"season": 2026})
+        pts = h["points"]
+        self.assertGreater(len(pts), 10)  # 주마다 — 2026은 3월 말 ~ 7.26
+        self.assertEqual(pts[-1]["date"], "2026-07-26")
+        self.assertTrue(all(len(p["ranks"]) == 10 for p in pts))
+        last = {t["team"]: t["rank"] for t in self.ok("/standings", {"season": 2026})["teams"]}
+        self.assertEqual(pts[-1]["ranks"], last)  # 마지막 점 = 지금 순위표
+        self.error(404, "SEASON_NOT_FOUND", "/standings/history", {"season": 2019})
+
     # ---------------------------------------------------------------- 지운 주소 (11-01 정리)
     def test_removed_routes(self):
-        for path in ("/video-links", "/video-links/stats", "/standings/history?season=2026", "/outings/x/video"):
+        for path in ("/video-links", "/video-links/stats", "/outings/x/video"):
             self.assertEqual(call("GET", path)[0], 404, path)
 
 

@@ -39,7 +39,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | `app/routers/players.py` | 1 검색(초성 · 옛 이름), 2 선수 정보(타자 · 투수), 3 출전 경기, 11 비교, 19 시즌 기록, 27 요즘 타격감 |
 | `app/routers/games.py` | 4 경기별 타석, 5 타석 장면, 14 날짜별 경기 일정, 15 최근 홈런 |
 | `app/routers/matchup.py` | 6 맞대결, 17 상대한 투수(또는 타자) 목록 |
-| `app/routers/league.py` | 13 팀 순위, 16 타자 순위표, 18 지표별 상위 타자, 26 투수 목록 |
+| `app/routers/league.py` | 13 팀 순위, 16 타자 순위표, 18 지표별 상위 타자, 26 투수 목록, 28 순위 변동 |
 | `app/routers/outings.py` | 23 투수 등판 목록, 30 등판 상세 |
 | `app/routers/admin.py` | 관리자 검수 (경기 · 타석 · 등판 공통) |
 | `app/routers/report.py` | 12 재생 불가 신고, 재확인 |
@@ -71,6 +71,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 25 | GET /postseason?season= | 메인 포스트시즌 코너 (포스트시즌 기록이 있을 때만) |
 | 26 | GET /pitchers?season=&team=&role=&qualified=&sort=&limit= | 투수 목록 (기본 이닝 순) · 능력별 순위(`sort`=지표 5개 · whip 등, 백분위 · 등수 · 장면 수(장면이 있는 등판 수, API-36 「장면 있음」과 같음) · 지표 장면(태그 없는 유인 · 장타 억제는 최근 등판 장면) · 비교 대상 평균) |
 | 27 | GET /players/{id}/form?season= | 요즘 타격감 (최근 20경기 OPS) |
+| 28 | GET /standings/history?season= | 순위 변동: 주(월~일)마다 마지막 경기일의 팀 순위(API-13과 같은 방식, 공동 순위 있음). 10팀이 모두 5경기 이상 치른 주부터 · 마지막 점은 데이터 기준일 (06 팀 「순위 변동 보기」) |
 | 29 | GET /pitchers/leaders?season=&role=&limit= | 투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」, 기본 선발) |
 | 30 | GET /outings/{outing_id}/plate-appearances | 등판 상세: 등판 요약 + 이닝별 상대 타자(결과 · 범례 분류 · 투구 수 · 볼카운트 · 주자 · 아웃) |
 | 31 | GET /players/{id}/similar?season=&as=&limit= | 비슷한 선수: 가장 강한 지표 순위에서 바로 위 선수 먼저, 모자라면 아래 (카드 대표 장면 포함) |
