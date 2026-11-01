@@ -13,7 +13,7 @@ import { thumbnailUrl } from "@/components/ScenePlayer";
 import SearchBox, { playerHref } from "@/components/SearchBox";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
-import { getCompare, getMeta, getPlayer, getSimilar, qk, type ComparePlayer, type PlayerSummary } from "@/lib/api";
+import { ApiError, getCompare, getMeta, getPlayer, getSimilar, qk, type ComparePlayer, type PlayerSummary } from "@/lib/api";
 import { josa } from "@/lib/abilities";
 import { axisCopy } from "@/lib/axes";
 import { innings, md, rate3 } from "@/lib/format";
@@ -63,16 +63,19 @@ export default function CompareView() {
     router.replace(`/compare/?${new URLSearchParams({ ...(next.length ? { ids: next.join(",") } : {}), as: r })}`, { scroll: false });
 
   const meta = useQuery({ queryKey: qk.meta(), queryFn: ({ signal }) => getMeta(signal) });
-  const cmp = useQuery({
-    queryKey: qk.compare(ids, null, role),
-    queryFn: ({ signal }) => getCompare(ids, null, signal, role),
-    enabled: ids.length >= 2,
-  });
   const players = useQueries({ queries: ids.map((id) => ({ queryKey: qk.player(id, null), queryFn: ({ signal }: { signal: AbortSignal }) => getPlayer(id, null, signal) })) });
+  // 주소의 선수 번호가 없는 선수면 그 카드에만 알리고 나머지끼리 비교한다 (09 원칙: 숨기지 않고 다른 길을 준다)
+  const missing = ids.filter((_, i) => { const e = players[i].error; return e instanceof ApiError && e.status === 404; });
+  const valid = ids.filter((id) => !missing.includes(id));
+  const cmp = useQuery({
+    queryKey: qk.compare(valid, null, role),
+    queryFn: ({ signal }) => getCompare(valid, null, signal, role),
+    enabled: valid.length >= 2,
+  });
   const summaries = players.map((q) => q.data);
   const season = cmp.data?.season ?? summaries[0]?.season ?? null;
   const asOf = meta.data?.data_as_of;
-  const data = ids.length >= 2 ? cmp.data : undefined;
+  const data = valid.length >= 2 ? cmp.data : undefined;
 
   const sub = [season && `${season} 정규시즌`, asOf && `${md(asOf)} 기준`,
     role === "pitcher" ? "순위는 각자 역할(선발 · 불펜) 비교 대상 안" : cmp.data?.group_size && `타자 ${cmp.data.group_size}명 중 순위`, `최대 ${MAX}명`].filter(Boolean).join(" · ");
@@ -99,7 +102,7 @@ export default function CompareView() {
 
       <div className="mt-7 grid items-start gap-4 lg:grid-cols-3">
         {ids.map((id, i) => (
-          <PlayerCard key={id} i={i} p={summaries[i]} c={data?.players[i]} role={role}
+          <PlayerCard key={id} i={i} p={summaries[i]} c={data?.players[valid.indexOf(id)]} role={role} missing={missing.includes(id)}
                       onSwap={(nid) => go(ids.map((x) => (x === id ? nid : x)))}
                       onRemove={ids.length > 1 ? () => go(ids.filter((x) => x !== id)) : undefined} exclude={ids} />
         ))}
@@ -108,7 +111,7 @@ export default function CompareView() {
         )}
       </div>
 
-      {ids.length >= 2 && (cmp.isError ? (
+      {valid.length >= 2 && (cmp.isError ? (
         <div className="mt-6"><Empty text="비교 기록을 불러오지 못했어요" action={{ label: "다시 시도", onClick: () => cmp.refetch() }} /></div>
       ) : !data ? (
         <div className="mt-6 h-[520px] animate-pulse rounded-3xl bg-surface-2" />
@@ -117,7 +120,7 @@ export default function CompareView() {
           <Abilities data={data.players} n={data.group_size ?? null} />
           <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
             <Stats players={data.players} rows={role === "pitcher" ? PIT_ROWS : BAT_ROWS} />
-            <Scenes ids={ids} summaries={summaries} role={role} names={data.players.map((p) => p.name)} />
+            <Scenes ids={valid} summaries={valid.map((id) => summaries[ids.indexOf(id)])} role={role} names={data.players.map((p) => p.name)} />
           </div>
         </>
       ))}
@@ -136,8 +139,8 @@ function Name({ name, team, i, bold = true }: { name: string; team: string | nul
   );
 }
 
-function PlayerCard({ i, p, c, role, onSwap, onRemove, exclude }: {
-  i: number; p?: PlayerSummary; c?: ComparePlayer; role: Role; onSwap: (id: string) => void; onRemove?: () => void; exclude: string[];
+function PlayerCard({ i, p, c, role, missing, onSwap, onRemove, exclude }: {
+  i: number; p?: PlayerSummary; c?: ComparePlayer; role: Role; missing?: boolean; onSwap: (id: string) => void; onRemove?: () => void; exclude: string[];
 }) {
   const [swap, setSwap] = useState(false);
   const t = teamOf(c?.team ?? p?.team);
@@ -145,7 +148,7 @@ function PlayerCard({ i, p, c, role, onSwap, onRemove, exclude }: {
   const chip = role === "pitcher"
     ? pi && `${innings(pi.outs)}이닝 · WHIP ${pi.whip?.toFixed(2) ?? "–"}`
     : p?.stats && `${p.stats.hr}홈런 · OPS ${rate3(p.stats.ops)}`;
-  const pos = role === "pitcher" ? (pi ? `투수 (${pi.roleLabel})` : "투수") : p?.position;
+  const pos = role === "pitcher" && pi ? `투수 (${pi.roleLabel})` : p?.position;
   return (
     <div className="overflow-hidden rounded-3xl border border-line bg-surface">
       <div className="h-1" style={{ background: SERIES[i] }} aria-hidden />
@@ -156,20 +159,21 @@ function PlayerCard({ i, p, c, role, onSwap, onRemove, exclude }: {
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
             <Link href={p ? playerHref(p.playerId) : "#"} className="flex min-w-0 items-center gap-2 text-[22px] leading-tight font-extrabold hover:underline">
-              <span className="truncate">{p?.name ?? c?.name ?? "…"}</span> <TeamLogo team={t?.name} height={22} />
+              <span className="truncate">{p?.name ?? c?.name ?? (missing ? "없는 선수" : "…")}</span> <TeamLogo team={t?.name} height={22} />
             </Link>
             <span className="flex shrink-0 gap-2 text-xs font-bold text-fg-2">
               <button onClick={() => setSwap(!swap)} className="hover:text-fg hover:underline">{swap ? "닫기" : "바꾸기"}</button>
               {onRemove && <button onClick={onRemove} className="hover:text-fg hover:underline">빼기</button>}
             </span>
           </div>
-          <p className="mt-1 truncate text-[13px] text-fg-2">{[t?.full ?? p?.team, pos].filter(Boolean).join(" · ")}</p>
+          {!missing && <p className="mt-1 truncate text-[13px] text-fg-2">{[t?.full ?? p?.team, pos].filter(Boolean).join(" · ")}</p>}
           {chip && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-bold" style={{ background: tint(i) }}>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: SERIES[i] }} aria-hidden /> {chip}
             </p>
           )}
           {c?.message && <p className="mt-1.5 text-xs text-muted">{c.message}</p>}
+          {missing && <p className="mt-1.5 text-[13px] text-fg-2">주소의 선수 번호와 맞는 선수가 없어요. 바꾸거나 빼 주세요.</p>}
         </div>
       </div>
       {swap && <div className="border-t border-line p-4"><Picker role={role} base={exclude[0]} season={p?.season ?? null} exclude={exclude} onPick={(id) => { setSwap(false); onSwap(id); }} /></div>}
@@ -245,8 +249,9 @@ function Legend({ players }: { players: { name: string; team: string | null }[] 
 /** 능력 비교 — 능력마다 선수별 막대(이긴 선수는 진하게), 오른쪽 「○○ 우세」 · 「비슷해요」.
  *  같은 비교 무리면 백분위로(차이 5 미만은 비슷해요), 선발 · 불펜이 섞이면 무리가 달라 실제 값으로 판정한다 */
 function Abilities({ data, n }: { data: ComparePlayer[]; n: number | null }) {
-  const keys = data[0]?.axes.map((a) => a.key) ?? [];
-  const mixed = new Set(data.map((p) => p.role ?? "batter")).size > 1;
+  // 기록이 없는 선수(투수 비교의 타자 등)는 축이 비어 있다 — 축 목록 · 역할 섞임은 기록이 있는 선수로
+  const keys = data.find((p) => p.axes.length)?.axes.map((a) => a.key) ?? [];
+  const mixed = new Set(data.filter((p) => p.has_stats).map((p) => p.role ?? "batter")).size > 1;
   return (
     <div className="mt-6">
       <Panel title="능력 비교" right={<Legend players={data} />}>

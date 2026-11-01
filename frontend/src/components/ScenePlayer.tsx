@@ -73,8 +73,8 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
   const clipRef = useRef(clip);
   const [started, setStarted] = useState(bare);
   // 오류는 영상 ID와 묶어 둔다 → 다른 장면으로 바꾸면 저절로 사라진다
-  const [error, setError] = useState<{ videoId: string; message: string } | null>(null);
-  const shownError = error?.videoId === clip.videoId ? error.message : null;
+  const [error, setError] = useState<{ videoId: string; code: number } | null>(null);
+  const shownError = error?.videoId === clip.videoId ? <ErrorText code={error.code} /> : null;
 
   useEffect(() => {
     clipRef.current = clip;
@@ -106,7 +106,7 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
           onError: (e) => {
             const videoId = clipRef.current.videoId;
             if (UNPLAYABLE.has(e.data)) reportUnplayable(videoId);
-            setError({ videoId, message: UNPLAYABLE.has(e.data) ? "영상을 재생할 수 없습니다." : `재생 오류 (${e.data})` });
+            setError({ videoId, code: e.data });
           },
         },
       });
@@ -147,7 +147,7 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
       <div className="relative h-full w-full bg-black" aria-label={`${label} 재생 중`}>
         <div ref={hostRef} className="absolute inset-0 h-full w-full [&>*]:h-full [&>*]:w-full" />
         {shownError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4 text-center text-sm text-white">{shownError}</div>
+          <div className="absolute inset-0 flex items-center justify-center bg-black/85 p-4 text-center text-sm text-white">{shownError}</div>
         )}
       </div>
     );
@@ -174,7 +174,7 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
           <div ref={hostRef} className="absolute inset-0 h-full w-full [&>*]:h-full [&>*]:w-full" />
         )}
         {shownError && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/80 p-4 text-center text-sm text-white">
+          <div className="absolute inset-0 flex items-center justify-center bg-black/85 p-4 text-center text-sm text-white">
             {shownError}
           </div>
         )}
@@ -183,5 +183,16 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
         {clip.precision === "game" ? "이 경기 하이라이트입니다. 이 선수의 장면이 나오지 않을 수도 있습니다." : clip.title}
       </p>
     </section>
+  );
+}
+
+/** 재생 불가 안내 (09 「영상을 재생할 수 없을 때」). 신고(API-12)는 onError에서 이미 보냈다 */
+function ErrorText({ code }: { code: number }) {
+  const gone = UNPLAYABLE.has(code);
+  return (
+    <div>
+      <p className="text-base font-bold">{gone ? "이 영상을 재생할 수 없어요" : "영상을 재생하지 못했어요"}</p>
+      <p className="mt-1.5 text-white/70">{gone ? "채널에서 비공개로 바뀌었거나 삭제됐을 수 있어요." : `잠시 뒤 다시 시도해 주세요. (오류 ${code})`}</p>
+    </div>
   );
 }

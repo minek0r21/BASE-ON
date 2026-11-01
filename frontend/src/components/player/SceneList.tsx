@@ -10,6 +10,7 @@ import { thumbnailUrl } from "@/components/ScenePlayer";
 import { Chip, Empty } from "@/components/ui/Chip";
 import { PlayGlyph, mmss } from "@/components/ui/Media";
 import { getPitcherOutings, getPlayerScenes, qk, type Clip, type OutingRow, type PlayerPaScene } from "@/lib/api";
+import { josa } from "@/lib/abilities";
 import { innings, md } from "@/lib/format";
 
 const HR_RUNS = ["", "솔로", "투런", "스리런", "만루"];
@@ -21,9 +22,9 @@ const EVENT_KO: Record<string, string> = { single: "안타", double: "2루타", 
  * 누르면 그 자리에서 재생 (별도 창 없음). 제목은 우리 기록으로 만든다 (「30호 · 솔로 홈런」)
  * 개요는 06 팀 「최근 장면」과 같은 4열 카드, 장면 탭(all)은 전부 줄 목록
  */
-export function BatterScenes({ id, name, season, all, kind, onKind, }: {
+export function BatterScenes({ id, name, season, all, kind, onKind, onGames }: {
   id: string; name: string; season: number; all?: boolean;
-  kind: "all" | "home_run" | "on_base"; onKind: (k: "all" | "home_run" | "on_base") => void;
+  kind: "all" | "home_run" | "on_base"; onKind: (k: "all" | "home_run" | "on_base") => void; onGames?: () => void;
 }) {
   const q = useQuery({ queryKey: qk.playerScenes(id, season, "batter"), queryFn: ({ signal }) => getPlayerScenes(id, season, signal) });
   const c = q.data?.counts;
@@ -42,6 +43,11 @@ export function BatterScenes({ id, name, season, all, kind, onKind, }: {
       loading={q.isPending}
       error={q.isError ? () => q.refetch() : null}
       empty={`${season} 시즌 장면이 아직 없어요`}
+      none={c?.scenes === 0 ? {
+        line: `장면 · 아직 없음${c.home_runs ? ` (홈런 ${c.home_runs}개)` : ""}`,
+        sub: c.home_runs ? `홈런 ${c.home_runs}개 모두 아직 영상과 이어지지 않았어요.` : `${season} 시즌에 영상과 이어진 타석이 아직 없어요.`,
+        action: onGames && { label: "경기 기록에서 경기 하이라이트 보기", onClick: onGames },
+      } : undefined}
       all={all}
       rows={rows.map((s) => ({ key: s.paId, clip: s.clip, ...batterText(s, name) }))}
     />
@@ -118,20 +124,36 @@ function outingText(o: OutingRow, name: string) {
 
 type Row = { key: string; clip: Clip; tag: string; badge: string; title: string; lines: string[]; playTitle: string; playSub: string };
 type ChipDef = { key: string; label: string; n: number };
+type None = { line: string; sub: string; action?: { label: string; onClick: () => void } };
 
-function ListShell({ title, sub, chips, chip, onChip, loading, error, empty, all, rows }: {
+function ListShell({ title, sub, chips, chip, onChip, loading, error, empty, none, all, rows }: {
   title: string; sub?: string; chips?: ChipDef[]; chip: string; onChip: (k: string) => void;
-  loading: boolean; error: (() => void) | null; empty: string; all?: boolean; rows: Row[];
+  loading: boolean; error: (() => void) | null; empty: string; none?: None; all?: boolean; rows: Row[];
 }) {
   const [playing, setPlaying] = useState<(Playing & { key: string }) | null>(null);
   const scroller = useRef<HTMLUListElement>(null);
   const pick = (k: string) => { setPlaying(null); onChip(k); };
   const play = (r: Row) => setPlaying(playing?.key === r.key ? null : { key: r.key, clip: r.clip, title: r.playTitle, sub: r.playSub });
 
+  // 장면이 하나도 없으면 크게 비우지 않고 장면 칸 자리에 한 줄만 (09 「선수에게 연결된 장면이 없을 때」 · 장면.md 6장)
+  if (none && !error && !loading) return (
+    <section className="flex flex-wrap items-center gap-x-4 gap-y-3 rounded-3xl border border-line bg-surface px-6 py-5 text-sm">
+      <span className="font-bold">{none.line}</span>
+      <span className="text-fg-2">{none.sub}</span>
+      {none.action && (
+        <button onClick={none.action.onClick} className="ml-auto flex h-9 items-center gap-1.5 rounded-full bg-surface-2 px-4 text-[13px] font-bold hover:bg-surface-3">
+          <PlayGlyph size={6} /> {none.action.label}
+        </button>
+      )}
+    </section>
+  );
+
   let state: ReactNode = null;
-  if (error) state = <Empty text="불러오지 못했어요" action={{ label: "다시 시도", onClick: error }} />;
+  if (error) state = <Empty text={`${josa(title, "을", "를")} 불러오지 못했어요`} sub="잠시 뒤 다시 시도해 주세요." action={{ label: "다시 시도", onClick: error }} />;
   else if (loading) state = <div className="h-[460px] animate-pulse rounded-3xl bg-surface-2" />;
-  else if (!rows.length) state = <Empty text={empty} />;
+  else if (!rows.length && chips && chip !== chips[0].key) {
+    state = <Empty text="고른 조건에 맞는 장면이 없어요" action={{ label: `${chips[0].label} 보기`, onClick: () => pick(chips[0].key) }} />;
+  } else if (!rows.length) state = <Empty text={empty} />;
 
   const chipRow = chips && (
     <div className="flex flex-wrap gap-2" role="group" aria-label={`${title} 거르기`}>

@@ -10,6 +10,7 @@ import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
 import { playerHref } from "@/components/SearchBox";
+import { Retry } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
 import {
   getMeta, getStandings, getTeamBatters, getTeamGames, getTeamPitchers, getTeamScenes, qk,
@@ -42,7 +43,13 @@ export default function TeamView() {
   const pitchers = useQuery({ queryKey: qk.team("pitchers", name ?? ""), queryFn: ({ signal }) => getTeamPitchers(name!, signal), enabled: !!name });
   const [playing, setPlaying] = useState<(Playing & { at: "games" | "scenes" }) | null>(null);
 
-  if (!name || !t) return <Wrap className="pt-10 pb-24"><div className="h-[600px] animate-pulse rounded-3xl bg-surface-2" /></Wrap>;
+  if (!name || !t) return (
+    <Wrap className="pt-10 pb-24">
+      {standings.isError
+        ? <Retry text="팀 순위를 불러오지 못했어요" onRetry={() => standings.refetch()} />
+        : <div className="h-[600px] animate-pulse rounded-3xl bg-surface-2" />}
+    </Wrap>
+  );
   const st = standings.data?.teams;
   const me = st?.find((x) => x.team === name);
   const asOf = meta.data?.data_as_of;
@@ -52,7 +59,8 @@ export default function TeamView() {
 
   return (
     <>
-      <TeamHead name={name} t={t} sub={sub} me={me} all={st} season={season} myTeam={myTeam} setMyTeam={setMyTeam} onPick={() => setPlaying(null)} />
+      <TeamHead name={name} t={t} sub={sub} me={me} all={st} season={season} myTeam={myTeam} setMyTeam={setMyTeam} onPick={() => setPlaying(null)}
+                onRetry={standings.isError ? () => standings.refetch() : undefined} />
       <Wrap className="pb-24">
         {/* 최근 경기 */}
         <section className="mt-14">
@@ -61,7 +69,9 @@ export default function TeamView() {
             sub={games.data?.length ? `${md(games.data.at(-1)!.date)} ~ ${md(games.data[0].date)} · 최근 ${games.data.length}경기` : undefined}
             right={<Link href="/schedule/" className="text-sm font-bold text-brand-text hover:underline">일정 전체 ›</Link>}
           />
-          {!games.data ? (
+          {games.isError ? (
+            <Retry text="최근 경기를 불러오지 못했어요" onRetry={() => games.refetch()} />
+          ) : !games.data ? (
             <div className="h-[150px] animate-pulse rounded-3xl bg-surface-2" />
           ) : (
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
@@ -100,12 +110,16 @@ export default function TeamView() {
 
         {/* 최근 장면 */}
         <section className="mt-14">
-          <SceneRow
-            team={name}
-            data={scenes.data}
-            playingId={playing?.at === "scenes" ? playing.title : null}
-            onPlay={(clip, title, sub) => setPlaying({ clip, title, sub, at: "scenes" })}
-          />
+          {scenes.isError ? (
+            <Retry text={`${name}의 최근 장면을 불러오지 못했어요`} onRetry={() => scenes.refetch()} />
+          ) : (
+            <SceneRow
+              team={name}
+              data={scenes.data}
+              playingId={playing?.at === "scenes" ? playing.title : null}
+              onPlay={(clip, title, sub) => setPlaying({ clip, title, sub, at: "scenes" })}
+            />
+          )}
           {playing?.at === "scenes" && <InlinePlayer playing={playing} onClose={() => setPlaying(null)} className="mt-5" />}
         </section>
 
@@ -114,7 +128,7 @@ export default function TeamView() {
           <Link href={`/rankings/?${new URLSearchParams({ team: name })}`} className="text-sm font-bold text-brand-text hover:underline">선수 전체 ›</Link>
         </div>
         <div className="grid gap-5 lg:grid-cols-2">
-          <PlayerTable
+          {batters.isError ? <Retry text="타자 기록을 불러오지 못했어요" onRetry={() => batters.refetch()} /> : <PlayerTable
             title="타자"
             sub={`OPS 순 · ${asOf ? `${md(asOf)} 기준 · ` : ""}규정타석 50% 이상`}
             loading={!batters.data}
@@ -127,8 +141,8 @@ export default function TeamView() {
                 value: rate3(b.ops), scenes: b.scene_count,
               };
             })}
-          />
-          <PlayerTable
+          />}
+          {pitchers.isError ? <Retry text="선발 투수 기록을 불러오지 못했어요" onRetry={() => pitchers.refetch()} /> : <PlayerTable
             title="선발 투수"
             sub={`이닝 순 · ${asOf ? `${md(asOf)} 기준 · ` : ""}오른쪽 숫자는 WHIP (낮을수록 좋아요)`}
             loading={!pitchers.data}
@@ -141,7 +155,7 @@ export default function TeamView() {
                 value: p.whip?.toFixed(2) ?? "–", scenes: p.scene_count,
               };
             })}
-          />
+          />}
         </div>
       </Wrap>
     </>

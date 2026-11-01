@@ -1,10 +1,13 @@
 "use client";
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useId, useRef, useState } from "react";
 import { normalizeQuery, qk, searchPlayers, type PlayerHit } from "@/lib/api";
+import { PlayerAvatar } from "@/components/ui/Media";
 import { teamColor } from "@/lib/constants";
+import { useRecentPlayers } from "@/lib/local";
 
 const DEBOUNCE_MS = 300; // BO-CM-01 검색 결과 레이어 (설계 9장)
 
@@ -35,6 +38,7 @@ export default function SearchBox({
   disabled?: boolean;
 }) {
   const router = useRouter();
+  const recent = useRecentPlayers();
   const listId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
   const [text, setText] = useState("");
@@ -142,11 +146,30 @@ export default function SearchBox({
               </span>
             </li>
           ))}
-          {hits.length === 0 && (
-            <li className="px-3 py-2 text-sm text-muted">
-              {isError ? "검색하지 못했습니다. 잠시 후 다시 시도해 주세요." : pending ? "찾는 중…" : "일치하는 선수가 없습니다."}
+          {hits.length === 0 && (isError || pending ? (
+            <li className="px-3 py-2 text-sm text-muted">{isError ? "검색하지 못했어요. 잠시 뒤 다시 시도해 주세요." : "찾는 중…"}</li>
+          ) : (
+            // 결과 없음 — 찾을 수 있는 범위와 다른 길(초성 · 옛 이름 · 최근 본 선수) (09 「검색 결과가 없을 때」)
+            <li className="px-4 py-3.5 text-sm">
+              <p className="font-bold">‘{text.trim()}’ 검색 결과가 없어요</p>
+              <p className="mt-1 text-fg-2">2024~2026 시즌에 1군 기록이 있는 선수만 찾을 수 있어요.</p>
+              <p className="mt-2.5 flex flex-wrap gap-1.5 text-xs text-fg-2">
+                <span className="rounded-md bg-surface-2 px-2 py-1">초성으로 · ㄱㄷㅇ</span>
+                <span className="rounded-md bg-surface-2 px-2 py-1">옛 이름으로도 찾아요</span>
+              </p>
+              {!onSelect && recent.length > 0 && (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted">최근 본 선수</span>
+                  {recent.slice(0, 3).map((r) => (
+                    <Link key={r.id} href={playerHref(r.id)} onClick={() => setOpen(false)}
+                          className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface pr-3 pl-1 text-[13px] font-bold hover:bg-surface-2">
+                      <PlayerAvatar id={r.id} name={r.name} team={r.team} size={24} /> {r.name}
+                    </Link>
+                  ))}
+                </div>
+              )}
             </li>
-          )}
+          ))}
         </ul>
       )}
     </div>

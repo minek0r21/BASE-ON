@@ -10,6 +10,7 @@ import ScoreStrip from "@/components/home/ScoreStrip";
 import TeamRow from "@/components/home/TeamRow";
 import TopPlayers from "@/components/home/TopPlayers";
 import { Wrap } from "@/components/home/common";
+import { Retry } from "@/components/ui/Chip";
 import { getDay, getLeaders, getMeta, getStandings, getTopBatters, getTopPitchers, qk, type Clip } from "@/lib/api";
 import { md } from "@/lib/format";
 import { useMyTeam } from "@/lib/local";
@@ -55,7 +56,7 @@ export default function Home() {
 
         <div className="space-y-6">
           {day.isError ? (
-            <Retry label="경기 결과" onRetry={() => day.refetch()} />
+            <Retry text="경기 결과를 불러오지 못했어요" onRetry={() => day.refetch()} />
           ) : day.data ? (
             <>
               <ScoreStrip day={day.data} isLast={day.data.date === asOf} />
@@ -67,31 +68,27 @@ export default function Home() {
         </div>
 
         {bLeaders.isError && pLeaders.isError ? (
-          <Retry label="능력 카드" onRetry={() => { bLeaders.refetch(); pLeaders.refetch(); }} />
+          <Retry text="능력 카드를 불러오지 못했어요" onRetry={() => { bLeaders.refetch(); pLeaders.refetch(); }} />
         ) : (
           <AbilityCards batters={bLeaders.data} pitchers={pLeaders.data} asOf={asOfMd} />
         )}
 
-        <TopPlayers
-          batters={topB.data?.batters}
-          pitchers={topP.data?.pitchers}
-          sub={[season && `${season} 정규시즌`, asOfMd && `${asOfMd} 기준`, "타자는 규정타석 50% 이상, 투수는 규정이닝 50% 이상 선발"].filter(Boolean).join(" · ")}
-        />
+        {topB.isError && topP.isError ? (
+          <Retry text="지금 가장 잘하는 선수를 불러오지 못했어요" onRetry={() => { topB.refetch(); topP.refetch(); }} />
+        ) : (
+          <TopPlayers
+            batters={topB.data?.batters}
+            pitchers={topP.data?.pitchers}
+            sub={[season && `${season} 정규시즌`, asOfMd && `${asOfMd} 기준`, "타자는 규정타석 50% 이상, 투수는 규정이닝 50% 이상 선발"].filter(Boolean).join(" · ")}
+          />
+        )}
 
-        <TeamRow teams={standings.data?.teams} sub={[season && `${season} 정규시즌 순위`, asOfMd && `${asOfMd} 기준`].filter(Boolean).join(" · ")} />
+        {standings.isError ? (
+          <Retry text="팀 순위를 불러오지 못했어요" onRetry={() => standings.refetch()} />
+        ) : (
+          <TeamRow teams={standings.data?.teams} sub={[season && `${season} 정규시즌 순위`, asOfMd && `${asOfMd} 기준`].filter(Boolean).join(" · ")} />
+        )}
       </Wrap>
     </>
-  );
-}
-
-/** 불러오기 실패 — 실패한 구역만 다시 시도 (09 ⑧) */
-function Retry({ label, onRetry }: { label: string; onRetry: () => void }) {
-  return (
-    <div className="flex items-center justify-between rounded-3xl border border-line bg-surface px-6 py-5 text-sm">
-      <span className="text-fg-2">{label}을(를) 불러오지 못했어요</span>
-      <button onClick={onRetry} className="rounded-xl bg-surface-2 px-4 py-2 font-bold hover:bg-surface-3">
-        다시 시도
-      </button>
-    </div>
   );
 }

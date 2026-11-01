@@ -12,11 +12,13 @@ import MatchupTab from "@/components/player/MatchupTab";
 import OutingsTab from "@/components/player/OutingsTab";
 import { BatterScenes, PitcherOutings } from "@/components/player/SceneList";
 import SeasonsTab from "@/components/player/SeasonsTab";
+import { Empty } from "@/components/ui/Chip";
 import { FormCard, SeasonStrip, SeasonsCard } from "@/components/player/SideCards";
 import Similar from "@/components/player/Similar";
 import {
   ApiError, getMeta, getPitcherOutings, getPlayer, getPlayerScenes, getPlayerSeasons, qk, type PitcherOutings as Outings, type PlayerScenes,
 } from "@/lib/api";
+import { josa } from "@/lib/abilities";
 import { pushRecentPlayer } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
 
@@ -83,13 +85,21 @@ export default function PlayerView() {
 
   if (!id) return <Notice>선수를 검색해 주세요.</Notice>;
   if (player.isError) {
-    const e = player.error;
-    return (
-      <Notice>
-        {e instanceof ApiError && e.status === 404 ? e.message : "선수 정보를 불러오지 못했어요."}{" "}
-        <Link href="/" className="font-bold underline">처음으로</Link>
-      </Notice>
+    const code = player.error instanceof ApiError ? player.error.code : null;
+    // 그 시즌 기록만 없으면 기록이 있는 시즌으로 보낸다 (09 원칙: 이유를 말하고 다른 길을 준다)
+    const other = (seasons.data?.all ?? []).filter((s) => s !== seasonParam).slice(0, 3);
+    const empty = code === "SEASON_NOT_FOUND" ? (
+      <Empty text={`${josa(seasons.data?.name ?? "이 선수", "은", "는")} ${seasonParam} 시즌 기록이 없어요`}
+             sub={other.length > 0 ? `${[...other].sort().join(" · ")} 시즌 기록이 있어요.` : undefined}
+             actions={other.map((s) => ({ label: `${s} 시즌 보기`, onClick: () => setParams({ season: String(s), month: null, outing: null }) }))} />
+    ) : code === "PLAYER_NOT_FOUND" ? (
+      <Empty text="선수를 찾을 수 없어요" sub="2024~2026 시즌에 1군 기록이 있는 선수만 볼 수 있어요. 주소가 맞는지 확인해 주세요."
+             actions={[{ label: "선수 목록", href: "/rankings/" }, { label: "홈으로", href: "/" }]} />
+    ) : (
+      <Empty text="선수 정보를 불러오지 못했어요" sub="잠시 뒤 다시 시도해 주세요."
+             action={{ label: "다시 시도", onClick: () => { player.refetch(); seasons.refetch(); } }} />
     );
+    return <Wrap className="pt-2 pb-24">{empty}</Wrap>;
   }
   if (!p) return <Wrap className="pt-10 pb-24"><div className="h-[620px] animate-pulse rounded-3xl bg-surface-2" /></Wrap>;
 
@@ -97,13 +107,14 @@ export default function PlayerView() {
   const colors = {
     "--team": t?.band ?? "var(--brand)", "--team-text": t?.text ?? "var(--brand-text)", "--team-soft": t?.soft ?? "var(--brand-soft)",
   } as CSSProperties;
-  const asOf = meta.data?.data_as_of ?? null;
+  // 기준일은 지금 시즌에만 붙인다 (지난 시즌은 끝난 기록 — 「2025 시즌 · 7.26 기준」이 되지 않게)
+  const asOf = p.season != null && meta.data?.season != null && p.season < meta.data.season ? null : meta.data?.data_as_of ?? null;
   const seasonList = seasons.data?.all ?? (p.season ? [p.season] : []);
   const goTab = (x: Tab) => setParams({ tab: x === "overview" ? null : x });
 
   const list = season != null && has && (role === "pitcher"
     ? <PitcherOutings id={id} name={p.name} season={season} all={tab === "scenes"} kind={kind as "all"} onKind={setKind} />
-    : <BatterScenes id={id} name={p.name} season={season} all={tab === "scenes"} kind={kind as "all"} onKind={setKind} />);
+    : <BatterScenes id={id} name={p.name} season={season} all={tab === "scenes"} kind={kind as "all"} onKind={setKind} onGames={() => goTab("games")} />);
 
   let body: ReactNode;
   if (!has) body = <Notice inline>{p.season} 시즌 {role === "pitcher" ? "투구" : "타자"} 기록이 없어요.</Notice>;
