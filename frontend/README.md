@@ -21,38 +21,64 @@ npm run build               # out/ 생성 (Caddy가 그대로 서빙)
 
 ## 주소
 
+정적 내보내기에서는 `/players/[id]` 같은 동적 경로가 빌드 때 id를 전부 알아야 해서, 화면마다 쿼리 주소를 쓴다. 쿼리를 읽는 화면은 `<Suspense>` 안에 둔다.
+
 | 화면 | 주소 |
 | --- | --- |
-| 메인 (2.0) | `/` |
-| 장면 검수 (공개 화면에 링크 없음, 설계 8-4) | `/admin/review/` |
-| 선수 (탭은 `tab=games·seasons·compare·matchup`, 생략하면 요약) | `/players/?id=<선수코드>&season=&tab=&month=&view=&with=` |
-
-정적 내보내기에서는 `/players/[id]` 같은 동적 경로가 빌드 때 id를 전부 알아야 해서, 선수 화면은 쿼리 주소를 쓴다. 쿼리를 읽는 화면은 `<Suspense>` 안에 둔다.
+| 홈 | `/` |
+| 선수 | `/players/?id=<선수코드>&season=&tab=&view=&month=&outing=` — `tab` = `scenes` · `games` · `seasons` · `matchup`(생략하면 개요), `view` = `batter` · `pitcher`(타자 · 투수를 다 한 시즌), `outing` = 투수 경기 기록의 등판 상세 |
+| 선수 목록 (팀별) | `/rankings/?team=` |
+| 능력별 순위 | `/rankings/?role=batter·pitcher&axis=&team=` (`role` · `axis`가 있으면 이 탭) |
+| 선수 비교 | `/compare/?ids=<코드,코드,코드>&as=batter·pitcher` (최대 3명) |
+| 경기 상세 | `/games/?id=<경기번호>` |
+| 팀 | `/teams/?team=` (생략하면 응원팀, 없으면 1위 팀) |
+| 일정 · 장면 | `/schedule/?date=` · `/scenes/?date=` (생략하면 마지막 경기일) |
+| 장면 검수 (공개 화면에 링크 없음, 서버에서는 막힘) | `/admin/review/` |
 
 ## 구조
 
 ```
 src/
-├─ lib/api.ts          API 호출·응답 타입·변환 (이 파일 하나)
-├─ lib/constants.ts    지표 설명(FR-02-04)
-├─ lib/teams.ts        구단 표: 이름 · 엠블럼 코드 · 색 3개(띠 · 글자 · 연한 배경, Figma 179:2012)
-├─ lib/position.ts     리그 안 위치 「상위 N% / 하위 M%」 규칙
-├─ lib/local.ts        이 브라우저에만 저장: 응원팀 · 최근 본 선수
-├─ lib/format.ts       .309 · 18.9% 같은 표기
-├─ app/globals.css     2.0 색(연회색 기본) · 글꼴 이름 · 포커스 테두리
-├─ app/layout.tsx      글꼴(Noto Sans KR · Big Shoulders · Geist) · 내비 · 푸터
-├─ app/page.tsx        메인 2.0 (장면이 주인공, Figma 113:519)
-├─ app/players/        선수 화면 (탭)
-└─ components/         layout/Nav · layout/Footer(출처 고지, NFR-02) · ui/Media(선수 얼굴 · 엠블럼 · ▶)
-                       home/Hero · ScoreStrip · DayScenes(그날 장면) · AbilityCards · TopPlayers · TeamRow · PostseasonCorner
-                       SearchBox(BO-CM-01) · ScenePlayer(장면 재생, 설계 8-2)
-                       player/Summary(BO-PB-01 타자 요약) · player/PitcherSummary(BO-PP-01 투수 요약)
-                       player/GamesTab(타석 경기 기록) · player/OutingsTab(투수 등판 기록) · player/CompareTab(BO-PB-04 비교)
-                       SceneButton(정밀도별 장면 버튼) · player/AxisBar(백분위 막대)
+├─ app/
+│   ├─ page.tsx                홈 (장면이 주인공)
+│   ├─ players/                선수 화면 — PlayerView(머리 · 시즌 기록 · 능력 · 탭)
+│   ├─ rankings/               선수 목록 — TeamRoster(팀별 선수) · RankingsView(능력별 순위) · PlayersHead · TeamPicker
+│   ├─ compare/                선수 비교
+│   ├─ games/                  경기 상세 (위쪽 플레이어 하나가 무대, 다음 장면 자동 재생)
+│   ├─ teams/                  팀 — TeamHead(팀 색 머리 · 순위 띠) · TeamView
+│   ├─ schedule/ · scenes/     일정 · 장면 (위쪽 한 주 띠)
+│   ├─ admin/review/           장면 검수
+│   ├─ layout.tsx · providers.tsx  글꼴 · 내비 · 푸터 · TanStack Query
+│   └─ globals.css             색 토큰(연회색 기본) · 글꼴 이름 · 포커스 테두리 · 모션
+├─ components/
+│   ├─ layout/                 Nav · Footer(출처 고지)
+│   ├─ home/                   Hero · ScoreStrip · DayScenes(그날 장면) · AbilityCards · TopPlayers · TeamRow · PostseasonCorner · common
+│   ├─ player/                 Hero · Abilities(능력 5칸) · SceneList(장면 · 등판) · GamesTab · OutingsTab(등판 상세) · SeasonsTab
+│   │                          MatchupTab · Forecast(맞대결 예상) · SideCards(요즘 타격감 · 시즌별 기록) · Similar(비슷한 선수)
+│   ├─ schedule/               WeekStrip(한 주 띠) · NoGames(경기 없는 날)
+│   ├─ ui/                     Chip · Empty · Retry(빈 상태 · 실패) · Help(「?」 말풍선) · Media(선수 얼굴 · 엠블럼 · ▶)
+│   │                          ShareButton · Slide(전환 · 탭 선택 표시)
+│   ├─ ScenePlayer.tsx         장면 재생 (YouTube IFrame)
+│   ├─ InlinePlayer.tsx        그 자리에서 재생하는 어두운 칸
+│   ├─ SearchBox.tsx           선수 검색 (초성 · 옛 이름)
+│   └─ StageTag.tsx            포스트시즌 꼬리표
+└─ lib/
+    ├─ api.ts                  API 호출 · 응답 타입 · 변환 (이 파일 하나)
+    ├─ axes.ts · abilities.ts  능력 축 문구 · 판정 한 줄 · 순위 주소
+    ├─ constants.ts            지표 설명
+    ├─ position.ts             리그 안 위치 「상위 N% / 하위 M%」 규칙
+    ├─ teams.ts                구단 표: 이름 · 엠블럼 코드 · 색 3개(띠 · 글자 · 연한 배경)
+    ├─ local.ts                이 브라우저에만 저장: 응원팀 · 최근 본 선수
+    ├─ motion.ts               모션 공용(움직임 줄이기 · 처음 보일 때 · 진행도)
+    └─ format.ts · dates.ts    .309 · 18.9% · 115⅔ · 날짜 표기
 ```
 
-`lib/api.ts`는 `Raw*` 타입(지금 백엔드 응답)을 `to*()` 함수로 화면용 타입으로 바꾼다. 화면용 타입은 설계 6-3(API-02 `axes` 배열·`data_as_of`) 기준이라, 백엔드 응답이 바뀌면 `Raw*` 타입과 변환 함수만 고친다. 백엔드에 `response_model`이 생기면 `Raw*`는 `openapi-typescript` 생성 타입으로 바꾼다.
+`lib/api.ts`는 `Raw*` 타입(지금 백엔드 응답)을 `to*()` 함수로 화면용 타입으로 바꾼다. 백엔드 응답이 바뀌면 `Raw*` 타입과 변환 함수만 고친다.
 
 ## 장면 재생
 
-`ScenePlayer`는 썸네일을 먼저 그리고 누를 때 YouTube IFrame 플레이어를 붙인다(자동재생 없음). 구간은 `startSeconds`·`endSeconds`로 주고, 재생 중 250ms마다 종료 지점을 넘었는지 보고 멈춘다(FR-04-02). 다른 장면으로 바꾸면 같은 플레이어에서 `loadVideoById`만 부른다. 어떤 버튼에 어떤 영상이 붙는지는 팀 문서 「장면.md」 6장.
+`ScenePlayer`는 썸네일을 먼저 그리고 누를 때 YouTube IFrame 플레이어를 붙인다(`bare`면 누른 자리에서 바로 재생). 구간은 `startSeconds`·`endSeconds`로 주고, 재생 중 250ms마다 종료 지점을 넘었는지 보고 멈춘다. 다른 장면으로 바꾸면 같은 플레이어에서 `loadVideoById`만 부른다. 구간 끝에 닿으면 `onEnded`로 알리고, 경기 상세는 4초 카운트다운 뒤 다음 장면을 이어 재생한다(움직임 줄이기면 버튼만). 재생할 수 없는 영상(비공개 · 삭제)은 안내를 띄우고 재생 불가 신고(API-12)를 보낸다. 어떤 버튼에 어떤 영상이 붙는지는 팀 문서 「장면.md」 6장.
+
+## 모션
+
+모든 모션은 OS 「움직임 줄이기」 설정에서 꺼진다. CSS 모션은 `globals.css`의 규칙이, JS로 움직이는 것(막대 숫자 · 큰 장면 넘김 · 자동 재생)은 `lib/motion.ts`의 `useReducedMotion`이 막는다.
