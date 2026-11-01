@@ -9,6 +9,7 @@ import { Wrap, clipLength, gameHref, sceneTitle } from "@/components/home/common
 import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
+import NoGames from "@/components/schedule/NoGames";
 import WeekStrip from "@/components/schedule/WeekStrip";
 import { Chip, Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo, mmss } from "@/components/ui/Media";
@@ -83,19 +84,22 @@ export default function ScenesView() {
         </div>
       )}
 
-      {future ? (
-        <Empty text="공개 데이터에 아직 없는 날짜예요" action={asOf ? { label: "마지막 경기일 보기", onClick: () => pick(asOf) } : undefined} />
-      ) : day.isError ? (
-        <Empty text="경기 결과를 불러오지 못했어요" action={{ label: "다시 시도", onClick: () => day.refetch() }} />
+      {date && (future || day.data?.games.length === 0) ? (
+        <NoGames date={date} asOf={asOf} prev={day.data?.prev_date ?? null} next={day.data?.next_date ?? null} onPick={pick} />
+      ) : day.isError || (!date && meta.isError) ? (
+        <Empty text="장면을 불러오지 못했어요" sub="잠시 뒤 다시 시도해 주세요."
+               action={{ label: "다시 시도", onClick: () => (date ? day.refetch() : meta.refetch()) }} />
       ) : !day.data ? (
         <div className="mt-8 h-[600px] animate-pulse rounded-3xl bg-surface-2" />
-      ) : games.length === 0 ? (
-        <Empty text="이날은 경기가 없어요" />
       ) : (
         <>
           <h2 className="mt-9 text-2xl font-bold">
             {longDate(day.data.date)} · {games.length}경기 · 장면 {count.all} (홈런 {count.home_run} · 투수 {count.outing})
           </h2>
+          {shown.length === 0 && (
+            <Empty text={filter === "my" && !games.some((g) => isMine(g, myTeam)) ? `이날은 ${myTeam} 경기가 없어요` : "이날은 고른 종류의 장면이 없어요"}
+                   action={{ label: "전체 보기", onClick: () => setFilter("all") }} />
+          )}
           <ul className="mt-5 space-y-4">
             {shown.map(({ game, scenes }) => (
               <GameCard

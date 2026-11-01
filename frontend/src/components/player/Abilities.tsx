@@ -7,7 +7,7 @@ import type { AxisKey, PitchAxisKey, PlayerSummary } from "@/lib/api";
 import { barOpacity, josa, verdict } from "@/lib/abilities";
 import { GROUP_RULE, axisCopy, rankingsHref } from "@/lib/axes";
 import { AXIS_HELP, GROUP_HELP, PITCH_AXIS_HELP, STAT_HELP } from "@/lib/constants";
-import { md } from "@/lib/format";
+import { innings, md } from "@/lib/format";
 import { leaguePosition } from "@/lib/position";
 import type { Role } from "./Hero";
 
@@ -40,12 +40,33 @@ export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: R
     <AbilityCell c={c} n={n} who={role === "pitcher" ? `${pi?.roleLabel ?? ""} ` : ""} name={p.name} best={c.key === best} />
   );
 
+  // 비교 대상 밖: 이유(몇 타석 · 이닝 모자란지)를 말하고 막대 대신 실제 수치만 (09 「리그 비교 대상이 아닐 때」)
   if (!qualified) {
-    const msg = role === "pitcher" ? pi?.notQualifiedMessage : p.notQualifiedMessage;
+    const shown = cells.filter((c) => c.value != null);
     return (
       <section className="rounded-3xl border border-line bg-surface px-6 py-5">
         <h2 className="text-[17px] font-bold">{who}와 비교</h2>
-        <p className="mt-2 text-sm text-fg-2">{msg ?? "리그 비교 대상이 아니에요"} · {criteria}</p>
+        <div className="mt-3 flex gap-3 rounded-2xl border border-line bg-bg px-4 py-3.5">
+          <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-surface-3 text-[11px] font-bold text-fg-2" aria-hidden>i</span>
+          <div className="text-sm">
+            <p className="font-bold">리그 비교 대상이 아니에요</p>
+            <p className="mt-1 text-fg-2">{shortOf(p, role)}</p>
+          </div>
+        </div>
+        {shown.length > 0 && (
+          <dl className="mt-5 flex flex-wrap gap-x-12 gap-y-4">
+            {shown.map((c) => {
+              const copy = axisCopy(c.key);
+              return (
+                <div key={c.key}>
+                  <dt className="text-xs text-fg-2">{copy?.metric ?? c.label}</dt>
+                  <dd className="mt-1 font-display text-[28px] leading-none font-extrabold">{copy?.fmt(c.value) ?? "–"}</dd>
+                </div>
+              );
+            })}
+          </dl>
+        )}
+        <p className="mt-4 text-xs text-muted">{sub}</p>
       </section>
     );
   }
@@ -94,6 +115,20 @@ function AbilityCell({ c, n, who, name, best }: { c: Cell; n: number; who: strin
       )}
     </div>
   );
+}
+
+/** 「규정타석의 50%(149타석)에 19타석 모자라요. 지금 130타석이라 순위 대신 실제 수치만 보여 드려요.」 — 기준을 모르면 앞 문장 없이 */
+function shortOf(p: PlayerSummary, role: Role) {
+  const tail = "순위 대신 실제 수치만 보여 드려요.";
+  if (role === "pitcher") {
+    const pi = p.pitching;
+    if (!pi?.qualifyOuts) return `이닝이 모자라 ${tail}`;
+    const share = pi.role === "reliever" ? "20%" : "50%";
+    return `규정이닝의 ${share}(${innings(pi.qualifyOuts)}이닝)에 ${innings(Math.max(pi.qualifyOuts - pi.outs, 0))}이닝 모자라요. 지금 ${innings(pi.outs)}이닝이라 ${tail}`;
+  }
+  const pa = p.stats?.pa ?? 0;
+  if (!p.qualifyPa) return `타석이 모자라 ${tail}`;
+  return `규정타석의 50%(${p.qualifyPa}타석)에 ${Math.max(p.qualifyPa - pa, 0)}타석 모자라요. 지금 ${pa}타석이라 ${tail}`;
 }
 
 const helpOf = (k: AxisKey | PitchAxisKey) =>

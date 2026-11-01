@@ -98,6 +98,7 @@ type RawPlayer = {
   season: number | null;
   stats: RawStats | null;
   qualified: boolean;
+  qualify_pa?: number | null;
   percentiles: Record<RawPctKey, number | null> | null;
   axis_ranks: Record<RawPctKey, number | null> | null;
   group_size: number | null;
@@ -134,6 +135,7 @@ type RawPitching = {
     scene?: RawPitchScene | null;
   }[];
   not_qualified_message: string | null;
+  qualify_outs?: number | null;
   stat_ranks?: Partial<Record<"outs" | "so" | "whip" | "avg", number | null>> | null;
   recent_scene?: RawPitchScene | null;
 };
@@ -197,6 +199,8 @@ export type PitchingSummary = {
   groupSize: number | null;
   axes: PitchAxis[];
   notQualifiedMessage: string | null;
+  /** 비교 대상이 되려면 필요한 아웃 수 (이닝 × 3). 대상이면 null */
+  qualifyOuts: number | null;
   /** 시즌 기록 등수 (같은 역할 비교 대상 안). 대상 밖이면 null */
   statRanks: NonNullable<RawPitching["stat_ranks"]> | null;
   recentScene: PitchScene | null;
@@ -213,6 +217,7 @@ function toPitching(p: RawPitching): PitchingSummary {
       scene: scene ? toPitchScene(scene) : null,
     })),
     notQualifiedMessage: p.not_qualified_message,
+    qualifyOuts: p.qualify_outs ?? null,
     statRanks: p.stat_ranks ?? null,
     recentScene: p.recent_scene ? toPitchScene(p.recent_scene) : null,
   };
@@ -355,6 +360,8 @@ export type PlayerSummary = {
   statRanks: NonNullable<RawPlayer["stat_ranks"]> | null;
   axes: Axis[];
   notQualifiedMessage: string | null;
+  /** 비교 대상이 되려면 필요한 타석 수 (규정타석의 50%). 대상이면 null */
+  qualifyPa: number | null;
   lastHr: RawHr | null;
   recentScene: Scene | null;
   /** 그 시즌 기본 화면: 타자 요약 / 투수 요약 (투수.md P7) */
@@ -437,6 +444,7 @@ function toPlayerSummary(r: RawPlayer): PlayerSummary {
     statRanks: r.stat_ranks ?? null,
     axes,
     notQualifiedMessage: r.stats != null && !r.qualified ? NOT_QUALIFIED : null,
+    qualifyPa: r.qualify_pa ?? null,
     lastHr: r.last_hr,
     recentScene,
     primaryRole: r.primary_role ?? (r.stats != null ? "batter" : null),
@@ -463,6 +471,7 @@ type RawSeasons = {
 export type SeasonRow = RawSeasons["seasons"][number];
 export type PostSeasonRow = { season: number } & Record<string, unknown>;
 export type PlayerSeasons = {
+  name: string;
   batting: SeasonRow[];
   pitching: NonNullable<RawSeasons["pitching_seasons"]>;
   postBatting: PostSeasonRow[];
@@ -475,7 +484,7 @@ export async function getPlayerSeasons(id: string, signal?: AbortSignal): Promis
   const pitching = r.pitching_seasons ?? [];
   // 시즌 선택 목록 = 타자·투수 기록이 있는 시즌 전부 (최근 시즌부터)
   const all = [...new Set([...r.seasons.map((s) => s.season), ...pitching.map((s) => s.season)])].sort((a, b) => b - a);
-  return { batting: r.seasons, pitching, postBatting: r.postseason_seasons ?? [], postPitching: r.postseason_pitching ?? [], all };
+  return { name: r.name, batting: r.seasons, pitching, postBatting: r.postseason_seasons ?? [], postPitching: r.postseason_pitching ?? [], all };
 }
 
 // ------------------------------------------------------------------ API-17 상대한 투수 · API-06 맞대결

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { Wrap } from "@/components/home/common";
+import { Retry } from "@/components/ui/Chip";
 import { TeamLogo } from "@/components/ui/Media";
 import type { Standing } from "@/lib/api";
 import { TEAM_NAMES, teamHref, withGwa, type Team } from "@/lib/teams";
@@ -15,7 +16,7 @@ const BAR = 48; // 따라오는 팀 막대 높이 (h-12)
  * 스크롤하면 머리 글자가 위로 밀리며 옅어지고, 머리 아래 끝이 메뉴에 닿는 순간 같은 색 막대가 이어받는다.
  * 막대 안 엠블럼 · 팀 이름 · 순위는 차례로 들어온다. 움직임 줄이기 설정이면 머리는 그대로, 막대는 바로 나타난다
  */
-export default function TeamHead({ name, t, sub, me, all, season, myTeam, setMyTeam, onPick }: {
+export default function TeamHead({ name, t, sub, me, all, season, myTeam, setMyTeam, onPick, onRetry }: {
   name: string;
   t: Team;
   sub: string;
@@ -25,6 +26,7 @@ export default function TeamHead({ name, t, sub, me, all, season, myTeam, setMyT
   myTeam: string | null;
   setMyTeam: (n: string) => void;
   onPick: () => void;
+  onRetry?: () => void;
 }) {
   const hero = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
@@ -71,7 +73,11 @@ export default function TeamHead({ name, t, sub, me, all, season, myTeam, setMyT
           </div>
         </Wrap>
       </div>
-      <Wrap><StandingStrip all={all} me={name} t={t} season={season} /></Wrap>
+      <Wrap>
+        {!all && onRetry
+          ? <div className="mt-8"><Retry text="팀 순위를 불러오지 못했어요" onRetry={onRetry} /></div>
+          : <StandingStrip all={all} me={name} t={t} season={season} />}
+      </Wrap>
       <StickyBar show={stuck} t={t} name={name} me={me} />
     </>
   );

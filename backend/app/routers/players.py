@@ -8,6 +8,7 @@
  32. GET /players/{player_id}/pitching-form?season= 요즘 투구감 (등판마다 최근 10등판 WHIP, 시안 03b)
  36. GET /players/{player_id}/scenes?season=&as=  선수의 장면 목록 (03 「장면」 · 03b 「등판」)
 """
+from math import ceil
 from typing import Literal
 
 from fastapi import APIRouter, Query
@@ -173,6 +174,19 @@ PITCH_AXES = [
 ]
 ROLE_LABEL = {"starter": "선발", "reliever": "불펜"}
 
+# 비교 대상 기준 (etl/prepare.py와 같은 값) — 대상 밖일 때 「규정타석의 50%(149타석)에 19타석 모자라요」 (09 예외 상태)
+QUALIFY_PA_PER_GAME = 3.1 * 0.5                         # 규정타석(팀 경기 × 3.1)의 50%
+PITCHER_QUALIFY = {"starter": 0.5, "reliever": 0.2}    # 이닝 ≥ 팀 경기 × 이 값 (투수.md P4)
+# 타자의 주 소속팀(그 시즌 타석이 가장 많은 팀, 같으면 나중에 뛴 팀) 정규시즌 경기 수 — ETL의 team_games와 같은 계산
+Q_BAT_TEAM_GAMES = """
+MATCH (:Player {player_id: $id})-[:BATTED_IN]->(pa:PlateAppearance {season: $season, game_type: 'regular'})-[:PART_OF]->(g:Game)
+MATCH (g)-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team)
+WITH CASE pa.inning_half WHEN '말' THEN home ELSE away END AS t, count(*) AS n, max(pa.date) AS last
+ORDER BY n DESC, last DESC LIMIT 1
+MATCH (t)<-[:HOME|AWAY]-(tg:Game {season: $season, game_type: 'regular'})
+RETURN count(tg) AS games
+"""
+
 Q_PITCHING = """
 MATCH (:Player {player_id: $id})-[:HAS_PITCHING_STAT]->(s:PitcherSeasonStat {season: $season})
 RETURN s {.*} AS s
@@ -276,8 +290,16 @@ def _pitching(player_id: str, season: int | None) -> dict | None:
         "axes": axes,
         "stat_ranks": stat_ranks,  # 시즌 기록 등수 {outs, so, whip, avg} — 같은 역할 비교 대상 안. 대상 밖이면 null
         "not_qualified_message": None if qualified else "리그 비교 대상 아님(이닝 부족)",
+        # 비교 대상이 되려면 필요한 아웃 수 (이닝 × 3). 대상이면 null
+        "qualify_outs": None if qualified or not s.get("team_games")
+        else ceil(s["team_games"] * PITCHER_QUALIFY.get(s.get("role"), 0.5) * 3),
         "recent_scene": recent_scene,  # 그 시즌 가장 최근 확정 등판 장면 (없으면 null)
     }
+
+
+def _qualify_pa(player_id: str, season: int) -> int | None:
+    rows = run(Q_BAT_TEAM_GAMES, id=player_id, season=season)
+    return ceil(rows[0]["games"] * QUALIFY_PA_PER_GAME) if rows and rows[0]["games"] else None
 
 
 def _primary_role(stats: dict | None, pitching: dict | None) -> str | None:
@@ -327,7 +349,7 @@ COMPARE_MAX = 3
 @router.get("/players/compare", summary="11. 선수 비교 (2~3명, 타자끼리 · 투수끼리)")  # /players/{player_id}보다 먼저 등록해야 한다
 def compare_players(  # API 11: 백분위·원 수치. 대상 밖 선수는 원 수치만 (설계 6-2, FR-06)
     ids: str = Query(..., description="선수 ID 2~3개, 쉼표로 (예: 53123,52605)"),
-    season: int | None = Query(None, description="생략하면 첫 선수가 뛴 가장 최근 시즌"),
+    season: int | None = Query(None, description="생략하면 그 기록(타자 · 투구)이 있는 첫 선수가 뛴 가장 최근 시즌"),
     as_: Literal["batter", "pitcher"] = Query("batter", alias="as", description="batter 타자끼리 / pitcher 투수끼리 (07 비교, 11-01)"),
 ):
     pids = list(dict.fromkeys(i.strip() for i in ids.split(",") if i.strip()))
@@ -341,10 +363,10 @@ def compare_players(  # API 11: 백분위·원 수치. 대상 밖 선수는 원 
         loaded.append(rows[0])
     if as_ == "pitcher":
         return _compare_pitchers(loaded, season)
-    if season is None:
-        first = [s["season"] for s in loaded[0]["stats"]]
+    if season is None:  # 타자 기록이 없는 선수(투수)가 앞에 있어도 비교는 한다 — 그 선수는 「기록 없음」으로
+        first = next(([x["season"] for x in r["stats"]] for r in loaded if r["stats"]), None)
         if not first:
-            raise ApiError(404, "SEASON_NOT_FOUND", "첫 선수의 타자 기록이 없습니다")
+            raise ApiError(404, "SEASON_NOT_FOUND", "타자 기록이 있는 선수가 없습니다")
         season = max(first)
     group = [r["p"] for r in run(Q_GROUP_PCTS, season=season)]
 
@@ -375,10 +397,10 @@ def compare_players(  # API 11: 백분위·원 수치. 대상 밖 선수는 원 
 
 def _compare_pitchers(loaded: list[dict], season: int | None) -> dict:
     """투수끼리 비교 — API-02 pitching 칸과 같은 값. 백분위 · 등수는 각자 역할(선발 · 불펜) 비교 대상 안 기준"""
-    if season is None:
-        first = run(Q_PITCH_SEASONS, id=loaded[0]["player"]["player_id"])
+    if season is None:  # 투구 기록이 없는 선수(타자)가 앞에 있어도 비교는 한다
+        first = next((rows for rows in (run(Q_PITCH_SEASONS, id=r["player"]["player_id"]) for r in loaded) if rows), None)
         if not first:
-            raise ApiError(404, "SEASON_NOT_FOUND", "첫 선수의 투구 기록이 없습니다")
+            raise ApiError(404, "SEASON_NOT_FOUND", "투구 기록이 있는 선수가 없습니다")
         season = first[0]["s"]["season"]
     players = []
     for r in loaded:
@@ -487,6 +509,7 @@ def get_player(  # API 2: 정보 화면 데이터 한 번에
         "axis_ranks": axis_ranks,   # 지표별 등수 {"power": 2, ...}. 비교 대상이 아니면 null
         "group_size": group_size,   # 비교 대상 인원 ("150명 중 2위"의 150)
         "stat_ranks": stat_ranks,   # 시즌 기록 등수 {hr, slg, ops, obp, avg} — 같은 비교 대상 안. 대상 밖이면 null
+        "qualify_pa": _qualify_pa(player_id, season) if stats and not qualified else None,  # 비교 대상이 되려면 필요한 타석 수
         "last_hr": last_hr,              # 그 시즌 가장 최근 홈런 (영상 여부 상관없음)
         "last_hr_video": last_hr_video,  # 그 시즌 확정 장면(자동 확정·승인)이 있는 홈런 중 가장 최근 (없으면 null)
         "axis_scenes": _bat_axis_scenes(player_id, season) if stats else {},  # 축 옆 ▶ {hit: 안타 장면, eye: 볼넷 장면}, 없는 축은 빠짐

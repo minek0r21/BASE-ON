@@ -13,7 +13,7 @@ import { playerHref } from "@/components/SearchBox";
 import StageTag from "@/components/StageTag";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
-import { gameDate, getDay, getGameBox, qk, type BoxTeam, type Clip, type DayGame, type DayScene } from "@/lib/api";
+import { ApiError, gameDate, getDay, getGameBox, qk, type BoxTeam, type Clip, type DayGame, type DayScene } from "@/lib/api";
 import { innings, md, rate3 } from "@/lib/format";
 import { team as teamOf, teamHref } from "@/lib/teams";
 
@@ -27,16 +27,25 @@ type Now = { key: string; clip: Clip; label: string; title: string };
  */
 export default function GameView() {
   const id = useSearchParams().get("id") ?? "";
-  const date = id ? gameDate(id) : null;
+  const d = id ? gameDate(id) : "";
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(d)) ? d : null; // 번호 앞 8자리 = 날짜
   const day = useQuery({ queryKey: qk.day(date), queryFn: ({ signal }) => getDay(date, signal), enabled: !!date });
   const box = useQuery({ queryKey: qk.gameBox(id), queryFn: ({ signal }) => getGameBox(id, signal), enabled: !!id });
   const [now, setNow] = useState<(Now & { on: boolean }) | null>(null);
 
-  if (!id) return <Wrap className="pt-10 pb-24"><Empty text="경기를 찾을 수 없어요" /></Wrap>;
-  if (day.isError || box.isError) return <Wrap className="pt-10 pb-24"><Empty text="경기를 불러오지 못했어요" action={{ label: "다시 시도", onClick: () => { day.refetch(); box.refetch(); } }} /></Wrap>;
   const g = day.data?.games.find((x) => x.game_pk === id);
-  if (!day.data) return <Wrap className="pt-10 pb-24"><div className="h-[720px] animate-pulse rounded-3xl bg-surface-2" /></Wrap>;
-  if (!g) return <Wrap className="pt-10 pb-24"><Empty text="경기를 찾을 수 없어요" /></Wrap>;
+  // 없는 경기 번호면 그날(번호에서 읽은 날짜가 맞으면) 일정으로 보낸다
+  const missing = !id || !date || (box.error instanceof ApiError && box.error.status === 404) || (!!day.data && !g);
+  if (missing) {
+    return (
+      <Wrap className="pt-2 pb-24">
+        <Empty text="경기를 찾을 수 없어요" sub="주소가 맞는지 확인해 주세요."
+               action={date ? { label: `${md(date)} 일정 보기`, href: `/schedule/?date=${date}` } : { label: "일정 보기", href: "/schedule/" }} />
+      </Wrap>
+    );
+  }
+  if (day.isError || box.isError) return <Wrap className="pt-2 pb-24"><Empty text="경기를 불러오지 못했어요" sub="잠시 뒤 다시 시도해 주세요." action={{ label: "다시 시도", onClick: () => { day.refetch(); box.refetch(); } }} /></Wrap>;
+  if (!day.data || !g) return <Wrap className="pt-10 pb-24"><div className="h-[720px] animate-pulse rounded-3xl bg-surface-2" /></Wrap>;
 
   const winner = g.away.result === "W" ? g.away.team : g.home.result === "W" ? g.home.team : null;
   const stadium = teamOf(g.home.team)?.home;
@@ -230,8 +239,15 @@ function ThisGame({ g, winner, current, onPlay }: { g: DayGame; winner: string |
                       className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-xs font-bold hover:border-accent hover:bg-accent hover:text-white aria-[current=true]:border-accent aria-[current=true]:bg-accent aria-[current=true]:text-white">
                 <PlayGlyph size={7} /> {text}
               </button>
+            ) : g.highlight ? (
+              // 이 홈런만 영상이 없으면 경기 하이라이트로 (09 「한 장면만 영상이 없을 때」)
+              <button key={k} onClick={() => onPlay({ key: k, clip: g.highlight!, label: "이 홈런은 영상 없음 · 경기 하이라이트", title: `${text} · 경기 하이라이트` })}
+                      aria-current={current === k ? "true" : undefined} title="이 홈런은 연결된 영상이 없어요. 경기 하이라이트에 들어 있을 수 있어요."
+                      className="flex h-8 items-center rounded-full border border-dashed border-line px-3 text-xs text-fg-2 hover:border-fg-2 hover:text-fg aria-[current=true]:border-fg aria-[current=true]:text-fg">
+                {text}
+              </button>
             ) : (
-              <span key={k} className="flex h-8 items-center rounded-full border border-dashed border-line px-3 text-xs text-fg-2">{text}</span>
+              <span key={k} title="이 홈런은 연결된 영상이 없어요" className="flex h-8 items-center rounded-full border border-dashed border-line px-3 text-xs text-fg-2">{text}</span>
             );
           })}
         </div>

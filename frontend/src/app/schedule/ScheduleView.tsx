@@ -7,6 +7,7 @@ import { useState } from "react";
 import { Wrap, clipLength, gameHref } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
+import NoGames from "@/components/schedule/NoGames";
 import WeekStrip from "@/components/schedule/WeekStrip";
 import { Chip, Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo, mmss } from "@/components/ui/Media";
@@ -68,14 +69,13 @@ export default function ScheduleView() {
         </div>
       )}
 
-      {future ? (
-        <Empty text="공개 데이터에 아직 없는 날짜예요" action={asOf ? { label: "마지막 경기일 보기", onClick: () => pick(asOf) } : undefined} />
-      ) : day.isError ? (
-        <Empty text="경기 결과를 불러오지 못했어요" action={{ label: "다시 시도", onClick: () => day.refetch() }} />
+      {date && (future || day.data?.games.length === 0) ? (
+        <NoGames date={date} asOf={asOf} prev={day.data?.prev_date ?? null} next={day.data?.next_date ?? null} onPick={pick} />
+      ) : day.isError || (!date && meta.isError) ? (
+        <Empty text="경기 결과를 불러오지 못했어요" sub="잠시 뒤 다시 시도해 주세요."
+               action={{ label: "다시 시도", onClick: () => (date ? day.refetch() : meta.refetch()) }} />
       ) : !day.data ? (
         <div className="mt-8 h-[600px] animate-pulse rounded-3xl bg-surface-2" />
-      ) : games.length === 0 ? (
-        <Empty text="이날은 경기가 없어요" />
       ) : (
         <>
           <div className="mt-9 flex flex-wrap items-end justify-between gap-3">
