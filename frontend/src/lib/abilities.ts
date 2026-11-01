@@ -26,8 +26,10 @@ export function verdict(key: AxisKey | PitchAxisKey, percentile: number): string
   return weak;
 }
 
+/** 상위 20% 이내 — 막대를 진하게 · 숫자와 판정을 강조하는 기준 (선수 상세 · 팀별 선수 · 능력별 순위 공통) */
+export const isTop20 = (percentile: number) => 100 - percentile <= 20;
 /** 막대 농도: 상위 20% 이내 진하게 · 50% 이내 중간 · 그 밖 연하게 */
-export const barOpacity = (percentile: number) => (100 - percentile <= 20 ? 1 : 100 - percentile <= 50 ? 0.6 : 0.3);
+export const barOpacity = (percentile: number) => (isTop20(percentile) ? 1 : 100 - percentile <= 50 ? 0.6 : 0.3);
 
 /** 받침 있으면 a, 없으면 b — 「김도영은」 · 「네일은」 · 「오스틴은」 */
 export function josa(word: string, a: string, b: string) {

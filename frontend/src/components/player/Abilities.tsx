@@ -5,7 +5,7 @@ import { useRef } from "react";
 import { SectionHead } from "@/components/home/common";
 import Help from "@/components/ui/Help";
 import type { AxisKey, PitchAxisKey, PlayerSummary } from "@/lib/api";
-import { barOpacity, josa, verdict } from "@/lib/abilities";
+import { barOpacity, isTop20, josa, verdict } from "@/lib/abilities";
 import { GROUP_RULE, axisCopy, rankingsHref } from "@/lib/axes";
 import { AXIS_HELP, GROUP_HELP, PITCH_AXIS_HELP, STAT_HELP } from "@/lib/constants";
 import { innings, md } from "@/lib/format";
@@ -90,7 +90,7 @@ function AbilityCell({ c, n, who, name, best, run, delay }: { c: Cell; n: number
   const copy = axisCopy(c.key);
   const value = copy?.fmt(c.value) ?? "–";
   const pos = c.percentile != null && c.rank != null ? leaguePosition(c.percentile, c.rank, n) : null;
-  const strong = c.percentile != null && barOpacity(c.percentile) === 1; // 상위 20% 안이면 큰 숫자 · 판정도 구단 색
+  const strong = c.percentile != null && isTop20(c.percentile); // 상위 20% 안이면 큰 숫자 · 판정도 구단 색
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
