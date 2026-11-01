@@ -81,7 +81,7 @@ export default function TeamRoster() {
         <div className="mt-8 h-[640px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
         groups.filter((g) => g.cards.length).map((g) => (
-          <section key={g.key} className="mt-12">
+          <section key={g.key} className="mt-12 animate-appear">
             <div className="mb-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
               <h3 className="text-xl font-bold">{g.title}</h3>
               <span className="font-num text-[15px] font-bold text-fg-2">{g.cards.length}</span>

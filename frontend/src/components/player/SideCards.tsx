@@ -97,7 +97,7 @@ export function FormCard({ id, season, role }: { id: string; season: number; rol
       {!f ? (
         <div className="h-[210px] animate-pulse rounded-2xl bg-surface-2" />
       ) : (
-        <>
+        <div className="flex flex-1 animate-appear flex-col">
           <CardHead
             title={bat ? "요즘 타격감" : "요즘 투구감"}
             sub={[`최근 ${f.window}${bat ? "경기 OPS" : "경기 WHIP"} 흐름`, f.range ? `${md(f.range[0])} ~ ${md(f.range[1])}` : `${md(f.points[0].date)} ~ ${md(f.points.at(-1)!.date)}`, !bat && "낮을수록 좋아요"]
@@ -119,7 +119,7 @@ export function FormCard({ id, season, role }: { id: string; season: number; rol
               <span className="font-num">{md(f.points.at(-1)!.date)}</span>
             </p>
           </div>
-        </>
+        </div>
       )}
     </section>
   );

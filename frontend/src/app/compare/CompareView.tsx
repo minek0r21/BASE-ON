@@ -13,6 +13,7 @@ import { thumbnailUrl } from "@/components/ScenePlayer";
 import SearchBox, { playerHref } from "@/components/SearchBox";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
+import Slide from "@/components/ui/Slide";
 import { ApiError, getCompare, getMeta, getPlayer, getSimilar, qk, type ComparePlayer, type PlayerSummary } from "@/lib/api";
 import { josa } from "@/lib/abilities";
 import { axisCopy } from "@/lib/axes";
@@ -90,14 +91,14 @@ export default function CompareView() {
           <h1 className="text-[40px] font-extrabold tracking-tight">선수 비교</h1>
           <p className="mt-1.5 text-sm text-fg-2">{sub}</p>
         </div>
-        <div className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
+        <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
           {(["batter", "pitcher"] as const).map((r) => (
             <button key={r} onClick={() => r !== role && go([], r)} aria-pressed={role === r}
-                    className="h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 aria-pressed:bg-surface-3 aria-pressed:font-bold aria-pressed:text-fg">
+                    className="relative h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 aria-pressed:font-bold aria-pressed:text-fg">
               {r === "batter" ? "타자" : "투수"}
             </button>
           ))}
-        </div>
+        </Slide>
       </div>
 
       <div className="mt-7 grid items-start gap-4 lg:grid-cols-3">
@@ -116,13 +117,13 @@ export default function CompareView() {
       ) : !data ? (
         <div className="mt-6 h-[520px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        <>
+        <div className="animate-appear">
           <Abilities data={data.players} n={data.group_size ?? null} />
           <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
             <Stats players={data.players} rows={role === "pitcher" ? PIT_ROWS : BAT_ROWS} />
             <Scenes ids={valid} summaries={valid.map((id) => summaries[ids.indexOf(id)])} role={role} names={data.players.map((p) => p.name)} />
           </div>
-        </>
+        </div>
       ))}
     </Wrap>
   );

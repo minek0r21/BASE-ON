@@ -188,7 +188,7 @@ function ListShell({ title, sub, chips, chip, onChip, loading, error, empty, non
       <SectionHead title={title} sub={sub} />
       {chipRow}
       {state ?? (
-        <ul className="mt-3 -mx-2.5">
+        <ul className="mt-3 -mx-2.5 animate-appear">
           {rows.map((r) => (
             <Fragment key={r.key}>
               <SceneRow row={r} on={playing?.key === r.key} onPlay={() => play(r)} />
@@ -228,7 +228,7 @@ function SceneRow({ row, on, onPlay }: { row: Row; on: boolean; onPlay: () => vo
 /** 06 팀 「최근 장면」과 같은 4열 카드 — 옆으로 넘긴다 */
 function Carousel({ ref, rows, playingKey, onPlay }: { ref: Ref<HTMLUListElement>; rows: Row[]; playingKey: string | null; onPlay: (r: Row) => void }) {
   return (
-    <ul ref={ref} className="flex snap-x gap-4 overflow-x-auto pb-2 [scrollbar-width:none]">
+    <ul ref={ref} className="animate-appear flex snap-x gap-4 overflow-x-auto pb-2 [scrollbar-width:none]">
       {rows.map((r) => (
         <li key={r.key} className="w-[calc((100%-48px)/4)] min-w-[220px] shrink-0 snap-start">
           <button onClick={() => onPlay(r)} aria-current={playingKey === r.key ? "true" : undefined} className="group block w-full text-left aria-[current=true]:opacity-50">

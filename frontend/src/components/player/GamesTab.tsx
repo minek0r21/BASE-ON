@@ -45,7 +45,7 @@ export default function GamesTab({ playerId, playerName, season, month, onChange
     .filter(Boolean).join(" · ");
 
   return (
-    <section>
+    <section className="animate-appear">
       <SectionHead title="경기 기록" sub={sub} right={<MonthChips months={d.months} month={d.month} onPick={(m) => { setNow(null); onChange(d.season, m); }} />} />
       <GameList>
         {d.games.map((g) => {

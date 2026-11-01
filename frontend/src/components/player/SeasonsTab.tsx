@@ -159,7 +159,7 @@ export default function SeasonsTab({ playerId, onScenes }: { playerId: string; o
   const { batting, pitching, postBatting, postPitching } = q.data;
 
   return (
-    <div className="space-y-14">
+    <div className="animate-appear space-y-14">
       {batting.length > 0 && (
         <Table title="타격 기록" rows={batting as Bat[]} cols={BAT} post={postBatting} unit="장면" scenes={batScenes} onScenes={(s) => onScenes(s, "batter")} />
       )}

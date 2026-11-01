@@ -2,35 +2,51 @@
 
 /* eslint-disable @next/next/no-img-element -- 정적 내보내기: 썸네일 핫링크(설계 8-2) */
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { playerHref } from "@/components/SearchBox";
 import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
 import { PlayGlyph, PlayerAvatar, mmss } from "@/components/ui/Media";
 import type { Clip, Day, DayGame, DayScene } from "@/lib/api";
+import { useReducedMotion } from "@/lib/motion";
 import { team as teamOf } from "@/lib/teams";
 import { clipLength, sceneSub, sceneTitle } from "./common";
 
 type Pick = { scene: DayScene; game: DayGame };
 
 /**
- * 큰 장면 고르기 — 응원팀이 있으면 그 팀 경기에서 그 팀 선수 장면, 없으면 그날 홈런 중 시즌 몇 호가 가장 큰 장면.
+ * 큰 장면 고르기 — 응원팀이 있으면 그 팀 선수 장면, 없으면 그날 홈런 중 시즌 몇 호가 큰 순. 최대 3개를 큰 자리에서 넘긴다(featured, 첫 번째가 main).
  * (시안은 응원팀 경기의 대표 장면. 기준은 아직 팀 결정 전 — 디자인_2.0_구현 8장)
- * 옆 목록은 나머지 경기마다 한 장면씩(등판 장면 먼저, 없으면 홈런) 최대 4개. 같은 장면을 두 번 넣지 않는다
+ * 옆 목록은 main 경기를 뺀 나머지 경기마다 한 장면씩(등판 장면 먼저, 없으면 홈런) 최대 4개. 같은 장면을 두 번 넣지 않는다
  */
-export function pickScenes(day: Day, myTeam: string | null): { main: Pick | null; others: Pick[] } {
+export function pickScenes(day: Day, myTeam: string | null): { main: Pick | null; featured: Pick[]; others: Pick[] } {
   const all: Pick[] = day.games.flatMap((game) => game.scenes.map((scene) => ({ scene, game })));
-  let main: Pick | null = null;
-  if (myTeam) main = all.find((p) => p.scene.team === myTeam) ?? null;
-  if (!main) {
-    const hrs = all.filter((p) => p.scene.kind === "home_run").sort((a, b) => (b.scene.hrSeq ?? 0) - (a.scene.hrSeq ?? 0));
-    main = hrs[0] ?? all[0] ?? null;
-  }
+  const bySeq = (ps: Pick[]) => ps.filter((p) => p.scene.kind === "home_run").sort((a, b) => (b.scene.hrSeq ?? 0) - (a.scene.hrSeq ?? 0));
+  const mine = myTeam ? all.filter((p) => p.scene.team === myTeam) : [];
+  const pool = mine.length ? [...bySeq(mine), ...mine.filter((p) => p.scene.kind !== "home_run")] : [...bySeq(all), ...all.filter((p) => p.scene.kind !== "home_run")];
+  const featured = pool.slice(0, 3);
+  const main = featured[0] ?? null;
+  const used = new Set(featured.map((p) => p.scene.clip.videoId));
   const order = (p: Pick) => (p.scene.kind === "outing" ? (p.scene.role === "선발" ? 0 : 2) : 1); // 선발 등판 → 홈런 → 구원
   const others = day.games
-    .filter((g) => g.game_pk !== main?.game.game_pk && g.scenes.length > 0)
-    .map((g) => ({ scene: g.scenes[0], game: g }))
+    .filter((g) => g.game_pk !== main?.game.game_pk)
+    .flatMap((g) => { const scene = g.scenes.find((x) => !used.has(x.clip.videoId)); return scene ? [{ scene, game: g }] : []; })
     .sort((a, b) => order(a) - order(b))
     .slice(0, 4);
-  return { main, others };
+  return { main, featured, others };
+}
+
+const ROTATE_MS = 5000;
+
+/** 큰 자리 미리보기 넘김 (HANDOFF 모션 후보 「히어로 미리보기」) — 5초마다 크로스페이드, 마우스를 올리거나 재생 중이면 멈춤. 움직임 줄이기면 넘기지 않는다 */
+function useRotation(n: number, paused: boolean) {
+  const reduce = useReducedMotion();
+  const [i, setI] = useState(0);
+  useEffect(() => {
+    if (paused || reduce || n < 2) return;
+    const t = setInterval(() => setI((x) => (x + 1) % n), ROTATE_MS);
+    return () => clearInterval(t);
+  }, [n, paused, reduce]);
+  return [n ? i % n : 0, setI] as const;
 }
 
 /** 지금 재생 중인 영상 — 큰 장면 자리에서 바로 재생한다 (별도 창 없음, 10-29 사용자) */
@@ -42,7 +58,10 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
   playing: Playing | null;
   onPlay: (p: Playing) => void;
 }) {
-  const { main, others } = pickScenes(day, myTeam);
+  const { featured, others } = pickScenes(day, myTeam);
+  const [hover, setHover] = useState(false);
+  const [shown, setShown] = useRotation(featured.length, hover || !!playing);
+  const main = featured[shown] ?? null;
   const isMain = !!main && (!playing || playing.clip.videoId === main.scene.clip.videoId);
   const c = day.scene_counts;
   const [, mm, dd] = day.date.split("-").map(Number);
@@ -70,17 +89,24 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
         <div className="grid gap-8 lg:grid-cols-[680px_1fr]">
           <div>
             {playing ? (
-              <div className="aspect-video w-full overflow-hidden rounded-2xl">
+              <div className="aspect-video w-full animate-grow overflow-hidden rounded-2xl">
                 <ScenePlayer bare clip={playing.clip} label={playing.title} />
               </div>
             ) : (
               main && (
                 <button
                   onClick={() => onPlay({ clip: main.scene.clip, title: sceneTitle(main.scene), sub: sceneSub(main.scene, main.game) })}
+                  onMouseEnter={() => setHover(true)}
+                  onMouseLeave={() => setHover(false)}
+                  onFocus={() => setHover(true)}
+                  onBlur={() => setHover(false)}
                   className="group relative block aspect-video w-full overflow-hidden rounded-2xl"
                   aria-label={`${sceneTitle(main.scene)} 재생`}
                 >
-                  <img src={thumbnailUrl(main.scene.clip.videoId)} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
+                  {featured.map((f, k) => (
+                    <img key={f.scene.clip.videoId} src={thumbnailUrl(f.scene.clip.videoId)} alt=""
+                         className={`absolute inset-0 h-full w-full object-cover transition-[opacity,scale] duration-500 group-hover:scale-[1.02] ${k === shown ? "opacity-100" : "opacity-0"}`} />
+                  ))}
                   <span className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white">
                     <PlayGlyph size={16} />
                   </span>
@@ -89,6 +115,14 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
                   </span>
                 </button>
               )
+            )}
+            {!playing && featured.length > 1 && (
+              <div className="mt-3 flex gap-1.5" role="group" aria-label="큰 장면 고르기">
+                {featured.map((f, k) => (
+                  <button key={f.scene.clip.videoId} onClick={() => setShown(k)} aria-pressed={k === shown} aria-label={sceneTitle(f.scene)}
+                          className="h-1.5 w-6 rounded-full bg-white/25 transition-colors duration-300 aria-pressed:bg-white" />
+                ))}
+              </div>
             )}
             <p className="mt-4 text-[22px] font-bold">{playing ? playing.title : main && sceneTitle(main.scene)}</p>
             <p className="mt-1 text-[13px] text-[#a1a1a8]">{playing ? playing.sub : main && sceneSub(main.scene, main.game)}</p>

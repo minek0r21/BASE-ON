@@ -20,6 +20,21 @@ function useDebounced<T>(value: T, ms: number) {
   return v;
 }
 
+const CHO = "ㄱㄲㄴㄷㄸㄹㅁㅂㅃㅅㅆㅇㅈㅉㅊㅋㅌㅍㅎ";
+const choOf = (ch: string) => {
+  const c = ch.charCodeAt(0) - 0xac00;
+  return c >= 0 && c <= 11171 ? CHO[Math.floor(c / 588)] : ch;
+};
+
+/** 이름에서 검색어와 맞는 글자를 굵게 — 초성(ㄱㄷㅇ)이면 초성이 이어서 맞는 자리, 아니면 그대로 들어 있는 자리. 옛 이름으로 찾은 것은 그대로 */
+function Marked({ name, q }: { name: string; q: string }) {
+  const chars = [...name];
+  const cho = /^[ㄱ-ㅎ]+$/.test(q);
+  const at = cho ? chars.map(choOf).join("").indexOf(q) : name.indexOf(q);
+  if (!q || at < 0) return <>{name}</>;
+  return <>{chars.slice(0, at).join("")}<b className="font-extrabold">{chars.slice(at, at + q.length).join("")}</b>{chars.slice(at + q.length).join("")}</>;
+}
+
 export const playerHref = (id: string, extra: Record<string, string> = {}) =>
   `/players/?${new URLSearchParams({ id, ...extra })}`;
 
@@ -127,7 +142,7 @@ export default function SearchBox({
         <ul
           id={listId}
           role="listbox"
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-96 overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
+          className="absolute inset-x-0 top-full z-30 mt-1 max-h-96 animate-rise overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
         >
           {hits.map((p, i) => (
             <li
@@ -140,7 +155,7 @@ export default function SearchBox({
               className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm ${i === active ? "bg-bg" : ""}`}
             >
               <span className="h-6 w-1 shrink-0 rounded-full" style={{ background: teamColor(p.team) }} />
-              <span className="font-semibold">{p.name}</span>
+              <span className="font-medium"><Marked name={p.name} q={q} /></span>
               <span className="text-muted">
                 {[p.team, p.position, p.bats_throws].filter(Boolean).join(" · ")}
               </span>

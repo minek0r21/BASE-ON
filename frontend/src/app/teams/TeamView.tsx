@@ -74,7 +74,7 @@ export default function TeamView() {
           ) : !games.data ? (
             <div className="h-[150px] animate-pulse rounded-3xl bg-surface-2" />
           ) : (
-            <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <ul className="animate-appear grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
               {games.data.map((g) => (
                 <li key={g.game_pk} className="rounded-2xl border border-line bg-surface p-4">
                   <p className="flex items-center justify-between text-xs text-fg-2">
@@ -198,7 +198,7 @@ function SceneRow({ team, data, playingId, onPlay }: {
       ) : data.scenes.length === 0 ? (
         <p className="rounded-3xl border border-line bg-surface py-10 text-center text-sm text-fg-2">이번 시즌 확정된 장면이 아직 없어요</p>
       ) : (
-        <ul ref={ref} className="flex snap-x gap-4 overflow-x-auto pb-2 [scrollbar-width:none]">
+        <ul ref={ref} className="animate-appear flex snap-x gap-4 overflow-x-auto pb-2 [scrollbar-width:none]">
           {data.scenes.map((s) => {
             const x = teamSceneText(s);
             const sub = `vs ${s.opponent} · ${md(s.date)}`;
@@ -250,7 +250,7 @@ function PlayerTable({ title, sub, rows, loading }: { title: string; sub: ReactN
       ) : rows.length === 0 ? (
         <p className="py-10 text-center text-sm text-fg-2">비교 대상 선수가 없어요</p>
       ) : (
-        <ol className="divide-y divide-line">
+        <ol className="animate-appear divide-y divide-line">
           {shown.map((r) => (
             <li key={r.id}>
               <Link href={playerHref(r.id)} className="grid grid-cols-[44px_1fr_auto_56px_auto] items-center gap-3 py-3 hover:bg-surface-2">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useState } from "react";
 import { playerHref } from "@/components/SearchBox";
 import { PlayerAvatar, TeamLogo } from "@/components/ui/Media";
+import Slide from "@/components/ui/Slide";
 import type { LeaderCard, Leaders } from "@/lib/api";
 import { axisCopy, rankingsHref } from "@/lib/axes";
 import { SectionHead } from "./common";
@@ -26,24 +27,24 @@ export default function AbilityCards({ batters, pitchers, asOf }: { batters?: Le
         title="어떤 선수를 찾고 있나요?"
         sub={sub}
         right={
-          <div className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
+          <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
             {(["batter", "pitcher"] as const).map((r) => (
               <button
                 key={r}
                 onClick={() => setRole(r)}
                 aria-pressed={role === r}
-                className="h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 transition-colors duration-[120ms] aria-pressed:bg-surface-3 aria-pressed:font-bold aria-pressed:text-fg"
+                className="relative h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 transition-colors duration-[120ms] aria-pressed:font-bold aria-pressed:text-fg"
               >
                 {r === "batter" ? "타자" : "투수"}
               </button>
             ))}
-          </div>
+          </Slide>
         }
       />
       {!data ? (
         <div className="h-[360px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        <ul className="grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
+        <ul className="animate-appear grid gap-5 sm:grid-cols-2 lg:grid-cols-5">
           {data.cards.map((c) => (
             <Card key={c.key} card={c} role={role} />
           ))}

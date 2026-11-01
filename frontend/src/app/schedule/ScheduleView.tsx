@@ -77,7 +77,7 @@ export default function ScheduleView() {
       ) : !day.data ? (
         <div className="mt-8 h-[600px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        <>
+        <div className="animate-appear">
           <div className="mt-9 flex flex-wrap items-end justify-between gap-3">
             <h2 className="text-2xl font-bold">
               {longDate(day.data.date)} · {games.length}경기
@@ -105,7 +105,7 @@ export default function ScheduleView() {
               ))}
             </ul>
           )}
-        </>
+        </div>
       )}
     </Wrap>
   );
