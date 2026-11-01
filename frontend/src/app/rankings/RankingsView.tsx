@@ -16,6 +16,7 @@ import { useRosterTeam } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
 import { josa } from "@/lib/abilities";
 import Help from "@/components/ui/Help";
+import Slide from "@/components/ui/Slide";
 import { GROUP_HELP } from "@/lib/constants";
 import PlayersHead from "./PlayersHead";
 import TeamPicker from "./TeamPicker";
@@ -62,18 +63,18 @@ export default function RankingsView() {
       <PlayersHead tab="rank" sub={[data?.season && `${data.season} 정규시즌`, asOf && `${md(asOf)} 기준`].filter(Boolean).join(" · ")} />
 
       <div className="mt-7 flex flex-wrap items-center gap-3">
-        <div className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
+        <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
           {(["batter", "pitcher"] as const).map((r) => (
             <button
               key={r}
               onClick={() => { setMore(false); setPlaying(null); go(r); }}
               aria-pressed={role === r}
-              className="h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 transition-colors duration-[120ms] aria-pressed:bg-surface-3 aria-pressed:font-bold aria-pressed:text-fg"
+              className="relative h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 transition-colors duration-[120ms] aria-pressed:font-bold aria-pressed:text-fg"
             >
               {r === "batter" ? "타자" : "투수"}
             </button>
           ))}
-        </div>
+        </Slide>
         <div className="flex flex-wrap gap-2" role="group" aria-label="지표">
           {axes.map((a) => (
             <button
@@ -100,7 +101,7 @@ export default function RankingsView() {
       ) : !data ? (
         <div className="mt-5 h-[640px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        <div className="mt-5 overflow-x-auto rounded-3xl border border-line bg-surface">
+        <div className="animate-appear mt-5 overflow-x-auto rounded-3xl border border-line bg-surface">
           <div className="min-w-[960px]">
             <div className={`grid ${COLS} items-center gap-4 border-b border-line px-6 py-3 text-xs font-medium text-muted`}>
               <span>순위</span>

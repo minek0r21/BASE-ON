@@ -15,6 +15,7 @@ import SeasonsTab from "@/components/player/SeasonsTab";
 import { Empty } from "@/components/ui/Chip";
 import { FormCard, SeasonStrip, SeasonsCard } from "@/components/player/SideCards";
 import Similar from "@/components/player/Similar";
+import Slide from "@/components/ui/Slide";
 import {
   ApiError, getMeta, getPitcherOutings, getPlayer, getPlayerScenes, getPlayerSeasons, qk, type PitcherOutings as Outings, type PlayerScenes,
 } from "@/lib/api";
@@ -151,7 +152,7 @@ export default function PlayerView() {
   ];
 
   return (
-    <div style={colors}>
+    <div style={colors} className="animate-appear">
       <div className="h-1 bg-(--team)" aria-hidden />
       <Wrap className="pt-6 pb-8">
         <nav className="flex items-center gap-1.5 text-[13px] text-muted" aria-label="위치">
@@ -166,29 +167,31 @@ export default function PlayerView() {
 
       <div className="sticky top-16 z-10 border-b border-line bg-bg/95 backdrop-blur">
         <Wrap className="flex flex-wrap items-center justify-between gap-3">
-          <nav className="flex gap-7 overflow-x-auto" aria-label="선수 화면">
+          <nav className="overflow-x-auto" aria-label="선수 화면">
+            <Slide line mark="bottom-0 h-0.5 bg-fg" className="flex gap-7">
             {tabs.map((x) => (
               <button
                 key={x.key}
                 onClick={() => goTab(x.key)}
                 aria-current={tab === x.key ? "page" : undefined}
-                className="flex h-12 shrink-0 items-center gap-1.5 border-b-2 border-transparent text-[15px] font-medium text-fg-2 hover:text-fg aria-[current=page]:border-fg aria-[current=page]:font-bold aria-[current=page]:text-fg"
+                className="relative flex h-12 shrink-0 items-center gap-1.5 text-[15px] font-medium text-fg-2 hover:text-fg aria-[current=page]:font-bold aria-[current=page]:text-fg"
               >
                 {x.label}
                 {x.n != null && <span className="rounded-full bg-surface-2 px-2 py-0.5 font-num text-[11px] font-bold text-fg">{x.n}</span>}
               </button>
             ))}
+            </Slide>
           </nav>
           <div className="flex items-center gap-2">
             {p.isBatter && p.pitching && (
-              <div className="flex rounded-full border border-line bg-surface p-0.5" role="group" aria-label="타자 · 투수">
+              <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-0.5" role="group" aria-label="타자 · 투수">
                 {(["batter", "pitcher"] as const).map((v) => (
                   <button key={v} onClick={() => setParams({ view: v })} aria-pressed={role === v}
-                          className="h-7 rounded-full px-3 text-[13px] font-medium text-fg-2 aria-pressed:bg-surface-3 aria-pressed:font-bold aria-pressed:text-fg">
+                          className="relative h-7 rounded-full px-3 text-[13px] font-medium text-fg-2 aria-pressed:font-bold aria-pressed:text-fg">
                     {v === "batter" ? "타자" : "투수"}
                   </button>
                 ))}
-              </div>
+              </Slide>
             )}
             {seasonList.length > 0 && (
               <label>

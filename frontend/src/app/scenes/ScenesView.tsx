@@ -92,7 +92,7 @@ export default function ScenesView() {
       ) : !day.data ? (
         <div className="mt-8 h-[600px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        <>
+        <div className="animate-appear">
           <h2 className="mt-9 text-2xl font-bold">
             {longDate(day.data.date)} · {games.length}경기 · 장면 {count.all} (홈런 {count.home_run} · 투수 {count.outing})
           </h2>
@@ -112,7 +112,7 @@ export default function ScenesView() {
               />
             ))}
           </ul>
-        </>
+        </div>
       )}
     </Wrap>
   );

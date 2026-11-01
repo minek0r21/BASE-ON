@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useRef } from "react";
 import { SectionHead } from "@/components/home/common";
 import Help from "@/components/ui/Help";
 import type { AxisKey, PitchAxisKey, PlayerSummary } from "@/lib/api";
@@ -8,6 +9,7 @@ import { barOpacity, josa, verdict } from "@/lib/abilities";
 import { GROUP_RULE, axisCopy, rankingsHref } from "@/lib/axes";
 import { AXIS_HELP, GROUP_HELP, PITCH_AXIS_HELP, STAT_HELP } from "@/lib/constants";
 import { innings, md } from "@/lib/format";
+import { useProgress, useSeen } from "@/lib/motion";
 import { leaguePosition } from "@/lib/position";
 import type { Role } from "./Hero";
 
@@ -19,6 +21,8 @@ type Cell = { key: AxisKey | PitchAxisKey; label: string; value: number | null; 
  * 섹션 제목(기준 · 「다른 타자와 비교」) + 5칸 한 상자 — 06 팀 화면 표와 같은 틀
  */
 export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: Role; asOf: string | null }) {
+  const box = useRef<HTMLUListElement>(null);
+  const seen = useSeen(box); // 처음 보일 때 막대를 0에서 채운다 (600ms, 칸마다 60ms 간격)
   const pi = p.pitching;
   const qualified = role === "pitcher" ? !!pi?.qualified : p.qualified;
   const n = (role === "pitcher" ? pi?.groupSize : p.groupSize) ?? 0;
@@ -36,8 +40,8 @@ export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: R
       다른 {role === "pitcher" ? "투수" : "타자"}와 비교 ›
     </Link>
   );
-  const cell = (c: Cell) => (
-    <AbilityCell c={c} n={n} who={role === "pitcher" ? `${pi?.roleLabel ?? ""} ` : ""} name={p.name} best={c.key === best} />
+  const cell = (c: Cell, i: number) => (
+    <AbilityCell c={c} n={n} who={role === "pitcher" ? `${pi?.roleLabel ?? ""} ` : ""} name={p.name} best={c.key === best} run={seen} delay={i * 60} />
   );
 
   // 비교 대상 밖: 이유(몇 타석 · 이닝 모자란지)를 말하고 막대 대신 실제 수치만 (09 「리그 비교 대상이 아닐 때」)
@@ -74,14 +78,15 @@ export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: R
   return (
     <section>
       <SectionHead title={title} sub={sub} right={more} />
-      <ul className="grid grid-cols-2 gap-y-5 rounded-3xl border border-line bg-surface px-6 py-5 md:grid-cols-5 md:divide-x md:divide-line">
-        {cells.map((c) => <li key={c.key} className="min-w-0 md:px-5 md:first:pl-0 md:last:pr-0">{cell(c)}</li>)}
+      <ul ref={box} className="grid grid-cols-2 gap-y-5 rounded-3xl border border-line bg-surface px-6 py-5 md:grid-cols-5 md:divide-x md:divide-line">
+        {cells.map((c, i) => <li key={c.key} className="min-w-0 md:px-5 md:first:pl-0 md:last:pr-0">{cell(c, i)}</li>)}
       </ul>
     </section>
   );
 }
 
-function AbilityCell({ c, n, who, name, best }: { c: Cell; n: number; who: string; name: string; best: boolean }) {
+function AbilityCell({ c, n, who, name, best, run, delay }: { c: Cell; n: number; who: string; name: string; best: boolean; run: boolean; delay: number }) {
+  const t = useProgress(run, 600, delay);
   const copy = axisCopy(c.key);
   const value = copy?.fmt(c.value) ?? "–";
   const pos = c.percentile != null && c.rank != null ? leaguePosition(c.percentile, c.rank, n) : null;
@@ -99,10 +104,10 @@ function AbilityCell({ c, n, who, name, best }: { c: Cell; n: number; who: strin
         <>
           <p className="mt-2 flex items-baseline gap-1.5">
             <span className="text-[15px] font-medium text-fg-2">{pos.side}</span>
-            <span className={`font-display text-[46px] leading-none font-extrabold ${strong ? "text-(--team-text)" : ""}`}>{pos.pct}%</span>
+            <span className={`font-display text-[46px] leading-none font-extrabold tabular-nums ${strong ? "text-(--team-text)" : ""}`}>{Math.round(pos.pct * t)}%</span>
           </p>
           <span className="mt-2.5 block h-1.5 overflow-hidden rounded-full bg-surface-3">
-            <span className="block h-full rounded-full bg-(--team)" style={{ width: `${c.percentile}%`, opacity: barOpacity(c.percentile!) }} />
+            <span className="block h-full rounded-full bg-(--team)" style={{ width: `${c.percentile! * t}%`, opacity: barOpacity(c.percentile!) }} />
           </span>
           <p className={`mt-2.5 text-[15px] font-bold ${strong ? "text-(--team-text)" : ""}`}>{verdict(c.key, c.percentile!)}</p>
           <p className="mt-1 text-[13px] leading-5 text-fg-2">

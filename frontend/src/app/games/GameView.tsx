@@ -4,7 +4,7 @@
 import { useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { Wrap, clipLength, gameHref, sceneTitle, weekday } from "@/components/home/common";
 import { bigThumb } from "@/components/player/Hero";
 import ShareButton, { BTN } from "@/components/ui/ShareButton";
@@ -13,8 +13,10 @@ import { playerHref } from "@/components/SearchBox";
 import StageTag from "@/components/StageTag";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
+import Slide from "@/components/ui/Slide";
 import { ApiError, gameDate, getDay, getGameBox, qk, type BoxTeam, type Clip, type DayGame, type DayScene } from "@/lib/api";
 import { innings, md, rate3 } from "@/lib/format";
+import { useReducedMotion } from "@/lib/motion";
 import { team as teamOf, teamHref } from "@/lib/teams";
 
 const RUNS = ["", "솔로", "투런", "스리런", "만루"];
@@ -32,6 +34,7 @@ export default function GameView() {
   const day = useQuery({ queryKey: qk.day(date), queryFn: ({ signal }) => getDay(date, signal), enabled: !!date });
   const box = useQuery({ queryKey: qk.gameBox(id), queryFn: ({ signal }) => getGameBox(id, signal), enabled: !!id });
   const [now, setNow] = useState<(Now & { on: boolean }) | null>(null);
+  const [ended, setEnded] = useState<string | null>(null); // 끝까지 본 장면의 key → 다음 장면 카운트다운
 
   const g = day.data?.games.find((x) => x.game_pk === id);
   // 없는 경기 번호면 그날(번호에서 읽은 날짜가 맞으면) 일정으로 보낸다
@@ -54,17 +57,23 @@ export default function GameView() {
     .filter(Boolean).join(" · ");
   const base: Now | null = g.highlight ? { key: "highlight", clip: g.highlight, label: "경기 하이라이트", title: `${scoreLine(g)} 하이라이트` } : null;
   const cur = now ?? (base && { ...base, on: false });
-  const play = (n: Now) => setNow({ ...n, on: true });
+  const play = (n: Now) => { setEnded(null); setNow({ ...n, on: true }); };
   const scenes = orderScenes(g.scenes);
+  const nows: Now[] = scenes.map((s) => ({ key: sceneKey(s), clip: s.clip, label: s.kind === "outing" ? "등판 장면" : "홈런 장면", title: sceneTitle(s) }));
+  // 다음 장면: 오른쪽 「이 경기의 장면」 순서로 하나 뒤 (마지막 장면 · 경기 하이라이트 · 영상 없는 홈런 뒤에는 없음)
+  const at = cur ? nows.findIndex((n) => n.key === cur.key) : -1;
+  const next = at >= 0 ? nows[at + 1] ?? null : null;
 
   return (
-    <Wrap className="pt-10 pb-24">
+    <Wrap className="animate-appear pt-10 pb-24">
       <nav className="text-[13px] text-muted" aria-label="위치">
         <Link href={`/schedule/?${new URLSearchParams({ date: date! })}`} className="hover:underline">일정</Link> <span aria-hidden>›</span> {md(date!)}({weekday(date!)})
       </nav>
       <div className="mt-4 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0">
-          <Stage now={cur} onStart={() => cur && setNow({ ...cur, on: true })} />
+          <Stage now={cur} onStart={() => cur && play(cur)} onEnded={() => cur && setEnded(cur.key)}>
+            {cur?.on && ended === cur.key && next && <NextUp key={next.key} next={next} onGo={() => play(next)} onCancel={() => setEnded(null)} />}
+          </Stage>
           <p className="mt-5 flex flex-wrap items-center gap-2 text-xs font-bold">
             {g.stage_label ? <StageTag label={g.stage_label} /> : <span className="rounded-md bg-fg px-2 py-1 text-bg">정규시즌</span>}
             <span className="rounded-md bg-surface-2 px-2 py-1 text-fg-2">{md(date!)} ({weekday(date!)})</span>
@@ -90,12 +99,12 @@ export default function GameView() {
           <Panel title={`이 경기의 장면 ${scenes.length}`}>
             {scenes.length ? (
               <ul className="space-y-1">
-                {scenes.map((s) => {
-                  const k = sceneKey(s);
+                {scenes.map((s, i) => {
+                  const n = nows[i];
                   return (
-                    <li key={k}>
-                      <SceneRow clip={s.clip} title={sceneTitle(s)} sub={s.kind === "outing" ? `${s.team} · ${s.role} 등판` : `${s.inning}회${s.inningHalf} · ${s.team}`}
-                                on={cur?.key === k} onClick={() => play({ key: k, clip: s.clip, label: s.kind === "outing" ? "등판 장면" : "홈런 장면", title: sceneTitle(s) })} />
+                    <li key={n.key}>
+                      <SceneRow clip={s.clip} title={n.title} sub={s.kind === "outing" ? `${s.team} · ${s.role} 등판` : `${s.inning}회${s.inningHalf} · ${s.team}`}
+                                on={cur?.key === n.key} onClick={() => play(n)} />
                     </li>
                   );
                 })}
@@ -138,13 +147,14 @@ const orderScenes = (ss: DayScene[]) => [
 ];
 
 /** 위쪽 무대 — 처음엔 썸네일 + ▶ (누를 때 영상을 불러온다), 고른 장면은 바로 재생 */
-function Stage({ now, onStart }: { now: (Now & { on: boolean }) | null; onStart: () => void }) {
+// 플레이어는 장면이 바뀌어도 다시 만들지 않는다(loadVideoById) — 첫 재생 뒤라 다음 장면도 이어 재생된다
+function Stage({ now, onStart, onEnded, children }: { now: (Now & { on: boolean }) | null; onStart: () => void; onEnded: () => void; children?: ReactNode }) {
   return (
     <div className="relative aspect-video overflow-hidden rounded-[28px] bg-night">
       {!now ? (
         <div className="flex h-full items-center justify-center text-sm text-[#a1a1a8]">이 경기 영상이 아직 없어요</div>
       ) : now.on ? (
-        <ScenePlayer key={now.key} bare clip={now.clip} label={now.title} />
+        <div className="h-full w-full animate-grow"><ScenePlayer bare clip={now.clip} label={now.title} onEnded={onEnded} /></div>
       ) : (
         <button onClick={onStart} className="group absolute inset-0" aria-label={`${now.title} 재생`}>
           <img src={bigThumb(now.clip.videoId)} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />
@@ -153,6 +163,38 @@ function Stage({ now, onStart }: { now: (Now & { on: boolean }) | null; onStart:
           <span className="absolute right-4 bottom-4 rounded-md bg-black/70 px-2 py-0.5 font-num text-xs font-semibold text-white">{mmss(clipLength(now.clip))}</span>
         </button>
       )}
+      {children}
+    </div>
+  );
+}
+
+/**
+ * 다음 장면 (HANDOFF 모션 후보 「04 다음 장면」) — 4초 카운트다운 링 뒤 이어 재생, 바로 보기 · 취소.
+ * 움직임 줄이기면 저절로 넘어가지 않고 「다음 장면 ▶」 버튼만
+ */
+function NextUp({ next, onGo, onCancel }: { next: Now; onGo: () => void; onCancel: () => void }) {
+  const reduce = useReducedMotion();
+  const go = useRef(onGo);
+  useEffect(() => { go.current = onGo; }, [onGo]);
+  useEffect(() => {
+    if (reduce) return;
+    const t = setTimeout(() => go.current(), 4000);
+    return () => clearTimeout(t);
+  }, [reduce]);
+  return (
+    <div className="absolute inset-0 flex animate-appear flex-col items-center justify-center gap-3 bg-black/75 text-white">
+      <p className="text-[13px] text-[#a1a1a8]">다음 장면</p>
+      <p className="px-6 text-center text-xl font-bold">{next.title}</p>
+      <button onClick={onGo} className="relative mt-2 flex h-16 w-16 items-center justify-center rounded-full bg-white/15 hover:bg-white/25" aria-label={`${next.title} 바로 보기`}>
+        {!reduce && (
+          <svg viewBox="0 0 64 64" className="absolute inset-0 -rotate-90" aria-hidden>
+            <circle cx="32" cy="32" r="30" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="3" />
+            <circle cx="32" cy="32" r="30" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeDasharray="188.5" className="animate-countdown" />
+          </svg>
+        )}
+        <PlayGlyph size={18} />
+      </button>
+      <button onClick={onCancel} className="text-[13px] font-bold text-[#d3d4d8] hover:underline">취소</button>
     </div>
   );
 }
@@ -269,14 +311,14 @@ function Box({ box, pending }: { box?: { away: BoxTeam; home: BoxTeam; date: str
     <section className="mt-6 rounded-3xl border border-line bg-surface p-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-xl font-bold">경기 기록</h2>
-        <div className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="팀">
+        <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="팀">
           {(["away", "home"] as const).map((k) => (
             <button key={k} onClick={() => setSide(k)} aria-pressed={side === k}
-                    className="flex h-[30px] items-center gap-1.5 rounded-full px-4 text-[13px] font-medium text-fg-2 aria-pressed:bg-surface-3 aria-pressed:font-bold aria-pressed:text-fg">
+                    className="relative flex h-[30px] items-center gap-1.5 rounded-full px-4 text-[13px] font-medium text-fg-2 aria-pressed:font-bold aria-pressed:text-fg">
               <TeamLogo team={box[k].team} height={14} /> {box[k].team}
             </button>
           ))}
-        </div>
+        </Slide>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-sm">

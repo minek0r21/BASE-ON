@@ -49,7 +49,7 @@ export default function OutingsTab({ playerId, playerName, season, month, outing
   const sub = [`${d.month}월`, starts === d.outings.length ? `선발 ${starts}경기` : `${d.outings.length}경기`, `${innings(sum.outs)}이닝 ${sum.so}탈삼진`].join(" · ");
 
   return (
-    <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
+    <div className="animate-appear grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
       <section className="overflow-hidden rounded-3xl border border-line bg-surface lg:sticky lg:top-32">
         <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4">
           <div>
@@ -122,7 +122,7 @@ function Detail({ id, playerName }: { id: string; playerName: string }) {
   ];
 
   return (
-    <div className="min-w-0 space-y-5">
+    <div className="animate-appear min-w-0 space-y-5">
       <section className="rounded-3xl border border-line bg-surface p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">

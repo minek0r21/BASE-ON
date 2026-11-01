@@ -26,7 +26,7 @@ export default function Help({ title, body, inline = false, below = false }: { t
         ?
       </button>
       {open && (
-        <span role="tooltip" className={`absolute ${below ? "top-full mt-2" : "bottom-full mb-2"} left-1/2 z-20 block w-[282px] -translate-x-1/2 rounded-xl bg-night px-4 py-3.5 text-left font-normal text-white shadow-lg`}>
+        <span role="tooltip" className={`absolute ${below ? "top-full mt-2 origin-top" : "bottom-full mb-2 origin-bottom"} left-1/2 z-20 block w-[282px] -translate-x-1/2 animate-pop rounded-xl bg-night px-4 py-3.5 text-left font-normal text-white shadow-lg`}>
           <span className="block text-[13px] font-bold">{title}</span>
           <span className="mt-1.5 block text-xs leading-[18px] font-normal text-[#d3d4d8]">{body}</span>
         </span>

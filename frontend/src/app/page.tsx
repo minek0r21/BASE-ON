@@ -58,10 +58,10 @@ export default function Home() {
           {day.isError ? (
             <Retry text="경기 결과를 불러오지 못했어요" onRetry={() => day.refetch()} />
           ) : day.data ? (
-            <>
+            <div className="animate-appear space-y-6">
               <ScoreStrip day={day.data} isLast={day.data.date === asOf} />
               <DayScenes day={day.data} myTeam={myTeam} playing={playing} onPlay={play} />
-            </>
+            </div>
           ) : (
             <div className="h-[560px] animate-pulse rounded-[28px] bg-surface-2" />
           )}

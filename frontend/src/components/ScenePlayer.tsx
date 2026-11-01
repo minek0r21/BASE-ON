@@ -10,6 +10,7 @@ import { reportUnplayable, type Clip } from "@/lib/api";
  * - 종료 강제(FR-04-02): 재생 중 250ms마다 현재 위치가 end_sec를 넘으면 멈추고 end_sec로 되돌린다
  * - 다른 장면으로 바꿀 때 iframe을 다시 만들지 않고 loadVideoById만 부른다
  * - 재생 불가(onError 100·101·150·153) → 안내 문구 + 신고(API-12). 서버가 확인해 그 영상을 검수로 보낸다
+ * - onEnded: 구간 끝(end_sec)에 닿거나 영상이 끝나면 장면마다 한 번 알린다 (04 다음 장면 자동 재생)
  */
 
 type YTPlayer = {
@@ -28,7 +29,7 @@ type YTNamespace = {
       width?: string;
       height?: string;
       playerVars?: Record<string, number | string>;
-      events?: { onReady?: () => void; onError?: (e: { data: number }) => void };
+      events?: { onReady?: () => void; onError?: (e: { data: number }) => void; onStateChange?: (e: { data: number }) => void };
     },
   ) => YTPlayer;
   PlayerState: { PLAYING: number };
@@ -61,10 +62,11 @@ const POLL_MS = 250;
 
 export const thumbnailUrl = (videoId: string) => `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
 
-export default function ScenePlayer({ clip, label, onClose, bare = false }: {
+export default function ScenePlayer({ clip, label, onClose, onEnded, bare = false }: {
   clip: Clip;
   label: string;
   onClose?: () => void;
+  onEnded?: () => void;
   /** 화면 안 그 자리에서 바로 재생 (메인 「그날 장면」): 머리줄 · 설명 없이 영상 칸만, 누른 뒤라 바로 시작 */
   bare?: boolean;
 }) {
@@ -76,9 +78,22 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
   const [error, setError] = useState<{ videoId: string; code: number } | null>(null);
   const shownError = error?.videoId === clip.videoId ? <ErrorText code={error.code} /> : null;
 
+  const endedRef = useRef(onEnded);
+  const doneRef = useRef(false); // 이 장면 끝을 이미 알렸나
+  const changedRef = useRef(0);   // 장면을 바꾼 시각 — 바로 뒤에는 앞 장면 위치가 남아 있어 끝으로 치지 않는다
   useEffect(() => {
     clipRef.current = clip;
+    doneRef.current = false;
+    changedRef.current = performance.now();
   }, [clip]);
+  useEffect(() => {
+    endedRef.current = onEnded;
+  }, [onEnded]);
+  const finish = () => {
+    if (doneRef.current) return;
+    doneRef.current = true;
+    endedRef.current?.();
+  };
 
   // 플레이어 만들기 (처음 누를 때 한 번). YT는 넘겨받은 요소를 iframe으로 바꿔 끼우므로
   // React가 관리하는 div가 아니라 그 안에 직접 만든 요소를 넘긴다
@@ -103,6 +118,7 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
           origin: window.location.origin,
         },
         events: {
+          onStateChange: (e) => { if (e.data === 0) finish(); }, // 0 = 끝남
           onError: (e) => {
             const videoId = clipRef.current.videoId;
             if (UNPLAYABLE.has(e.data)) reportUnplayable(videoId);
@@ -131,7 +147,9 @@ export default function ScenePlayer({ clip, label, onClose, bare = false }: {
       const p = playerRef.current;
       const end = clipRef.current.endSec;
       if (!p || !end || typeof p.getCurrentTime !== "function") return;
-      if (p.getCurrentTime() > end + 0.3) {
+      const now = p.getCurrentTime();
+      if (now >= end - 0.25 && performance.now() - changedRef.current > 1500) finish();
+      if (now > end + 0.3) {
         p.pauseVideo();
         p.seekTo(end, true);
       }

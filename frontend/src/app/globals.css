@@ -63,6 +63,21 @@ body {
   outline: 2px solid var(--brand);
   outline-offset: 2px;
 }
+/* 모션 (HANDOFF 모션 후보 8개, 11-01 사용자가 모두 고름) — 아래 「움직임 줄이기」에서 모두 꺼진다.
+   transform 대신 scale · translate 속성을 움직여 Tailwind 위치 클래스(-translate-x-1/2 등)와 겹치지 않게 한다 */
+@theme {
+  --animate-pop: pop 120ms ease-out;          /* 「?」 말풍선 */
+  --animate-rise: rise 180ms ease-out;        /* 검색 드롭다운 */
+  --animate-appear: appear 220ms ease-out;    /* 불러오는 중 뼈대 → 내용 */
+  --animate-grow: grow 300ms cubic-bezier(0.2, 0.8, 0.2, 1); /* 썸네일 → 플레이어 */
+  --animate-countdown: countdown 4s linear forwards;          /* 04 다음 장면 링 */
+  @keyframes pop { from { opacity: 0; scale: 0.94; } }
+  @keyframes rise { from { opacity: 0; translate: 0 8px; } }
+  @keyframes appear { from { opacity: 0; } }
+  @keyframes grow { from { opacity: 0; scale: 0.92; } }
+  @keyframes countdown { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 188.5; } }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     transition-duration: 0ms !important;

@@ -66,7 +66,7 @@ export default function MatchupTab({ playerId, playerName, season, role = "batte
   const sortBy = (k: SortKey) => setSort(sort.key === k ? { key: k, desc: !sort.desc } : { key: k, desc: k !== "so" });
 
   return (
-    <section>
+    <section className="animate-appear">
       <SectionHead
         title={`상대한 ${who}`}
         sub={`${scopeLabel} · ${MIN_PA}타석 이상 맞붙은 ${who} ${many.length}명`}

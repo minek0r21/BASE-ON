@@ -3,10 +3,10 @@
 import type { Playing } from "@/components/home/DayScenes";
 import ScenePlayer from "@/components/ScenePlayer";
 
-/** 화면 안 그 자리에서 바로 재생하는 어두운 칸 (별도 창 없음, 10-29 사용자) — 10 장면 · 06 팀 · 08 일정 */
+/** 화면 안 그 자리에서 바로 재생하는 어두운 칸 (별도 창 없음, 10-29 사용자) — 10 장면 · 06 팀 · 08 일정. 열릴 때 누른 자리에서 커지며 나타난다 */
 export default function InlinePlayer({ playing, onClose, className = "" }: { playing: Playing; onClose: () => void; className?: string }) {
   return (
-    <div className={`rounded-3xl bg-night p-5 text-white ${className}`}>
+    <div className={`origin-top animate-grow rounded-3xl bg-night p-5 text-white ${className}`}>
       <div className="mx-auto aspect-video w-full max-w-[760px] overflow-hidden rounded-2xl">
         <ScenePlayer bare clip={playing.clip} label={playing.title} />
       </div>
