@@ -87,6 +87,7 @@ BASEON/
 │   ├─ reload_all.sh              DB 전체 다시 적재 (00 → 01 → 02 → 05 → 03 → 07 → 08)
 │   ├─ sync_media.py              선수 사진 · 엠블럼 → frontend/public/media/
 │   ├─ upscale_media.py           사진 · 엠블럼 4배 확대본 만들기 (선택)
+│   ├─ perf_check.py              선수 상세 API 응답 시간 측정 (NFR-01)
 │   └─ deploy.py                  서버에 코드 · 화면 · DB 올리기
 ├─ data/                          원본 기록 · DB 덤프 (git 제외)
 ├─ photos/ · logos/               선수 사진 · 구단 엠블럼 (git 제외)
@@ -102,6 +103,7 @@ BASEON/
 ├─ videos/                        영상 목록 · 매칭 결과 (대부분 git 제외 — etl/README.md)
 ├─ backend/                       API 서버 (자세한 건 backend/README.md)
 │   ├─ app/main.py                서버 시작, 라우터 등록
+│   ├─ tests/                     API 테스트 (unittest)
 │   └─ app/routers/               players · games · outings · matchup · league · admin(검수) · report · meta · postseason
 ├─ frontend/                      화면 (자세한 건 frontend/README.md)
 └─ deploy/                        서버용 docker-compose · Caddyfile · 서버 준비 스크립트
@@ -206,6 +208,11 @@ python scripts/deploy.py code --local <폴더>   # 서버 대신 PC 폴더에 �
 ## 시험
 
 ```bash
-python etl/tests/test_rules.py     # 계산 규칙 단위 시험 (Docker: docker compose run --rm etl etl/tests/test_rules.py)
-cd frontend && npm run lint && npx tsc --noEmit   # 화면 lint · 타입 검사
+python etl/tests/test_rules.py                       # 계산 규칙 단위 시험 (DB 없이. Docker: docker compose run --rm etl etl/tests/test_rules.py)
+docker compose exec api python -m unittest discover -s tests -v    # API 테스트 (켜진 API · DB 대상, backend/tests)
+docker compose run --rm etl etl/03_check.py --sample 100            # 원천 대조: DB 타석 무작위 100건을 원본 parquet과 비교 (NFR-05)
+python scripts/perf_check.py                         # 선수 상세 API 응답 시간 p95 (NFR-01). 서버는 스크립트 머리말 참고
+cd frontend && npm run lint && npx tsc --noEmit      # 화면 lint · 타입 검사
 ```
+
+GitHub Actions(`.github/workflows/ci.yml`)가 PR · main 푸시마다 DB 없이 되는 검사(화면 lint · 타입 · 빌드, 계산 규칙, 관리자 토큰 검사)를 돌린다.

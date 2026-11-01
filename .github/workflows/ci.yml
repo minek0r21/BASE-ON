@@ -1,0 +1,46 @@
+# CI — PR · main 푸시마다 DB 없이 돌 수 있는 검사만 (BO-DV-4007)
+#   화면: lint · 타입 검사 · 정적 빌드
+#   계산 규칙: etl/tests/test_rules.py (DB · 원본 데이터 없이)
+#   백엔드: backend/tests — 관리자 토큰 검사만 돈다(API 통합 테스트는 DB가 필요해 건너뜀, PC · 서버에서 돌린다)
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm run build   # 정적 내보내기(out/)가 만들어지는지
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements.txt
+            etl/requirements.txt
+      - run: pip install -r backend/requirements.txt -r etl/requirements.txt -e shared
+      - name: 계산 규칙 시험
+        run: python etl/tests/test_rules.py
+      - name: 백엔드 테스트 (DB 없이 되는 것만)
+        working-directory: backend
+        run: python -m unittest discover -s tests -v
