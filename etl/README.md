@@ -20,7 +20,7 @@ parquet를 새 스키마(스키마 탭 확정본)대로 Neo4j에 넣는다. 1단
 | `08_load_videos.py` | VideoLink 노드, CANDIDATE·MATCHED_TO(검수 대기) 관계 적재. 이미 검수한 연결은 안 건드림 |
 | `scenes.py` | 07의 영상 분류 · 제목 읽기 공통 (경기 · 타석 · 등판) |
 | `tests/test_rules.py` | 계산 규칙 단위 시험 (백분위 · 꾸준함 · 실점 귀속 · 유인 · 안타 장면). `python etl/tests/test_rules.py` |
-| `research/video_judge/` | Gemini 영상 판독 시험 코드 (보류, 팀 문서 「장면.md」 11장). 적재에는 쓰지 않는다 |
+| `research/video_judge/` | Gemini 영상 판독 시험 코드 (팀 문서 「장면.md」 11장). 다음 단계에 연결된 영상 안에서 장면의 정확한 시각(시작 · 끝 초)을 찾는 데 쓴다. 지금 적재에는 쓰지 않는다 |
 
 ## 실행 순서 (PowerShell, 프로젝트 맨 위 폴더에서)
 
