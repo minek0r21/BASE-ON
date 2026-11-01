@@ -10,7 +10,9 @@ const card = "rounded-3xl border border-line bg-surface p-6";
 
 type Stat = { label: string; value: string; rank: { text: string; n?: number } | null; help?: string };
 
-/** 시즌 기록 5칸 — 원 수치 + 「리그 n위」 */
+/** 시즌 기록 5칸 — 원 수치 + 「리그 n위」.
+ * 타자는 아래 능력 5칸(삼진회피 · 안타생산 · 파워 · 선구안 · 꾸준함)과 같은 열에 그 지표와 가까운 기록을 둔다 (11-02 팀 피드백 A안).
+ * 카드 구성은 그대로 두고 자리만 바꿨다. 삼진회피와 짝인 카드는 없어 홈런을 첫 자리에 둔다(보류) */
 function seasonStats(p: PlayerSummary, role: Role, seasons: PlayerSeasons | undefined, asOf: string | null): { title: string; sub: string; items: Stat[] } | null {
   const at = asOf ? `${md(asOf)} 기준` : null;
   if (role === "pitcher") {
@@ -40,11 +42,11 @@ function seasonStats(p: PlayerSummary, role: Role, seasons: PlayerSeasons | unde
     title: `${p.season} 시즌 기록`,
     sub: [games != null && `${games}경기 ${st.pa}타석`, at, r && p.groupSize && `순위는 타자 ${p.groupSize}명 중`].filter(Boolean).join(" · "),
     items: [
-      { label: "홈런", value: String(st.hr), rank: rk("hr") },
-      { label: "장타율", value: rate3(st.slg), rank: rk("slg") },
-      { label: "OPS", value: rate3(st.ops), rank: rk("ops") },
-      { label: "출루율", value: rate3(st.obp), rank: rk("obp") },
-      { label: "타율", value: rate3(st.avg), rank: rk("avg") },
+      { label: "홈런", value: String(st.hr), rank: rk("hr") },      // 삼진회피 위: 짝이 없어 그대로(보류)
+      { label: "타율", value: rate3(st.avg), rank: rk("avg") },     // 안타생산
+      { label: "장타율", value: rate3(st.slg), rank: rk("slg") },   // 파워 (순수 장타력 = 장타율 − 타율)
+      { label: "출루율", value: rate3(st.obp), rank: rk("obp") },   // 선구안
+      { label: "OPS", value: rate3(st.ops), rank: rk("ops") },      // 꾸준함 (달마다 OPS 차이)
     ],
   };
 }
