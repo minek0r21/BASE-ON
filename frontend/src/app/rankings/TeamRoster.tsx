@@ -10,7 +10,7 @@ import { playerHref } from "@/components/SearchBox";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo } from "@/components/ui/Media";
 import { getMeta, getRoster, getStandings, qk, type AxisKey, type PitchAxisKey, type RosterBatter, type RosterPitcher } from "@/lib/api";
-import { josa, verdict } from "@/lib/abilities";
+import { barOpacity, isTop20, josa, verdict } from "@/lib/abilities";
 import { axisCopy } from "@/lib/axes";
 import { innings, md, rate3 } from "@/lib/format";
 import { useMyTeam, useRosterTeam } from "@/lib/local";
@@ -197,10 +197,11 @@ function RosterCard({ c, team }: { c: Card; team: string }) {
         <div className="min-w-0 flex-1">
           {"text" in c.lead ? (
             <>
-              <p className="truncate text-[15px] font-bold">{c.lead.text}</p>
+              {/* 상세 능력 칸과 같은 규칙: 상위 20%면 판정도 구단 색, 막대는 농도 3단계 (11-02 팀 피드백 2번) */}
+              <p className="truncate text-[15px] font-bold" style={isTop20(c.lead.pct) ? { color: teamOf(team)?.text } : undefined}>{c.lead.text}</p>
               <p className="mt-1 flex items-center gap-2">
                 <span className="block h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3">
-                  <span className="block h-full rounded-full" style={{ width: `${c.lead.pct}%`, background: teamOf(team)?.band }} />
+                  <span className="block h-full rounded-full" style={{ width: `${c.lead.pct}%`, background: teamOf(team)?.band, opacity: barOpacity(c.lead.pct) }} />
                 </span>
                 <span className="shrink-0 text-[11px] font-bold text-fg-2">{c.lead.pos}</span>
               </p>

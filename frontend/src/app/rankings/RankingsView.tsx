@@ -14,7 +14,7 @@ import { md } from "@/lib/format";
 import { leaguePosition } from "@/lib/position";
 import { useRosterTeam } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
-import { josa } from "@/lib/abilities";
+import { barOpacity, isTop20, josa } from "@/lib/abilities";
 import Help from "@/components/ui/Help";
 import Slide from "@/components/ui/Slide";
 import { GROUP_HELP } from "@/lib/constants";
@@ -115,10 +115,17 @@ export default function RankingsView() {
               <p className="px-6 py-10 text-center text-sm text-fg-2">{teamF} 선수 중 {josa(GROUP_RULE[role], "이", "가")} 없어요</p>
             )}
             <ol>
-              {rows.map((r) => (
+              {rows.map((r, i) => (
                 <Fragment key={r.player_id}>
                   <Row row={r} copy={axis.copy} n={data.groupSize} avg={data.leagueAvg} maxGap={maxGap} playing={playing === r.player_id}
                        onPlay={() => setPlaying(playing === r.player_id ? null : r.player_id)} />
+                  {/* 상위 20% 마지막 줄 아래 경계 (막대 농도와 같은 기준) */}
+                  {isTop20(r.percentile) && rows[i + 1] && !isTop20(rows[i + 1].percentile) && (
+                    <li className="flex items-center gap-2 border-b border-line bg-surface-2 px-6 py-1.5 text-[11px] font-bold text-brand-text">
+                      <span className="h-px w-4 bg-brand" aria-hidden /> 여기까지 상위 20%
+                      <span className="font-medium text-muted">{data.groupSize}명 중 {r.rank}위까지</span>
+                    </li>
+                  )}
                   {playing === r.player_id && r.scene && (
                     <li className="border-b border-line bg-night px-6 py-6 text-white">
                       <div className="mx-auto max-w-[720px]">
@@ -211,7 +218,7 @@ function Row({ row, copy, n, avg, maxGap, playing, onPlay }: {
           <span className="absolute inset-y-[-3px] left-1/2 w-px bg-line-strong" aria-hidden /> {/* 리그 평균 */}
           <span
             className={`absolute inset-y-0 ${gap != null && gap < 0 ? "right-1/2 rounded-l-full bg-line-strong" : "left-1/2 rounded-r-full bg-brand"}`}
-            style={{ width: `${w}%` }}
+            style={{ width: `${w}%`, opacity: gap != null && gap < 0 ? 1 : barOpacity(row.percentile) }} // 평균 위 막대: 상위 20% 진하게 · 50% 이내 중간
           />
         </span>
       </span>
