@@ -6,7 +6,6 @@
 
 인증 (설계 6-4): 환경변수 ADMIN_TOKENS="이름1:토큰1,이름2:토큰2"가 있으면 Authorization: Bearer <토큰>이 필요하고
 검수자 이름은 토큰으로 정한다. 없으면(로컬 개발) 인증 없이 본문의 reviewer를 쓴다.
-기존 /video-links 검수 API(/demo가 씀)는 그대로 둔다 — 타석 「옮김(move)」은 아직 그쪽에만 있다.
 """
 import hashlib
 import os

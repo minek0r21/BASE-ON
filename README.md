@@ -5,7 +5,7 @@ KBO 타석 기록을 Neo4j 그래프 DB에 넣고, 타자·투수 지표(백분�
 
 - 백엔드: FastAPI (Python)
 - DB: Neo4j
-- 화면: `frontend/` (Next.js 정적 내보내기). `backend/demo/index.html`은 예전 확인용 데모
+- 화면: `frontend/` (Next.js 정적 내보내기)
 
 ## 폴더 구조
 
@@ -29,7 +29,7 @@ BASEON/
 │   └─ tests/                     계산 규칙 단위 시험
 ├─ videos/                        영상 목록 (yt_inventory.json은 git 제외 — etl/README.md)
 ├─ backend/                       API 서버 (자세한 건 backend/README.md)
-│   ├─ app/main.py                서버 시작, /demo 화면
+│   ├─ app/main.py                서버 시작, 라우터 등록
 │   └─ app/routers/               players · games · outings · matchup · league · admin(검수) · report · meta · postseason
 ├─ frontend/                      화면 (자세한 건 frontend/README.md)
 └─ deploy/                        서버용 docker-compose · Caddyfile · 서버 준비 스크립트
@@ -64,7 +64,7 @@ docker compose run --rm etl etl/08_load_videos.py --season 2025
 ```
 
 - **00은 사람이 한 검수(승인·반려)까지 지운다.** 검수를 시작한 뒤에는 00 없이 07·08만 다시 돌린다.
-- API 문서 http://localhost:8000/docs · Neo4j 화면 http://localhost:17474 · 예전 데모 http://localhost:8000/demo
+- API 문서 http://localhost:8000/docs · Neo4j 화면 http://localhost:17474 · 화면은 `frontend/`(http://localhost:3000)
 - `backend/` 코드를 고치면 API가 알아서 다시 켜진다
 - 끄기 `docker compose down` (DB는 볼륨에 남는다). DB까지 지우기 `docker compose down -v`
 

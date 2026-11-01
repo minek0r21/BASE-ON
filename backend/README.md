@@ -15,22 +15,20 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 ```
 브라우저에서
 - http://localhost:8000/docs → 각 API의 "Try it out"으로 바로 호출해 볼 수 있다.
-- http://localhost:8000/demo → 예전 확인용 화면 (HTML 한 장). 실제 화면은 `frontend/`
-  - 데모의 장면 검수 탭은 타석 연결만, 자동 확정 연결은 보여 주지 않는다. 검수는 `frontend/`의 `/admin/review/`(아래 관리자 검수 API)
+- 화면은 `frontend/`, 검수는 `frontend/`의 `/admin/review/`(아래 관리자 검수 API)
 
 ## 확정 장면
 연결(`MATCHED_TO`)의 상태가 `auto_confirmed`(자동 확정) 또는 `approved`(승인)이면 **확정**이고, 화면의 ▶·장면 수·최근 홈런 장면은 확정만 쓴다(설계 D1).
 `pending`(검수 대기)·`rejected`(반려)는 화면에 나오지 않는다. 연결 구조와 자동 확정 규칙은 팀 문서 「장면.md」.
 
 ## 관리자 토큰
-`.env`에 `ADMIN_TOKENS=이름1:토큰1,이름2:토큰2`가 있으면 `/admin/…`과 예전 검수 쓰기(8 · 9)가 `Authorization: Bearer <토큰>`을 요구하고, 검수자 이름은 토큰으로 정한다. 재생 불가 신고(12)는 누구나 쓴다.
+`.env`에 `ADMIN_TOKENS=이름1:토큰1,이름2:토큰2`가 있으면 `/admin/…`이 `Authorization: Bearer <토큰>`을 요구하고, 검수자 이름은 토큰으로 정한다. 재생 불가 신고(12)는 누구나 쓴다.
 비워 두면(로컬 개발) 토큰 없이 열린다. 서버에서는 Caddy가 `/admin`·`/api/v1/admin`을 404로 막는다(팀 문서 「배포.md」).
 
 ## 파일
 | 파일 | 하는 일 |
 | --- | --- |
-| `app/main.py` | 서버 시작, CORS, 라우터 등록, /demo 화면 |
-| `demo/index.html` | 예전 확인용 화면 (HTML 한 장) |
+| `app/main.py` | 서버 시작, CORS, 라우터 등록 |
 | `app/db.py` | Neo4j 연결 (프로젝트 맨 위 .env 사용) |
 | `app/errors.py` | 오류 응답 형식 `{"error": {"code", "message"}}` |
 | `app/events.py` | events → 한글 (events_ko). 본문은 `shared/baseon_rules/events.py` |
@@ -39,11 +37,10 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | `app/videocheck.py` | YouTube videos.list로 재생 가능 판정 (API-12 · 재확인) |
 | `app/postseason.py` | 포스트시즌 꼬리표 · 홈런 표기 · 기간 (포스트시즌 경기가 없으면 기간 아님) |
 | `app/routers/players.py` | 1 검색(초성 · 옛 이름), 2 선수 정보(타자 · 투수), 3 출전 경기, 11 비교, 19 시즌 기록, 27 요즘 타격감 |
-| `app/routers/games.py` | 4 경기별 타석, 14 날짜별 경기 일정, 15 최근 홈런 |
+| `app/routers/games.py` | 4 경기별 타석, 5 타석 장면, 14 날짜별 경기 일정, 15 최근 홈런 |
 | `app/routers/matchup.py` | 6 맞대결, 17 상대한 투수(또는 타자) 목록 |
-| `app/routers/league.py` | 13 팀 순위, 16 타자 순위표, 18 지표별 상위 타자, 26 투수 목록, 28 순위 변동 |
-| `app/routers/outings.py` | 23 투수 등판 목록, 24 등판 장면 |
-| `app/routers/review.py` | 5 타석 장면, 7~10 예전 검수(타석만, 데모가 씀) |
+| `app/routers/league.py` | 13 팀 순위, 16 타자 순위표, 18 지표별 상위 타자, 26 투수 목록 |
+| `app/routers/outings.py` | 23 투수 등판 목록, 30 등판 상세 |
 | `app/routers/admin.py` | 관리자 검수 (경기 · 타석 · 등판 공통) |
 | `app/routers/report.py` | 12 재생 불가 신고, 재확인 |
 | `app/routers/postseason.py` | 25 포스트시즌 코너 |
@@ -74,7 +71,6 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 25 | GET /postseason?season= | 메인 포스트시즌 코너 (포스트시즌 기록이 있을 때만) |
 | 26 | GET /pitchers?season=&team=&role=&qualified=&sort=&limit= | 투수 목록 (기본 이닝 순) · 능력별 순위(`sort`=지표 5개 · whip 등, 백분위 · 등수 · 장면 수(장면이 있는 등판 수, API-36 「장면 있음」과 같음) · 지표 장면(태그 없는 유인 · 장타 억제는 최근 등판 장면) · 비교 대상 평균) |
 | 27 | GET /players/{id}/form?season= | 요즘 타격감 (최근 20경기 OPS) |
-| 28 | GET /standings/history?season= | 달마다 순위 |
 | 29 | GET /pitchers/leaders?season=&role=&limit= | 투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」, 기본 선발) |
 | 30 | GET /outings/{outing_id}/plate-appearances | 등판 상세: 등판 요약 + 이닝별 상대 타자(결과 · 범례 분류 · 투구 수 · 볼카운트 · 주자 · 아웃) |
 | 31 | GET /players/{id}/similar?season=&as=&limit= | 비슷한 선수: 가장 강한 지표 순위에서 바로 위 선수 먼저, 모자라면 아래 (카드 대표 장면 포함) |
@@ -91,12 +87,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | # | 주소 | 화면 |
 | --- | --- | --- |
 | 5 | GET /plate-appearances/{pa_id}/video | 타석 장면 (확정만) |
-| 24 | GET /outings/{outing_id}/video | 등판 장면 (확정만) |
 | 12 | POST /video-links/{video_id}/report | 재생 불가 신고 (누구나, 항상 202) |
-| 7 | GET /video-links?status=&sort=&limit=&offset= | 예전 검수 목록 (타석만, 데모) |
-| 8 | PATCH /video-links/{video_id}/plate-appearances/{pa_id} | 예전 검수 저장: approve / reject / move (토큰) |
-| 9 | POST /video-links/{video_id}/plate-appearances/{pa_id} | 예전 직접 연결 (토큰) |
-| 10 | GET /video-links/stats | 자동 연결 정확도 |
 | 7' | GET /admin/review/queue?target_kind=&reason=&season=&status= | 검수 대기 · 자동 확정 표본 (경기 · 타석 · 등판) |
 | 8' | PATCH /admin/review/{target_kind}/{target_id}/videos/{video_id} | 승인 · 반려 · 구간 고쳐 승인 · 옮김 |
 | | GET /admin/review/{…}/move-candidates | 옮길 후보 |
