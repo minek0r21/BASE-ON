@@ -1,6 +1,7 @@
 """
 경기 API
    4. GET /games/{game_pk}/plate-appearances?player=   기록 탭: 경기 요약 + 이 선수 타석 목록
+   5. GET /plate-appearances/{pa_id}/video             기록 탭: 이 타석의 확정 장면 (자동 확정 · 승인)
   14. GET /games?date=                                 메인 · 일정 · 장면: 날짜별 경기 일정 (+ 그 경기 홈런 · 투수 장면)
   15. GET /home-runs?season=&limit=&video_only=       메인: 최근 홈런 장면 (기본: 확정 장면(자동 확정·승인)이 있는 홈런만)
   34. GET /games/days?start=&end=                      일정 · 장면: 날짜마다 경기 수 · 홈런 수 · 장면 수 (위쪽 한 주 띠)
@@ -370,3 +371,23 @@ def get_game_box(game_pk: str):  # API 38: 두 팀 타자(타석 · 타수 · �
         "away": {**teams["away"], "score": g["away_final"], "result": result_of(g["away_final"], g["home_final"])},
         "home": {**teams["home"], "score": g["home_final"], "result": result_of(g["home_final"], g["away_final"])},
     }
+
+
+# ------------------------------------------------------------------ 5. 타석의 영상
+Q_PA_VIDEOS = """
+MATCH (pa:PlateAppearance {pa_id: $pa})
+OPTIONAL MATCH (pa)-[m:MATCHED_TO]->(v:VideoLink) WHERE m.status IN ['auto_confirmed', 'approved'] AND coalesce(m.precision, 'scene') <> 'game'
+WITH pa, m, v ORDER BY m.rank, v.published_at
+RETURN pa.pa_id AS pa_id,
+       collect(v {.video_id, .title, .duration_sec,
+                  start_sec: coalesce(m.start_sec, 0), end_sec: m.end_sec,
+                  precision: coalesce(m.precision, 'scene'), scene_type: m.scene_type}) AS videos
+"""
+
+
+@router.get("/plate-appearances/{pa_id}/video", summary="5. 타석의 확정 장면")
+def get_pa_video(pa_id: str):  # API 5: 기록 탭 '영상보기'
+    rows = run(Q_PA_VIDEOS, pa=pa_id)
+    if not rows:
+        raise ApiError(404, "PA_NOT_FOUND", "타석을 찾을 수 없습니다")
+    return rows[0]  # {"pa_id": ..., "videos": [...]}  영상이 없으면 빈 목록

@@ -4,7 +4,6 @@
   16. GET /batters?season=&team=&sort=&qualified=&limit=       타자 순위표 (리그 상위 타자, 팀 선수 목록)
   18. GET /leaders?season=&limit=                              지표 5개별 상위 n명 (메인 '이런 타자는 어때요?')
   26. GET /pitchers?season=&team=&role=&qualified=&sort=&limit= 투수 목록 (팀 화면 투수 표, 05 능력별 순위 투수 탭)
-  28. GET /standings/history?season=                           순위 변동 (달마다 마지막 날 순위, 시안 「순위 변동 보기」)
   29. GET /pitchers/leaders?season=&role=&limit=               투수 지표 5개별 상위 n명 (메인 능력 카드 「투수」)
   31. GET /players/{player_id}/similar?season=&as=&limit=      가장 강한 지표가 비슷한 선수 (03 · 03b 아래)
   33. GET /teams/{team}/scenes?season=&limit=                  팀의 최근 장면 (06 팀 「KIA의 최근 장면」)
@@ -381,45 +380,6 @@ def get_pitcher_leaders(  # API 29: 투수 5지표마다 비교 대상 상위 n�
                         for r in top],
         }
     return {"season": season, "role": role, "group_size": len(group), "leaders": leaders}
-
-
-# ------------------------------------------------------------------ 28. 순위 변동
-Q_SEASON_RESULTS = """
-MATCH (g:Game {season: $season, game_type: 'regular'})-[:HOME]->(h:Team), (g)-[:AWAY]->(a:Team)
-RETURN toString(g.date) AS date, h.name AS home, a.name AS away, g.home_final AS hs, g.away_final AS as_
-ORDER BY date
-"""
-
-
-@router.get("/standings/history", summary="28. 순위 변동 (달마다)")
-def get_standings_history(season: int = Query(..., description="시즌")):
-    rows = run(Q_SEASON_RESULTS, season=season)
-    if not rows:
-        raise ApiError(404, "SEASON_NOT_FOUND", f"{season} 시즌 경기가 없습니다")
-    rec: dict = {}
-    marks = []
-    last_month = None
-
-    def snapshot(label, date):
-        teams = sorted(rec, key=lambda t: (-(rec[t]["w"] / max(1, rec[t]["w"] + rec[t]["l"])), -rec[t]["w"]))
-        marks.append({"label": label, "date": date, "ranks": {t: i + 1 for i, t in enumerate(teams)}})
-
-    for i, r in enumerate(rows):
-        for t, mine, opp in ((r["home"], r["hs"], r["as_"]), (r["away"], r["as_"], r["hs"])):
-            x = rec.setdefault(t, {"w": 0, "l": 0, "g": 0})
-            x["g"] += 1
-            if mine > opp:
-                x["w"] += 1
-            elif mine < opp:
-                x["l"] += 1
-        month = int(r["date"][5:7])
-        nxt = rows[i + 1]["date"] if i + 1 < len(rows) else None
-        if nxt is None:
-            done = all(x["g"] >= 144 for x in rec.values())
-            snapshot("최종" if done else f"{month}.{int(r['date'][8:10])}", r["date"])
-        elif int(nxt[5:7]) != month and month >= 4:  # 3월(개막 몇 경기)은 4월에 합친다
-            snapshot(f"{month}월", r["date"])
-    return {"season": season, "checkpoints": marks}
 
 
 # ------------------------------------------------------------------ 31. 비슷한 선수

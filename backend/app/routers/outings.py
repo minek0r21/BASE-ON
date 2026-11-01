@@ -1,7 +1,6 @@
 """
 등판(투수 × 경기) API — docs/장면.md 7장
   23. GET /players/{player_id}/outings?season=&month=   투수 경기 기록: 등판 목록 + 등판 장면 + 경기 하이라이트
-  24. GET /outings/{outing_id}/video                    등판의 확정 장면 (보너스층)
   30. GET /outings/{outing_id}/plate-appearances        등판 상세: 이닝별 상대 타자 (시안 03b 등판 상세)
 """
 from fastapi import APIRouter, Query
@@ -10,7 +9,7 @@ from ..db import run
 from ..errors import ApiError
 from ..events import HITS, events_ko
 from ..postseason import game_tag
-from ..scenes import CONFIRMED, game_highlights, outing_scenes, scene_of
+from ..scenes import game_highlights, outing_scenes
 from ..utils import result_of, weekday_ko
 
 router = APIRouter(tags=["등판"])
@@ -80,26 +79,6 @@ def outing_rows(player_id: str, season: int, month: int | None) -> list[dict]:
             "highlight": highlights.get(r["game_pk"]),   # 기본층: 이 경기 하이라이트
         })
     return out
-
-
-Q_OUTING_VIDEOS = """
-MATCH (o:Outing {outing_id: $id})
-OPTIONAL MATCH (o)-[m:MATCHED_TO]->(v:VideoLink)
-WHERE m.status IN $confirmed AND coalesce(v.playable, true)
-WITH o, m, v ORDER BY m.rank
-RETURN o.outing_id AS outing_id,
-       collect(CASE WHEN v IS NULL THEN null ELSE {video_id: v.video_id, title: v.title, duration_sec: v.duration_sec,
-               start_sec: m.start_sec, end_sec: m.end_sec, precision: m.precision, scene_type: m.scene_type,
-               tags: coalesce(m.tags, [])} END) AS videos
-"""
-
-
-@router.get("/outings/{outing_id}/video", summary="24. 등판의 확정 장면")
-def get_outing_video(outing_id: str):  # API 24
-    rows = run(Q_OUTING_VIDEOS, id=outing_id, confirmed=CONFIRMED)
-    if not rows:
-        raise ApiError(404, "OUTING_NOT_FOUND", "등판을 찾을 수 없습니다")
-    return {"outing_id": outing_id, "videos": [scene_of(v) for v in rows[0]["videos"]]}
 
 
 # ------------------------------------------------------------------ 30. 등판 상세 (이닝별 상대 타자)

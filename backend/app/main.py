@@ -5,14 +5,12 @@ BASE:ON 백엔드 시작 파일.
 """
 import os
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
 
 from . import db, errors
-from .routers import admin, games, league, matchup, meta, outings, players, postseason, report, review
+from .routers import admin, games, league, matchup, meta, outings, players, postseason, report
 
 
 @asynccontextmanager
@@ -36,7 +34,7 @@ app.add_middleware(
 errors.register(app)
 
 PREFIX = "/api/v1"
-for r in (players.router, games.router, matchup.router, league.router, review.router, outings.router, admin.router, report.router,
+for r in (players.router, games.router, matchup.router, league.router, outings.router, admin.router, report.router,
           postseason.router, meta.router):
     app.include_router(r, prefix=PREFIX)
 
@@ -45,12 +43,3 @@ for r in (players.router, games.router, matchup.router, league.router, review.ro
 def health():  # 서버·DB가 살아 있는지 확인
     db.run("RETURN 1 AS ok")
     return {"status": "ok"}
-
-
-# 확인용 화면 (디자인 없음). 실제 프론트는 Next.js로 따로 만든다
-DEMO_PAGE = Path(__file__).resolve().parents[1] / "demo" / "index.html"
-
-
-@app.get("/demo", include_in_schema=False)
-def demo():  # localhost:8000/demo 에서 API를 화면으로 확인
-    return FileResponse(DEMO_PAGE, headers={"Cache-Control": "no-store"})  # 고친 화면이 바로 보이게 캐시 안 함

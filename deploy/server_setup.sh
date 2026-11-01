@@ -40,7 +40,7 @@ if [ ! -f /etc/docker/daemon.json ]; then
 fi
 systemctl enable --now docker
 
-# 3) SSH — 보안 그룹은 22를 어디서나 연다(집 IP가 바뀌어도 배포 · 주간 반영이 되게). 그 대신 키로만 들어오고,
+# 3) SSH — 보안 그룹은 22를 어디서나 연다(집 IP가 바뀌어도 배포가 되게). 그 대신 키로만 들어오고,
 #    여러 번 틀린 IP는 막고(fail2ban), 보안 업데이트는 자동으로 (docs/배포.md 2장)
 cat > /etc/ssh/sshd_config.d/99-baseon.conf <<'EOF'
 PasswordAuthentication no

@@ -1,5 +1,5 @@
 # 로컬 개발용 구성 (BASEON 폴더에서 실행). 서버 배포는 deploy/docker-compose.yml (docs/배포.md)
-#   docker compose up -d                                    neo4j + api 켜기 → http://localhost:8000/demo
+#   docker compose up -d                                    neo4j + api 켜기 → http://localhost:8000/docs
 #   docker compose run --rm etl etl/01_load_core.py --season 2025   적재 (필요할 때만)
 #   docker compose down                                     끄기 (DB는 볼륨에 남는다)
 # 비밀번호·경로는 .env에서 읽는다 (.env.example 참고)
