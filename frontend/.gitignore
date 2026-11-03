@@ -43,3 +43,6 @@ next-env.d.ts
 
 # 선수 사진 · 구단 엠블럼 (scripts/sync_media.py로 복사, 저장소에 넣지 않음)
 /public/media/
+
+# Next.js 개발 서버가 만드는 AI 안내 (11-01 저장소 정리 때 뺌)
+AGENTS.md
