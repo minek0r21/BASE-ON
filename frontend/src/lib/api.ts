@@ -753,7 +753,7 @@ export const adminToken = {
   set: (t: string) => { try { if (t) sessionStorage.setItem(TOKEN_KEY, t); else sessionStorage.removeItem(TOKEN_KEY); } catch { /* 저장소 막힘 */ } },
 };
 
-async function admin<T>(method: "GET" | "PATCH", path: string, query: Query = {}, body?: unknown): Promise<T> {
+async function admin<T>(method: "GET" | "PATCH" | "POST", path: string, query: Query = {}, body?: unknown): Promise<T> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) if (v != null) qs.set(k, String(v));
   const token = adminToken.get();
@@ -788,6 +788,23 @@ export type MoveCandidate = { target_id: string; date: string; why: string; summ
 export const getMoveCandidates = (it: ReviewItem) =>
   admin<{ candidates: MoveCandidate[] }>("GET", reviewPath(it) + "/move-candidates").then((r) => r.candidates);
 
+/** 수동 표시 큐 (API 11-2): 장면 없는 정규시즌 홈런 + 홈런 장면 목표(NFR-06, 70%) */
+export type MissingHr = {
+  pa_id: string; date: string; game_pk: string; game: string; batter: string; pitcher: string;
+  inning: number; half: "초" | "말"; hr_seq: number | null; runs: number;
+  on_1b: boolean; on_2b: boolean; on_3b: boolean; outs: number | null; balls: number | null; strikes: number | null;
+  /** 이 타석에 검수 대기 연결이 있다 → 검수 대기에서 먼저 본다 */
+  has_pending: boolean;
+  highlight: { video_id: string; title: string; channel: string | null; duration_sec: number | null; start_sec: number; end_sec: number | null } | null;
+};
+export type MissingHrList = { season: number; goal: { total: number; done: number; target: number; rate: number }; total: number; items: MissingHr[] };
+export const getMissingHr = (season: number) => admin<MissingHrList>("GET", "/admin/review/missing-hr", { season, limit: 500 });
+/** API 12-2: 재생 시각으로 장면 표시 (end_sec 생략 = 시작 + 20초) */
+export const markManual = (b: { pa_id: string; video_id: string; start_sec: number; end_sec?: number; reviewer: string }) =>
+  admin<unknown>("POST", "/admin/review/manual", {}, b);
+/** API 12-3: 이 홈런은 영상에 없음 (큐에서 빠진다) */
+export const markNoVideo = (b: { pa_id: string; reviewer: string }) => admin<unknown>("POST", "/admin/review/no-video", {}, b);
+
 // ------------------------------------------------------------------ TanStack Query 키
 
 export const qk = {
@@ -805,6 +822,7 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
+  missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,
   meta: () => ["meta"] as const,

@@ -11,6 +11,7 @@ import { reportUnplayable, type Clip } from "@/lib/api";
  * - 다른 장면으로 바꿀 때 iframe을 다시 만들지 않고 loadVideoById만 부른다
  * - 재생 불가(onError 100·101·150·153) → 안내 문구 + 신고(API-12). 서버가 확인해 그 영상을 검수로 보낸다
  * - onEnded: 구간 끝(end_sec)에 닿거나 영상이 끝나면 장면마다 한 번 알린다 (04 다음 장면 자동 재생)
+ * - onReady: 플레이어가 준비되면 지금 재생 위치(초)를 읽는 함수를 넘긴다 (관리자 수동 표시)
  */
 
 type YTPlayer = {
@@ -62,11 +63,12 @@ const POLL_MS = 250;
 
 export const thumbnailUrl = (videoId: string) => `https://img.youtube.com/vi/${videoId}/mqdefault.jpg`;
 
-export default function ScenePlayer({ clip, label, onClose, onEnded, bare = false }: {
+export default function ScenePlayer({ clip, label, onClose, onEnded, onReady, bare = false }: {
   clip: Clip;
   label: string;
   onClose?: () => void;
   onEnded?: () => void;
+  onReady?: (now: () => number) => void;
   /** 화면 안 그 자리에서 바로 재생 (메인 「그날 장면」): 머리줄 · 설명 없이 영상 칸만, 누른 뒤라 바로 시작 */
   bare?: boolean;
 }) {
@@ -79,6 +81,7 @@ export default function ScenePlayer({ clip, label, onClose, onEnded, bare = fals
   const shownError = error?.videoId === clip.videoId ? <ErrorText code={error.code} /> : null;
 
   const endedRef = useRef(onEnded);
+  const readyRef = useRef(onReady);
   const doneRef = useRef(false); // 이 장면 끝을 이미 알렸나
   const changedRef = useRef(0);   // 장면을 바꾼 시각 — 바로 뒤에는 앞 장면 위치가 남아 있어 끝으로 치지 않는다
   useEffect(() => {
@@ -89,6 +92,9 @@ export default function ScenePlayer({ clip, label, onClose, onEnded, bare = fals
   useEffect(() => {
     endedRef.current = onEnded;
   }, [onEnded]);
+  useEffect(() => {
+    readyRef.current = onReady;
+  }, [onReady]);
   const finish = () => {
     if (doneRef.current) return;
     doneRef.current = true;
@@ -118,6 +124,7 @@ export default function ScenePlayer({ clip, label, onClose, onEnded, bare = fals
           origin: window.location.origin,
         },
         events: {
+          onReady: () => readyRef.current?.(() => playerRef.current?.getCurrentTime() ?? 0),
           onStateChange: (e) => { if (e.data === 0) finish(); }, // 0 = 끝남
           onError: (e) => {
             const videoId = clipRef.current.videoId;

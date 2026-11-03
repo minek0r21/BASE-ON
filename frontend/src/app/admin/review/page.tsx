@@ -7,6 +7,7 @@ import {
   type Clip, type ReviewItem, type ReviewMode, type TargetKind,
 } from "@/lib/api";
 import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
+import ManualQueue from "./ManualQueue";
 
 // BO-AD-01 장면 검수 (설계 8-4). 공개 화면에 링크를 두지 않는다
 const TARGET_KO: Record<TargetKind, string> = { game: "경기", pa: "타석", outing: "등판" };
@@ -21,7 +22,9 @@ const NAME_KEY = "baseon.admin.reviewer";
 
 export default function ReviewPage() {
   const qc = useQueryClient();
-  const [mode, setMode] = useState<ReviewMode>("pending");
+  // 보기: 검수 대기 · 자동 확정 표본(API 7') · 수동 표시(API 11-2)
+  const [view, setView] = useState<ReviewMode | "manual">("pending");
+  const mode: ReviewMode = view === "manual" ? "pending" : view;
   const [targetKind, setTargetKind] = useState<TargetKind | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
@@ -38,6 +41,7 @@ export default function ReviewPage() {
     queryKey: qk.reviewQueue(mode, targetKind, reason, null, offset),
     queryFn: () => getReviewQueue({ mode, targetKind, reason, season: null, offset }),
     placeholderData: keepPreviousData,
+    enabled: view !== "manual",
   });
   const save = useMutation({
     mutationFn: (v: { it: ReviewItem; action: ReviewActionKind; start?: number; end?: number; to?: string }) =>
@@ -56,7 +60,7 @@ export default function ReviewPage() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-extrabold">장면 검수</h1>
-          <p className="text-sm text-muted">자동으로 확신하지 못한 연결을 보고 승인·반려합니다. 승인한 장면만 화면에 나옵니다.</p>
+          <p className="text-sm text-muted">자동 확정 조건을 넘지 못한 연결을 승인·반려하고, 장면 없는 홈런은 경기 하이라이트에서 직접 표시합니다.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-sm">
           <label className="flex items-center gap-1.5">
@@ -112,23 +116,24 @@ export default function ReviewPage() {
 
       {/* 보기: 검수 대기 / 자동 확정 표본 (NFR-07 오매칭 표본 확인) */}
       <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="보기">
-        {(["pending", "auto_confirmed"] as ReviewMode[]).map((m) => (
+        {(["pending", "auto_confirmed", "manual"] as const).map((m) => (
           <button
             key={m}
-            onClick={() => { setMode(m); setReason(null); setOffset(0); }}
-            aria-pressed={mode === m}
-            className={`rounded-lg border px-3 py-1 font-semibold ${mode === m ? "border-fg bg-fg text-bg" : "border-line bg-surface text-muted hover:text-fg"}`}
+            onClick={() => { setView(m); setReason(null); setOffset(0); }}
+            aria-pressed={view === m}
+            className={`rounded-lg border px-3 py-1 font-semibold ${view === m ? "border-fg bg-fg text-bg" : "border-line bg-surface text-muted hover:text-fg"}`}
           >
-            {m === "pending" ? "검수 대기" : "자동 확정 표본"}
+            {{ pending: "검수 대기", auto_confirmed: "자동 확정 표본", manual: "수동 표시 (장면 없는 홈런)" }[m]}
           </button>
         ))}
-        {mode === "auto_confirmed" && (
+        {view === "auto_confirmed" && (
           <span className="text-xs text-muted">
             자동 확정된 연결을 무작위 순서로 보여 줍니다. 맞으면 「맞음」, 틀리면 「틀림」을 누르세요(틀린 연결은 화면에서 내려갑니다). 홈런은 300개 중 틀림 1개 이하가 목표입니다(NFR-07).
           </span>
         )}
       </div>
 
+      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : (<>
       {/* 필터 */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
         {([null, "game", "pa", "outing"] as (TargetKind | null)[]).map((k) => (
@@ -197,6 +202,7 @@ export default function ReviewPage() {
             className="rounded-lg border border-line px-3 py-1 disabled:opacity-40">다음</button>
         </div>
       )}
+      </>)}
     </div>
   );
 }
