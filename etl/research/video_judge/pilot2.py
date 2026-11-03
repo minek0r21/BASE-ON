@@ -10,7 +10,8 @@ import re
 import sys
 from pathlib import Path
 
-from gemini import Judge, mmss, parsed
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # etl/gemini.py
+from gemini import Judge, mmss, parsed  # noqa: E402
 
 HERE = Path(__file__).resolve().parent
 TRUTH = json.load(open(HERE / "pilot2_truth.json", encoding="utf-8"))

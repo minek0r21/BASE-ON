@@ -1,5 +1,5 @@
 """
-Gemini에 YouTube 영상을 보내 JSON으로 판독 받는 공통 호출기 (docs/장면.md 11장)
+Gemini에 YouTube 영상을 보내 JSON으로 판독 받는 공통 호출기 (docs/장면.md 11장). 09_suggest_times.py · research/video_judge가 쓴다
 - 모델: flash 계열만, 최신부터 (lite는 오독이 잦아 뺀다). GEMINI_MODEL="a,b"로 정할 수 있다
 - 구간: start_sec·end_sec를 주면 그 구간만 보낸다 (챕터 줄 — 토큰을 아낀다)
 - 응답은 out_dir/<key>.json에 저장하고, 있으면 다시 부르지 않는다 → 멈췄다 다시 돌려도 이어서 한다
@@ -20,7 +20,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 GEM = "https://generativelanguage.googleapis.com/v1beta/"
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def api_key() -> str:

@@ -109,6 +109,11 @@ export default function ReviewPage() {
                 {s?.accuracy != null && ` · 자동 정확도 ${(s.accuracy * 100).toFixed(1)}%`}
                 {s && s.auto_reviewed_ok + s.auto_reviewed_ng > 0 && ` (확인 ${s.auto_reviewed_ok + s.auto_reviewed_ng} · 틀림 ${s.auto_reviewed_ng})`}
               </div>
+              {s?.gemini && (
+                <div className="mt-1 text-xs text-muted">
+                  Gemini 제안으로 표시 {s.gemini.marked} · 5초 안 {s.gemini.within5} · 평균 {s.gemini.avg_shift}초 옮김
+                </div>
+              )}
             </div>
           );
         })}

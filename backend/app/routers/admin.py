@@ -244,6 +244,12 @@ MATCH (t)-[m:MATCHED_TO]->(:VideoLink)
 RETURN labels(t)[0] AS label, m.status AS status, m.origin AS origin, count(*) AS n
 """
 LABEL_KIND = {label: kind for kind, (label, _) in TARGETS.items()}
+# Gemini 제안 정확도: 제안을 보고 표시한 장면에서 사람이 시작 시각을 몇 초 옮겼나 (장면.md 11-5)
+Q_GEMINI_SHIFT = """
+MATCH (:PlateAppearance)-[m:MATCHED_TO {origin: 'gemini_manual'}]->(:VideoLink)
+WITH abs(m.start_sec - m.suggested_sec) AS d
+RETURN count(*) AS n, avg(d) AS avg_shift, sum(CASE WHEN d <= 5 THEN 1 ELSE 0 END) AS within5
+"""
 
 
 @router.get("/admin/review/stats", summary="10'. 검수 통계 (대상별·상태별)")
@@ -256,8 +262,10 @@ def review_stats(_reviewer: str | None = Depends(require_admin)):
         d = by.setdefault(kind, {"pending": 0, "auto_confirmed": 0, "approved": 0, "rejected": 0, "manual": 0,
                                  "auto_reviewed_ok": 0, "auto_reviewed_ng": 0})
         d[r["status"]] = d.get(r["status"], 0) + r["n"]
-        if r["origin"] == "manual":
+        if r["origin"] in ("manual", "gemini_manual"):  # gemini_manual = Gemini 제안을 사람이 보고 표시
             d["manual"] += r["n"]
+            if r["origin"] == "gemini_manual":
+                d["gemini_manual"] = d.get("gemini_manual", 0) + r["n"]
         elif r["status"] == "approved":
             d["auto_reviewed_ok"] += r["n"]
         elif r["status"] == "rejected":
@@ -265,6 +273,9 @@ def review_stats(_reviewer: str | None = Depends(require_admin)):
     for d in by.values():  # 정확도 = 자동 연결 중 검수에서 승인된 비율 (검수한 것만)
         done = d["auto_reviewed_ok"] + d["auto_reviewed_ng"]
         d["accuracy"] = round(d["auto_reviewed_ok"] / done, 3) if done else None
+    g = run(Q_GEMINI_SHIFT)[0]
+    if g["n"]:
+        by.setdefault("pa", {})["gemini"] = {"marked": g["n"], "avg_shift": round(g["avg_shift"], 1), "within5": g["within5"]}
     return by
 
 
@@ -275,12 +286,23 @@ MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance {season: $season, events: 'ho
 WHERE NOT coalesce(pa.no_video, false)
   AND NOT EXISTS { (pa)-[m:MATCHED_TO]->() WHERE m.status IN ['auto_confirmed', 'approved'] AND coalesce(m.precision, 'scene') = 'scene' }
 MATCH (pit:Player)-[:PITCHED_IN]->(pa), (g)-[:HOME]->(home:Team), (g)-[:AWAY]->(away:Team)
+// Gemini 제안 시각 (etl/09_suggest_times.py, 장면.md 11-5) — 찾음 · 강함부터 하나. 사용자 화면은 SUGGESTED를 읽지 않는다
+CALL (pa) {
+  OPTIONAL MATCH (pa)-[s:SUGGESTED]->(sv:VideoLink)
+  RETURN s, sv ORDER BY s.found DESC, CASE s.strength WHEN 'strong' THEN 0 ELSE 1 END LIMIT 1
+}
 RETURN pa.pa_id AS pa_id, toString(pa.date) AS date, g.game_pk AS game_pk, b.name AS batter, pit.name AS pitcher,
        pa.inning AS inning, pa.inning_half AS half, pa.hr_seq AS hr_seq, pa.runs_scored AS runs,
        pa.on_1b AS on_1b, pa.on_2b AS on_2b, pa.on_3b AS on_3b, pa.outs_when_up AS outs,
        pa.final_balls AS balls, pa.final_strikes AS strikes, away.name + ' vs ' + home.name AS game,
-       EXISTS { (pa)-[x:MATCHED_TO {status: 'pending'}]->() } AS has_pending
-ORDER BY pa.date DESC, pa.at_bat_number DESC
+       EXISTS { (pa)-[x:MATCHED_TO {status: 'pending'}]->() } AS has_pending,
+       CASE WHEN s IS NULL THEN null ELSE {
+         video_id: sv.video_id, title: sv.title, channel: sv.channel, duration_sec: sv.duration_sec,
+         found: s.found, t_sec: s.t_sec, start_sec: s.start_sec, end_sec: s.end_sec,
+         strength: s.strength, checks: s.checks, evidence: s.evidence, model: s.model } END AS suggestion
+// 제안이 강한 것 → 약한 것 → 제안 없음 → 「영상에 없음」 후보 순, 그 안에서는 최근 경기부터
+ORDER BY CASE WHEN s IS NULL THEN 2 WHEN NOT s.found THEN 3 WHEN s.strength = 'strong' THEN 0 ELSE 1 END,
+         pa.date DESC, pa.at_bat_number DESC
 """
 Q_HR_GOAL = """
 MATCH (pa:PlateAppearance {season: $season, events: 'home_run', game_type: 'regular'})
@@ -308,6 +330,7 @@ class ManualMark(BaseModel):
     start_sec: int = Field(ge=0)
     end_sec: int | None = Field(None, ge=1, description="생략하면 시작 + 20초 (영상 길이를 넘지 않게)")
     reviewer: str | None = None
+    suggested_sec: int | None = Field(None, ge=0, description="Gemini 제안 시작 초를 보고 표시했으면 그 값 (제안 정확도 측정)")
 
 
 @router.post("/admin/review/manual", summary="12-2. 재생 시각으로 장면 표시 (수동 연결)")
@@ -325,10 +348,11 @@ def manual_mark(body: ManualMark, token_reviewer: str | None = Depends(require_a
     r = run("""
 MATCH (pa:PlateAppearance {pa_id: $pa}), (v:VideoLink {video_id: $v})
 MERGE (pa)-[m:MATCHED_TO]->(v)
-SET m.status = 'approved', m.origin = 'manual', m.precision = 'scene', m.start_sec = $s, m.end_sec = $e,
+SET m.status = 'approved', m.origin = $origin, m.suggested_sec = $sug, m.precision = 'scene', m.start_sec = $s, m.end_sec = $e,
     m.scene_type = CASE pa.events WHEN 'home_run' THEN 'home_run' ELSE 'hit' END, m.rank = 0, m.tags = coalesce(m.tags, []),
     m.reasons = '수동 표시', m.reviewer = $reviewer, m.reviewed_at = datetime()
-RETURN m {.status, .start_sec, .end_sec} AS m""", pa=body.pa_id, v=body.video_id, s=body.start_sec, e=end, reviewer=reviewer)
+RETURN m {.status, .start_sec, .end_sec} AS m""", pa=body.pa_id, v=body.video_id, s=body.start_sec, e=end, reviewer=reviewer,
+            origin="gemini_manual" if body.suggested_sec is not None else "manual", sug=body.suggested_sec)
     if not r:
         raise ApiError(404, "TARGET_NOT_FOUND", "타석을 찾을 수 없습니다")
     return {"pa_id": body.pa_id, "video_id": body.video_id, **r[0]["m"]}
