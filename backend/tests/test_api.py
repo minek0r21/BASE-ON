@@ -138,6 +138,17 @@ class ApiTest(unittest.TestCase):
             self.assertEqual(call("GET", path)[0], 404, path)
 
 
+class SuggestionBoundaryTest(unittest.TestCase):
+    """Gemini 제안(SUGGESTED)은 관리자 수동 표시만 읽는다 — 사람이 확인하기 전에는 사용자 화면에 나가지 않는다 (장면.md 11-5)"""
+
+    def test_public_code_never_reads_suggested(self):
+        from pathlib import Path
+        app = Path(__file__).resolve().parents[1] / "app"
+        hits = [str(f.relative_to(app)) for f in app.rglob("*.py")
+                if f.name != "admin.py" and "SUGGESTED" in f.read_text(encoding="utf-8")]
+        self.assertEqual(hits, [])
+
+
 class AdminTokenTest(unittest.TestCase):
     """관리자 토큰 검사 (SEC-01) — ADMIN_TOKENS가 있으면 토큰이 맞아야 하고, 검수자 이름은 토큰으로 정한다"""
 

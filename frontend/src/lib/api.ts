@@ -744,6 +744,8 @@ export type ReviewStats = Partial<Record<TargetKind, {
   pending: number; auto_confirmed: number; approved: number; rejected: number; manual: number; accuracy: number | null;
   /** 자동 연결 중 검수에서 맞음(승인)·틀림(반려) — 표본 확인(NFR-07) */
   auto_reviewed_ok: number; auto_reviewed_ng: number;
+  /** 타석만: Gemini 제안을 보고 표시한 수 · 사람이 옮긴 시작 시각 평균(초) · 5초 안 */
+  gemini?: { marked: number; avg_shift: number; within5: number };
 }>>;
 
 /** 관리자 토큰은 sessionStorage에만 (탭을 닫으면 사라진다, 설계 6-4) */
@@ -796,11 +798,17 @@ export type MissingHr = {
   /** 이 타석에 검수 대기 연결이 있다 → 검수 대기에서 먼저 본다 */
   has_pending: boolean;
   highlight: { video_id: string; title: string; channel: string | null; duration_sec: number | null; start_sec: number; end_sec: number | null } | null;
+  /** Gemini 제안 시각 (etl/09_suggest_times.py). found=false = 하이라이트를 다 봤는데 못 찾음 → 「영상에 없음」 후보 */
+  suggestion: {
+    video_id: string; title: string; channel: string | null; duration_sec: number | null;
+    found: boolean; t_sec: number | null; start_sec: number | null; end_sec: number | null;
+    strength: "strong" | "weak" | null; checks: string; evidence: string; model: string | null;
+  } | null;
 };
 export type MissingHrList = { season: number; goal: { total: number; done: number; target: number; rate: number }; total: number; items: MissingHr[] };
 export const getMissingHr = (season: number) => admin<MissingHrList>("GET", "/admin/review/missing-hr", { season, limit: 500 });
 /** API 12-2: 재생 시각으로 장면 표시 (end_sec 생략 = 시작 + 20초) */
-export const markManual = (b: { pa_id: string; video_id: string; start_sec: number; end_sec?: number; reviewer: string }) =>
+export const markManual = (b: { pa_id: string; video_id: string; start_sec: number; end_sec?: number; reviewer: string; suggested_sec?: number }) =>
   admin<unknown>("POST", "/admin/review/manual", {}, b);
 /** API 12-3: 이 홈런은 영상에 없음 (큐에서 빠진다) */
 export const markNoVideo = (b: { pa_id: string; reviewer: string }) => admin<unknown>("POST", "/admin/review/no-video", {}, b);
