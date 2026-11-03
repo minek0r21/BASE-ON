@@ -6,7 +6,8 @@ Gemini에 YouTube 영상을 보내 JSON으로 판독 받는 공통 호출기 (do
 - 한도 (무료 등급):
     분당 한도(429 + RetryInfo) → 알려 준 시간만큼 기다렸다 같은 모델로
     하루 한도(429, quotaId에 PerDay) → 다음 모델로. 모든 모델이 다 차면 다음 초기화(미국 태평양 자정)까지 기다렸다 처음부터
-    과부하(500·503) → 30초부터 두 배씩 기다리며 5번, 그래도면 그 모델을 뒤로
+    과부하(500·503, 「high demand」) → 10초 뒤 한 번 더, 그래도면 그 모델을 뒤로(다음 모델로). 모든 모델이 연달아 과부하면 5분 쉼
+      (11-03: 무료 등급에서 최신 flash 둘이 계속 503 · 다음 버전은 바로 응답 → 오래 기다리지 않고 넘긴다)
     결제 잔액 없음(402) → 멈춘다 (모델을 바꿔도 같다)
 """
 import json
@@ -134,10 +135,12 @@ class Judge:
                 continue
             if st in (500, 503):
                 busy += 1
-                if busy > 5:
-                    self.log("  ", model, st, "→ 뒤로"); self.models.append(self.models.pop(self.models.index(model))); busy = 0
+                if busy % 2:
+                    time.sleep(10)
                 else:
-                    time.sleep(30 * 2 ** (busy - 1))
+                    self.log("  ", model, st, "→ 뒤로"); self.models.append(self.models.pop(self.models.index(model)))
+                if busy >= 2 * len(live) + 1:
+                    self.log("   모든 모델 과부하 → 5분 쉼"); time.sleep(300); busy = 0
                 continue
             # 400 등 요청 자체 문제: 저장하지 않고 돌려준다 (예: 비공개·지역 제한 영상)
             return {"status": st, "model": model, "body": d}
