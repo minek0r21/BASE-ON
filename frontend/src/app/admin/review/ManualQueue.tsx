@@ -7,7 +7,7 @@ import ScenePlayer from "@/components/ScenePlayer";
 import { mmss } from "@/components/ui/Media";
 
 // 수동 표시 (FR-08-03 · NFR-06): 장면이 없는 홈런을 경기 하이라이트에서 찾아 그 순간을 표시한다.
-// Gemini 제안(etl/09_suggest_times.py)이 있으면 그 구간이 채워진 채 열리고, 사람은 끝까지 보고 확정한다 (장면.md 11-5)
+// Gemini 제안(etl/09_suggest_times.py)이 있으면 그 구간이 채워진 채 열리고, 사람이 보고 확정한다 (장면.md 11-5)
 const SEASONS = [2026, 2025, 2024];
 const KIND: Record<number, string> = { 1: "솔로", 2: "투런", 3: "스리런", 4: "만루" };
 const LEN = 20; // 기본 구간 길이(초) — API 12-2 기본값과 같다
@@ -109,8 +109,6 @@ function Row({ it, open, busy, canSave, onToggle, onMark, onNone }: {
   const [start, setStart] = useState<number | null>(s?.start_sec ?? null);
   const [end, setEnd] = useState<number | null>(s?.end_sec ?? null);
   const [preview, setPreview] = useState(!!s);
-  // 자동화 편향 방지: 제안 구간은 끝까지 재생해 봐야 저장할 수 있다. 직접 「지금 시각」을 찍으면 풀린다
-  const [watched, setWatched] = useState(!s);
   const clip: Clip | null = v && {
     videoId: v.video_id, title: v.title, durationSec: v.duration_sec, precision: preview ? "scene" : "game",
     startSec: preview && start != null ? start : 0, endSec: preview && end != null ? end : v.duration_sec,
@@ -120,7 +118,6 @@ function Row({ it, open, busy, canSave, onToggle, onMark, onNone }: {
     setStart(t);
     setEnd(Math.min(t + LEN, v?.duration_sec ?? t + LEN));
     setPreview(false);
-    setWatched(true);
   };
   const num = (x: string) => (x.trim() === "" || Number.isNaN(Number(x)) ? null : Math.max(0, Math.floor(Number(x))));
   const valid = start != null && end != null && end > start;
@@ -160,8 +157,7 @@ function Row({ it, open, busy, canSave, onToggle, onMark, onNone }: {
       {open && clip && v && (
         <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_260px]">
           <div className="aspect-video overflow-hidden rounded-lg bg-night">
-            <ScenePlayer bare clip={clip} label={v.title} onReady={(f) => { now.current = f; }}
-              onEnded={() => { if (preview) setWatched(true); }} />
+            <ScenePlayer bare clip={clip} label={v.title} onReady={(f) => { now.current = f; }} />
           </div>
           <div className="space-y-2 text-xs">
             <p className="text-muted" title={v.title}>[{v.channel}] {v.title}</p>
@@ -185,10 +181,9 @@ function Row({ it, open, busy, canSave, onToggle, onMark, onNone }: {
                 className="flex-1 rounded-lg border border-line px-2 py-1 font-semibold disabled:opacity-40">
                 {preview ? "하이라이트 처음부터" : "구간 미리 보기"}
               </button>
-              <button disabled={!valid || !watched || busy || !canSave} onClick={() => valid && onMark(v.video_id, start, end, s?.start_sec ?? undefined)}
+              <button disabled={!valid || busy || !canSave} onClick={() => valid && onMark(v.video_id, start, end, s?.start_sec ?? undefined)}
                 className="flex-1 rounded-lg bg-brand px-2 py-1 font-semibold text-white disabled:opacity-40">이 구간으로 표시</button>
             </div>
-            {!watched && <p className="text-muted">제안 구간을 끝까지 보면 표시할 수 있어요</p>}
             {!canSave && <p className="text-muted">검수자 이름을 먼저 적어 주세요</p>}
             <p className="text-muted">표시하면 바로 확정(승인) 장면이 되어 선수 화면에 나옵니다. 처음 {LEN}초가 기본 구간입니다.</p>
           </div>
