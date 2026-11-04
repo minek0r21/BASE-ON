@@ -734,6 +734,20 @@ export type ReviewItem = {
   reasons: string | null;
   review_reason: string | null;
   tags: string[] | null;
+  /** 타석만: Gemini 확인 판독(etl/10_check_clips.py) — 제목 없이 화면 · 해설에서 읽은 것과 기록 대조 */
+  check?: ClipCheck | null;
+};
+export type ClipVerdict = "match2" | "match1" | "name_only" | "conflict" | "other" | "none";
+export type ClipCheck = {
+  verdict: ClipVerdict; checks: string; conflicts: string;
+  read_batter: string | null; read_hr_no: number | null; read_inning: number | null; read_score: string | null;
+  evidence: string; model: string | null;
+};
+/** NFR-07 표본 (API 7''): 사람이 볼 것만(match2가 아닌 것 + match2 앞 20개), 위험한 판정부터 */
+export type Nfr07 = ReviewQueue & {
+  season: number; sample: number; spot: number;
+  progress: { must: number; seen: number; wrong: number; match2: number; estimate_wrong: number | null };
+  by_verdict: Record<ClipVerdict | "unread", { n: number; seen: number; wrong: number }>;
 };
 export type ReviewQueue = {
   total: number; limit: number; offset: number;
@@ -744,6 +758,8 @@ export type ReviewStats = Partial<Record<TargetKind, {
   pending: number; auto_confirmed: number; approved: number; rejected: number; manual: number; accuracy: number | null;
   /** 자동 연결 중 검수에서 맞음(승인)·틀림(반려) — 표본 확인(NFR-07) */
   auto_reviewed_ok: number; auto_reviewed_ng: number;
+  /** 타석만: Gemini 제안을 보고 표시한 수 · 사람이 옮긴 시작 시각 평균(초) · 5초 안 */
+  gemini?: { marked: number; avg_shift: number; within5: number };
 }>>;
 
 /** 관리자 토큰은 sessionStorage에만 (탭을 닫으면 사라진다, 설계 6-4) */
@@ -776,6 +792,9 @@ export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | n
 
 export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
 
+export const getNfr07 = (season: number, offset: number) =>
+  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset });
+
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
 const reviewPath = (it: ReviewItem) =>
   `/admin/review/${it.target_kind}/${encodeURIComponent(it.target_id)}/videos/${encodeURIComponent(it.video.video_id)}`;
@@ -796,11 +815,17 @@ export type MissingHr = {
   /** 이 타석에 검수 대기 연결이 있다 → 검수 대기에서 먼저 본다 */
   has_pending: boolean;
   highlight: { video_id: string; title: string; channel: string | null; duration_sec: number | null; start_sec: number; end_sec: number | null } | null;
+  /** Gemini 제안 시각 (etl/09_suggest_times.py). found=false = 하이라이트를 다 봤는데 못 찾음 → 「영상에 없음」 후보 */
+  suggestion: {
+    video_id: string; title: string; channel: string | null; duration_sec: number | null;
+    found: boolean; t_sec: number | null; start_sec: number | null; end_sec: number | null;
+    strength: "strong" | "weak" | null; checks: string; evidence: string; model: string | null;
+  } | null;
 };
 export type MissingHrList = { season: number; goal: { total: number; done: number; target: number; rate: number }; total: number; items: MissingHr[] };
 export const getMissingHr = (season: number) => admin<MissingHrList>("GET", "/admin/review/missing-hr", { season, limit: 500 });
 /** API 12-2: 재생 시각으로 장면 표시 (end_sec 생략 = 시작 + 20초) */
-export const markManual = (b: { pa_id: string; video_id: string; start_sec: number; end_sec?: number; reviewer: string }) =>
+export const markManual = (b: { pa_id: string; video_id: string; start_sec: number; end_sec?: number; reviewer: string; suggested_sec?: number }) =>
   admin<unknown>("POST", "/admin/review/manual", {}, b);
 /** API 12-3: 이 홈런은 영상에 없음 (큐에서 빠진다) */
 export const markNoVideo = (b: { pa_id: string; reviewer: string }) => admin<unknown>("POST", "/admin/review/no-video", {}, b);
@@ -822,6 +847,7 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
+  nfr07: (season: number, o: number) => ["reviewQueue", "nfr07", season, o] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,

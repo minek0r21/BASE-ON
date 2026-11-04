@@ -33,9 +33,11 @@ services:
     environment:
       NEO4J_URI: bolt://neo4j:7687         # 컨테이너끼리는 서비스 이름으로 접속
       WATCHFILES_FORCE_POLLING: "true"     # Windows 폴더를 연결하면 파일 변경 알림이 안 와서 주기적으로 확인
+      REVIEW_LEDGER: /srv/review/decisions.jsonl   # 사람 판정 장부 (app/ledger.py, 검수는 PC에서만 — 서버에는 없다)
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
     volumes:
       - ./backend:/srv/backend             # 코드를 고치면 바로 반영 (개발용)
+      - ./data/review:/srv/review          # 장부 (git 제외 — data/)
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:

@@ -3,8 +3,8 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
-  adminToken, ApiError, getMoveCandidates, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
-  type Clip, type ReviewItem, type ReviewMode, type TargetKind,
+  adminToken, ApiError, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
+  type Clip, type ClipCheck, type ClipVerdict, type Nfr07, type ReviewItem, type ReviewMode, type TargetKind,
 } from "@/lib/api";
 import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
 import ManualQueue from "./ManualQueue";
@@ -19,12 +19,18 @@ const REASON_KO: Record<string, string> = {
 };
 const PRECISION_KO = { scene: "바로 그 장면", inning: "그 이닝부터", game: "경기 요약" } as const;
 const NAME_KEY = "baseon.admin.reviewer";
+const NFR07_SEASON = 2026;
+// Gemini 확인 판독(장면.md 11-6) — 위험한 것부터
+const VERDICT_KO: Record<ClipVerdict | "unread", string> = {
+  conflict: "근거 충돌", other: "다른 타자", none: "홈런 못 읽음", name_only: "이름만", match1: "근거 1개 일치", match2: "근거 2개↑ 일치",
+  unread: "판독 전",
+};
 
 export default function ReviewPage() {
   const qc = useQueryClient();
-  // 보기: 검수 대기 · 자동 확정 표본(API 7') · 수동 표시(API 11-2)
-  const [view, setView] = useState<ReviewMode | "manual">("pending");
-  const mode: ReviewMode = view === "manual" ? "pending" : view;
+  // 보기: 검수 대기 · 자동 확정 표본(API 7') · NFR-07 표본(API 7'') · 수동 표시(API 11-2)
+  const [view, setView] = useState<ReviewMode | "nfr07" | "manual">("pending");
+  const mode: ReviewMode = view === "auto_confirmed" || view === "nfr07" ? "auto_confirmed" : "pending";
   const [targetKind, setTargetKind] = useState<TargetKind | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
@@ -38,8 +44,8 @@ export default function ReviewPage() {
 
   const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats });
   const queue = useQuery({
-    queryKey: qk.reviewQueue(mode, targetKind, reason, null, offset),
-    queryFn: () => getReviewQueue({ mode, targetKind, reason, season: null, offset }),
+    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset) : qk.reviewQueue(mode, targetKind, reason, null, offset),
+    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
     placeholderData: keepPreviousData,
     enabled: view !== "manual",
   });
@@ -109,6 +115,11 @@ export default function ReviewPage() {
                 {s?.accuracy != null && ` · 자동 정확도 ${(s.accuracy * 100).toFixed(1)}%`}
                 {s && s.auto_reviewed_ok + s.auto_reviewed_ng > 0 && ` (확인 ${s.auto_reviewed_ok + s.auto_reviewed_ng} · 틀림 ${s.auto_reviewed_ng})`}
               </div>
+              {s?.gemini && (
+                <div className="mt-1 text-xs text-muted">
+                  Gemini 제안으로 표시 {s.gemini.marked} · 5초 안 {s.gemini.within5} · 평균 {s.gemini.avg_shift}초 옮김
+                </div>
+              )}
             </div>
           );
         })}
@@ -116,14 +127,14 @@ export default function ReviewPage() {
 
       {/* 보기: 검수 대기 / 자동 확정 표본 (NFR-07 오매칭 표본 확인) */}
       <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="보기">
-        {(["pending", "auto_confirmed", "manual"] as const).map((m) => (
+        {(["pending", "auto_confirmed", "nfr07", "manual"] as const).map((m) => (
           <button
             key={m}
             onClick={() => { setView(m); setReason(null); setOffset(0); }}
             aria-pressed={view === m}
             className={`rounded-lg border px-3 py-1 font-semibold ${view === m ? "border-fg bg-fg text-bg" : "border-line bg-surface text-muted hover:text-fg"}`}
           >
-            {{ pending: "검수 대기", auto_confirmed: "자동 확정 표본", manual: "수동 표시 (장면 없는 홈런)" }[m]}
+            {{ pending: "검수 대기", auto_confirmed: "자동 확정 표본", nfr07: `NFR-07 표본 (${NFR07_SEASON} 홈런 300)`, manual: "수동 표시 (장면 없는 홈런)" }[m]}
           </button>
         ))}
         {view === "auto_confirmed" && (
@@ -131,11 +142,17 @@ export default function ReviewPage() {
             자동 확정된 연결을 무작위 순서로 보여 줍니다. 맞으면 「맞음」, 틀리면 「틀림」을 누르세요(틀린 연결은 화면에서 내려갑니다). 홈런은 300개 중 틀림 1개 이하가 목표입니다(NFR-07).
           </span>
         )}
+        {view === "nfr07" && (
+          <span className="text-xs text-muted">
+            표본 300개 중 Gemini 근거가 2개↑ 일치하지 않은 것 전부 + 2개↑ 일치 앞 {(queue.data as Nfr07 | undefined)?.spot ?? 20}개. 위험한 판정부터. 맞음 · 틀림은 사람이 누릅니다.
+          </span>
+        )}
       </div>
+      {view === "nfr07" && queue.data && "progress" in queue.data && <Nfr07Panel d={queue.data as Nfr07} />}
 
       {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : (<>
-      {/* 필터 */}
-      <div className="flex flex-wrap items-center gap-2 text-sm">
+      {/* 필터 (NFR-07 표본은 대상 · 이유가 정해져 있어 없음) */}
+      <div className={`flex flex-wrap items-center gap-2 text-sm ${view === "nfr07" ? "hidden" : ""}`}>
         {([null, "game", "pa", "outing"] as (TargetKind | null)[]).map((k) => (
           <button
             key={k ?? "all"}
@@ -252,6 +269,7 @@ function ReviewRow({
           <span className="rounded-full border border-accent px-2 py-0.5 font-semibold">{sample ? "자동 확정" : (REASON_KO[it.review_reason ?? "-"] ?? it.review_reason)}</span>
           <span className="ml-2 text-muted">{PRECISION_KO[it.precision]} · 점수 {it.score ?? "–"} · {it.reasons}</span>
         </p>
+        {it.check && <CheckLine c={it.check} />}
         <div className="flex flex-wrap items-center gap-2 pt-1">
           <button disabled={busy || !canSave} onClick={() => onSave("approve")}
             className="rounded-lg bg-fg px-3 py-1 text-xs font-semibold text-bg disabled:opacity-40">{sample ? "맞음" : "승인"}</button>
@@ -300,5 +318,47 @@ function ReviewRow({
         )}
       </div>
     </li>
+  );
+}
+
+/** NFR-07 진행: 확인 수 · 틀림 · 추정 틀림 + Gemini 판정 × 사람 판정 */
+function Nfr07Panel({ d }: { d: Nfr07 }) {
+  const p = d.progress;
+  return (
+    <section className="rounded-xl border border-line bg-surface p-4 text-sm">
+      <p className="font-semibold">
+        확인 <span className="tabular-nums">{p.seen} / {p.must}</span> · 틀림 <span className="tabular-nums">{p.wrong}</span>
+        <span className="ml-2 font-normal text-muted">
+          {p.estimate_wrong != null ? `표본 ${d.sample}개 추정 틀림 ${p.estimate_wrong}개 (목표 1개 이하)` : "추정은 약한 쪽을 다 보고 2개↑ 일치를 1개 이상 보면 나옵니다"}
+        </span>
+      </p>
+      <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted tabular-nums">
+        {(Object.keys(VERDICT_KO) as (ClipVerdict | "unread")[]).filter((k) => d.by_verdict[k]?.n).map((k) => (
+          <span key={k}>
+            {VERDICT_KO[k]} {d.by_verdict[k].n}
+            {d.by_verdict[k].seen > 0 && ` (확인 ${d.by_verdict[k].seen} · 틀림 ${d.by_verdict[k].wrong})`}
+          </span>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/** Gemini가 화면 · 해설에서 읽은 것 — 기록과 어긋난 칸은 빨간색 */
+function CheckLine({ c }: { c: ClipCheck }) {
+  const bad = new Set((c.conflicts || "").split("·").filter(Boolean));
+  const part = (label: string, key: string, v: string | number | null) =>
+    v == null ? null : <span key={key} className={bad.has(key) ? "font-semibold text-red-600" : ""}>{label.replace("{}", String(v))}</span>;
+  const parts = [part("{}", "이름", c.read_batter), part("{}호", "n호", c.read_hr_no), part("{}회", "이닝", c.read_inning), part("{}", "점수", c.read_score)]
+    .filter(Boolean);
+  const risky = c.verdict !== "match2" && c.verdict !== "match1";
+  return (
+    <p className="text-xs">
+      <span className={`rounded-full px-2 py-0.5 font-semibold ${risky ? "bg-red-600 text-white" : "border border-line"}`}>Gemini {VERDICT_KO[c.verdict]}</span>
+      <span className="ml-2 text-muted">
+        화면: {parts.length ? parts.map((x, i) => <span key={i}>{i > 0 && " · "}{x}</span>) : "읽은 것 없음"}
+        {c.evidence && ` · 근거 ${c.evidence}`}
+      </span>
+    </p>
   );
 }

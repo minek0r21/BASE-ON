@@ -8,7 +8,7 @@ parquet를 새 스키마(스키마 탭 확정본)대로 Neo4j에 넣는다. 1단
 | --- | --- |
 | `common.py` | .env 읽기(원본 폴더 `KBO_PBP_DIR` 포함), Neo4j 연결, 배치 적재 도우미 |
 | `prepare.py` | parquet → 노드·관계 모양으로 가공 (DB 안 씀). 직접 실행하면 가공 결과 요약만 출력 |
-| `00_reset_db.py` | DB 전체 삭제 + 제약조건 11개·인덱스 5개 생성 (`--yes`: 확인 문구 없이). 사람이 한 검수도 지워진다 |
+| `00_reset_db.py` | DB 전체 삭제 + 제약조건 11개·인덱스 5개 생성 (`--yes`: 확인 문구 없이). 사람이 한 검수도 지워진다 → 다시 적재한 뒤 장부로 되살린다(`docker compose exec api python -m app.ledger replay`) |
 | `01_load_core.py` | 팀, 선수, 경기, 타석, 소속(PLAYS_FOR) 적재 |
 | `02_load_season_stats.py` | 타자·투수 시즌 기록과 백분위 계산·적재 |
 | `03_check.py` | 적재 결과 확인 (개수, 김도영 기록) |
@@ -19,8 +19,13 @@ parquet를 새 스키마(스키마 탭 확정본)대로 Neo4j에 넣는다. 1단
 | `07_match_videos.py` | 영상 분류 + 매칭. `--step game` 경기 하이라이트 → 경기(`match_game.py`), `--step pa` 장면 클립·챕터 홈런 줄 → 타석(`match_pa.py`), `--step outing` 등판 클립·챕터 투수 줄 → 등판(`match_outing.py`). 결과 `videos/links_<시즌>_<단계>.csv` (DB 안 씀) |
 | `08_load_videos.py` | VideoLink 노드, CANDIDATE·MATCHED_TO(검수 대기) 관계 적재. 이미 검수한 연결은 안 건드림 |
 | `scenes.py` | 07의 영상 분류 · 제목 읽기 공통 (경기 · 타석 · 등판) |
+| `gemini.py` | Gemini에 YouTube URL을 보내 JSON으로 판독 받는 호출기. 응답 캐시 · 모델 돌려 쓰기 · 비용 기록(`videos/gemini/spend.jsonl`) · 달러 상한 |
+| `reading.py` | 판독 대조 규칙 — 제목 없이 화면 · 해설에서 읽은 것을 경기 기록과 맞춘다(이름 + n호 · 이닝 · 점수). 09 · 10 공통 |
+| `09_suggest_times.py` | 장면 없는 홈런의 제안 시각: 경기 하이라이트의 홈런을 모두 읽고 기록과 대조 → `SUGGESTED` (관리자 수동 표시가 씀) |
+| `10_check_clips.py` | 자동 확정 클립 확인: NFR-07 표본 300개를 읽고 연결된 타석과 대조 → `CHECKED` (관리자 「NFR-07 표본」이 씀) |
 | `tests/test_rules.py` | 계산 규칙 단위 시험 (백분위 · 꾸준함 · 실점 귀속 · 유인 · 안타 장면). `python etl/tests/test_rules.py` |
-| `research/video_judge/` | Gemini 영상 판독 시험 코드 (팀 문서 「장면.md」 11장). 다음 단계에 연결된 영상 안에서 장면의 정확한 시각(시작 · 끝 초)을 찾는 데 쓴다. 지금 적재에는 쓰지 않는다 |
+| `tests/test_reading.py` | 판독 대조 규칙 단위 시험 (Gemini를 부르지 않는다) |
+| `research/video_judge/` | Gemini 영상 판독 첫 시험 코드 (팀 문서 「장면.md」 11-2). 09 · 10의 출발점이고 적재에는 쓰지 않는다 |
 
 ## 실행 순서 (PowerShell, 프로젝트 맨 위 폴더에서)
 
