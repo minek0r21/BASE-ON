@@ -159,9 +159,19 @@ export default function SearchBox({
             >
               <span className="h-6 w-1 shrink-0 rounded-full" style={{ background: teamColor(p.team) }} />
               <span className="font-medium"><Marked name={p.name} q={q} /></span>
+              {p.former_names.length > 0 && (
+                <span className="text-xs text-fg-2">옛 이름 <Marked name={p.former_names.join(" · ")} q={q} /></span>
+              )}
               <span className="text-muted">
                 {[p.team, p.position, p.bats_throws].filter(Boolean).join(" · ")}
               </span>
+              {/* 동명이인: 팀 · 포지션 · 투타까지 같은 경우가 있어 출생 연도 · 등번호도 (FR-01-04) */}
+              {p.same_name && (
+                <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-fg-2">
+                  <span className="rounded-md bg-surface-2 px-1.5 py-0.5 font-semibold">동명이인</span>
+                  {[p.birth_year && `${p.birth_year}년생`, p.back_number && `${p.back_number}번`].filter(Boolean).join(" · ")}
+                </span>
+              )}
             </li>
           ))}
           {hits.length === 0 && (isError || pending ? (

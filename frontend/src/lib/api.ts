@@ -51,6 +51,12 @@ type RawSearch = {
     team: string | null;
     position: string | null;
     bats_throws: string | null;
+    /** 옛 이름 (개명 · 등록명 변경, 지금 이름과 같은 것은 빠짐) — 옛 이름으로도 찾는다 */
+    former_names: string[];
+    /** 같은 이름 선수가 있다 → 출생 연도 · 등번호로 구분 (팀 · 포지션 · 투타까지 같은 경우가 있다) */
+    same_name: boolean;
+    birth_year: number | null;
+    back_number: string | null;
   }[];
 };
 
