@@ -22,6 +22,7 @@ import {
 import { josa } from "@/lib/abilities";
 import { pushRecentPlayer } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
+import { useDocTitle } from "@/lib/title";
 
 const TABS = ["overview", "scenes", "games", "seasons", "matchup"] as const;
 type Tab = (typeof TABS)[number];
@@ -70,6 +71,7 @@ export default function PlayerView() {
   }
 
   const p = player.data;
+  useDocTitle(p?.name);
   // 그 시즌 기본 화면: 주소의 view가 우선, 없으면 primary_role (투수.md P7)
   const viewParam = params.get("view");
   const role: Role = viewParam === "pitcher" || viewParam === "batter" ? viewParam : p?.primaryRole === "pitcher" ? "pitcher" : "batter";
