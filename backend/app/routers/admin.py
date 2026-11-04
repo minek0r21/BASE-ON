@@ -17,12 +17,12 @@ from pydantic import BaseModel, Field
 
 from ..db import run
 from ..errors import ApiError
+from ..ledger import TARGETS, record_links, record_no_video
 from ..videocheck import apply_verdict, check_videos
 
 router = APIRouter(tags=["관리자 검수"])
 
 TargetKind = Literal["game", "pa", "outing"]
-TARGETS = {"game": ("Game", "game_pk"), "pa": ("PlateAppearance", "pa_id"), "outing": ("Outing", "outing_id")}
 
 
 def _tokens() -> dict[str, str]:
@@ -58,11 +58,13 @@ RETURN 'game' AS target_kind, g.game_pk AS target_id, toString(g.date) AS date,
     "pa": """
 MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance)-[m:MATCHED_TO]->(v:VideoLink)
 WHERE m.status = $status AND ($season IS NULL OR pa.season = $season) AND ($reason IS NULL OR m.review_reason = $reason)
+OPTIONAL MATCH (pa)-[ck:CHECKED]->(v)
 RETURN 'pa' AS target_kind, pa.pa_id AS target_id, toString(pa.date) AS date,
        b.name + ' · ' + toString(pa.inning) + '회' + pa.inning_half + ' ' + pa.events
          + CASE WHEN pa.hr_seq IS NULL THEN '' ELSE ' (' + toString(pa.hr_seq) + '호)' END AS summary,
        m {.status, .origin, .scene_type, .precision, .start_sec, .end_sec, .score, .reasons, .review_reason, .tags} AS m,
        v {.video_id, .title, .channel, .kind, .duration_sec} AS v,
+       ck {.verdict, .checks, .conflicts, .read_batter, .read_hr_no, .read_inning, .read_score, .evidence, .model} AS check,
        COUNT { (pa)-[:CANDIDATE]->(c:VideoLink) WHERE c <> v AND coalesce(c.playable, true) } AS alt
 """,
     "outing": """
@@ -107,9 +109,67 @@ def review_queue(
         "counts": [{"target_kind": k, "reason": r, "n": n} for (k, r), n in sorted(counts.items())],
         "items": [
             {"target_kind": r["target_kind"], "target_id": r["target_id"], "date": r["date"], "summary": r["summary"],
-             "video": r["v"], "alt": r["alt"], **r["m"]}
+             "video": r["v"], "alt": r["alt"], "check": r.get("check"), **r["m"]}
             for r in rows[offset:offset + limit]
         ],
+    }
+
+
+# ------------------------------------------------------------------ NFR-07 표본 (장면.md 11-6)
+# 표본 = 그 시즌 정규시즌 홈런의 자동 확정 장면 연결을 (pa_id|video_id) 해시 순으로 세운 앞 300개 (etl/10_check_clips.py와 같은 규칙).
+# 사람은 Gemini 판정(CHECKED)이 match2가 아닌 것 전부 + match2 앞 20개를 본다.
+# 틀림 추정 = 약한 쪽에서 찾은 틀림 + (match2 앞 20개 중 틀림 비율 × match2 수). match2 쪽은 「제목과 화면이 같이 틀리지 않는다」는 가정에 기댄다
+NFR07_N, NFR07_SPOT = 300, 20
+VERDICTS = ["conflict", "other", "none", "name_only", "match1", "match2"]  # 위험한 것부터 (etl/reading.py와 같은 순서)
+Q_NFR07 = """
+MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance {season: $season, events: 'home_run', game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
+WHERE coalesce(m.precision, 'scene') = 'scene' AND coalesce(v.playable, true)
+  AND (m.status = 'auto_confirmed' OR m.reviewed_from = 'auto_confirmed')
+OPTIONAL MATCH (pa)-[ck:CHECKED]->(v)
+RETURN 'pa' AS target_kind, pa.pa_id AS target_id, toString(pa.date) AS date,
+       b.name + ' · ' + toString(pa.inning) + '회' + pa.inning_half + ' 홈런'
+         + CASE WHEN pa.hr_seq IS NULL THEN '' ELSE ' (' + toString(pa.hr_seq) + '호)' END AS summary,
+       m {.status, .origin, .scene_type, .precision, .start_sec, .end_sec, .score, .reasons, .review_reason, .tags} AS m,
+       v {.video_id, .title, .channel, .kind, .duration_sec} AS v,
+       ck {.verdict, .checks, .conflicts, .read_batter, .read_hr_no, .read_inning, .read_score, .evidence, .model} AS check
+"""
+
+
+@router.get("/admin/review/nfr07", summary="7''. NFR-07 표본 (홈런 자동 확정 300개) — 사람이 볼 것 · 진행 · 틀림 추정")
+def nfr07_sample(season: int = Query(2026), limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge=0),
+                 _reviewer: str | None = Depends(require_admin)):
+    rows = run(Q_NFR07, season=season)
+    rows.sort(key=lambda r: hashlib.sha1(f"{r['target_id']}|{r['v']['video_id']}".encode()).hexdigest())
+    sample = rows[:NFR07_N]
+    verdict = lambda r: (r["check"] or {}).get("verdict")  # noqa: E731 — 판독 전이면 None (사람이 본다)
+    m2 = [r for r in sample if verdict(r) == "match2"]
+    spot = {r["target_id"] + "|" + r["v"]["video_id"] for r in m2[:NFR07_SPOT]}
+    is_spot = lambda r: r["target_id"] + "|" + r["v"]["video_id"] in spot  # noqa: E731
+    must = [r for r in sample if verdict(r) != "match2" or is_spot(r)]
+    must.sort(key=lambda r: VERDICTS.index(verdict(r) or "none"))  # 정렬이 안정적이라 같은 판정 안에서는 표본 순서 그대로
+
+    seen = lambda rs: [r for r in rs if r["m"]["status"] != "auto_confirmed"]  # noqa: E731 — 사람이 맞음 · 틀림을 누름
+    wrong = lambda rs: sum(r["m"]["status"] == "rejected" for r in rs)  # noqa: E731
+    weak, spot_rows = [r for r in must if not is_spot(r)], [r for r in must if is_spot(r)]
+    spot_seen = seen(spot_rows)
+    est = None
+    if len(seen(weak)) == len(weak) and spot_seen:
+        est = round(wrong(weak) + wrong(spot_seen) / len(spot_seen) * len(m2), 1)
+    table = {v: {"n": 0, "seen": 0, "wrong": 0} for v in VERDICTS + ["unread"]}
+    for r in sample:
+        t = table[verdict(r) or "unread"]
+        t["n"] += 1
+        t["seen"] += r["m"]["status"] != "auto_confirmed"
+        t["wrong"] += r["m"]["status"] == "rejected"
+    todo = [r for r in must if r["m"]["status"] == "auto_confirmed"]
+    return {
+        "season": season, "sample": len(sample), "spot": NFR07_SPOT,
+        "progress": {"must": len(must), "seen": len(seen(must)), "wrong": wrong(must), "match2": len(m2),
+                     "estimate_wrong": est},
+        "by_verdict": table,  # Gemini 판정 × 사람 판정 (match2 쪽 seen은 앞 20개만 본 것)
+        "total": len(todo), "limit": limit, "offset": offset, "counts": [],
+        "items": [{"target_kind": "pa", "target_id": r["target_id"], "date": r["date"], "summary": r["summary"],
+                   "video": r["v"], "alt": 0, "check": r["check"], **r["m"]} for r in todo[offset:offset + limit]],
     }
 
 
@@ -163,6 +223,7 @@ def review_save(target_kind: TargetKind, target_id: str, video_id: str, body: Re
         if not run(f"MATCH (x:{label} {{{key}: $to}}) RETURN 1 AS ok", to=to):
             raise ApiError(404, "TARGET_NOT_FOUND", "옮길 대상을 찾을 수 없습니다")
         run(Q_MOVE.format(label=label, key=key), to=to, **params)
+        record_links("move", [(target_kind, target_id, video_id), (target_kind, to, video_id)])
         moved = run(f"MATCH (:{label} {{{key}: $to}})-[m:MATCHED_TO]->(:VideoLink {{video_id: $v}}) "
                     "RETURN m {.status, .precision, .start_sec, .end_sec, .reviewer, reviewed_at: toString(m.reviewed_at)} AS m",
                     to=to, v=video_id)[0]["m"]
@@ -175,14 +236,17 @@ def review_save(target_kind: TargetKind, target_id: str, video_id: str, body: Re
             raise ApiError(400, "INVALID_PARAM", "retime에는 0 ≤ start_sec < end_sec ≤ 영상 길이가 필요합니다")
         # 구간을 사람이 고쳤으면 그 장면 정밀도로 본다 (설계 7-4: 검수에서 맞으면 scene)
         q = (f"MATCH (:{label} {{{key}: $t}})-[m:MATCHED_TO]->(:VideoLink {{video_id: $v}}) "
-             "SET m.status = 'approved', m.start_sec = $s, m.end_sec = $e, "
+             "SET m.reviewed_from = coalesce(m.reviewed_from, m.status), m.status = 'approved', m.start_sec = $s, m.end_sec = $e, "
              "m.precision = CASE WHEN m.precision = 'game' THEN 'game' ELSE 'scene' END, "
              "m.reviewer = $reviewer, m.reviewed_at = datetime()")
         run(q, s=body.start_sec, e=body.end_sec, **params)
     else:
         status = "approved" if body.action == "approve" else "rejected"
+        # reviewed_from: 사람이 보기 전 상태 — NFR-07 표본(자동 확정)은 맞음 · 틀림을 눌러도 표본에 남아야 한다
         run(f"MATCH (:{label} {{{key}: $t}})-[m:MATCHED_TO]->(:VideoLink {{video_id: $v}}) "
-            "SET m.status = $status, m.reviewer = $reviewer, m.reviewed_at = datetime()", status=status, **params)
+            "SET m.reviewed_from = coalesce(m.reviewed_from, m.status), m.status = $status, "
+            "m.reviewer = $reviewer, m.reviewed_at = datetime()", status=status, **params)
+    record_links(body.action, [(target_kind, target_id, video_id)])
     after = run(f"MATCH (:{label} {{{key}: $t}})-[m:MATCHED_TO]->(:VideoLink {{video_id: $v}}) "
                 "RETURN m {.status, .precision, .start_sec, .end_sec, .reviewer, reviewed_at: toString(m.reviewed_at)} AS m",
                 t=target_id, v=video_id)[0]["m"]
@@ -355,6 +419,7 @@ RETURN m {.status, .start_sec, .end_sec} AS m""", pa=body.pa_id, v=body.video_id
             origin="gemini_manual" if body.suggested_sec is not None else "manual", sug=body.suggested_sec)
     if not r:
         raise ApiError(404, "TARGET_NOT_FOUND", "타석을 찾을 수 없습니다")
+    record_links("manual", [("pa", body.pa_id, body.video_id)])
     return {"pa_id": body.pa_id, "video_id": body.video_id, **r[0]["m"]}
 
 
@@ -372,6 +437,7 @@ def no_video(body: NoVideo, token_reviewer: str | None = Depends(require_admin))
             "pa.no_video_at = datetime() RETURN pa.pa_id AS id", pa=body.pa_id, reviewer=reviewer)
     if not r:
         raise ApiError(404, "TARGET_NOT_FOUND", "타석을 찾을 수 없습니다")
+    record_no_video(body.pa_id, reviewer)
     return {"pa_id": body.pa_id, "no_video": True}
 
 
@@ -399,4 +465,5 @@ SET m.status = 'approved', m.reviewer = $reviewer, m.reviewed_at = datetime(),
 RETURN nv.video_id AS video_id, nv.title AS title""", t=target_id, v=video_id, reviewer=reviewer)
     if not r:
         raise ApiError(404, "NO_CANDIDATE", "바꿀 후보 영상이 없습니다")
+    record_links("swap", [(target_kind, target_id, video_id), (target_kind, target_id, r[0]["video_id"])])
     return {"target_kind": target_kind, "target_id": target_id, "replaced": video_id, **r[0]}

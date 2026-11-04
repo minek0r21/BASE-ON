@@ -90,6 +90,7 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | 5 | GET /plate-appearances/{pa_id}/video | 타석 장면 (확정만) |
 | 12 | POST /video-links/{video_id}/report | 재생 불가 신고 (누구나, 항상 202) |
 | 7' | GET /admin/review/queue?target_kind=&reason=&season=&status= | 검수 대기 · 자동 확정 표본 (경기 · 타석 · 등판) |
+| 7'' | GET /admin/review/nfr07?season= | NFR-07 표본 (홈런 자동 확정 300개) · Gemini 판정 순 · 틀림 추정 |
 | 8' | PATCH /admin/review/{target_kind}/{target_id}/videos/{video_id} | 승인 · 반려 · 구간 고쳐 승인 · 옮김 |
 | | GET /admin/review/{…}/move-candidates | 옮길 후보 |
 | 8-3 | POST /admin/review/{…}/swap | 영상이 사라졌을 때 교체 후보로 |

@@ -139,14 +139,58 @@ class ApiTest(unittest.TestCase):
 
 
 class SuggestionBoundaryTest(unittest.TestCase):
-    """Gemini 제안(SUGGESTED)은 관리자 수동 표시만 읽는다 — 사람이 확인하기 전에는 사용자 화면에 나가지 않는다 (장면.md 11-5)"""
+    """Gemini 판독(제안 SUGGESTED · 확인 CHECKED)은 관리자 검수만 읽는다 — 사람 판정 전에는 사용자 화면에 나가지 않는다 (장면.md 11-5 · 11-6)"""
 
-    def test_public_code_never_reads_suggested(self):
+    def test_public_code_never_reads_gemini(self):
+        import re
         from pathlib import Path
         app = Path(__file__).resolve().parents[1] / "app"
-        hits = [str(f.relative_to(app)) for f in app.rglob("*.py")
-                if f.name != "admin.py" and "SUGGESTED" in f.read_text(encoding="utf-8")]
-        self.assertEqual(hits, [])
+        for rel in ("SUGGESTED", "CHECKED"):  # Cypher 관계 표기 「:CHECKED」만 (Q_MARK_CHECKED 같은 이름은 아니다)
+            hits = [str(f.relative_to(app)) for f in app.rglob("*.py")
+                    if f.name != "admin.py" and re.search(rf"[:|]\s*{rel}\b", f.read_text(encoding="utf-8"))]
+            self.assertEqual(hits, [], rel)
+
+
+class LedgerTest(unittest.TestCase):
+    """사람 판정 장부: 스냅숏을 남기고 다시 적용하면 같은 상태 (DB 없이 — run을 바꿔 끼운다)"""
+
+    def test_record_and_replay(self):
+        try:
+            from app import ledger
+        except ImportError:  # PC에서 backend 패키지 없이 돌릴 때
+            self.skipTest("app 패키지 없음 — API 컨테이너 안에서 돌린다")
+        import tempfile
+        from pathlib import Path
+        calls = []
+
+        def fake_run(q, **p):
+            calls.append((q, p))
+            if "RETURN properties(m)" in q:
+                return [{"m": {"status": "approved", "origin": "manual", "start_sec": 30, "end_sec": 50, "reviewer": "민",
+                               "reviewed_at": object()}}]  # reviewed_at(날짜 객체)은 장부에 넣지 않는다
+            return [{"ok": 1}]
+
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "decisions.jsonl"
+            old_run, old_env = ledger.run, os.environ.get("REVIEW_LEDGER")
+            ledger.run, os.environ["REVIEW_LEDGER"] = fake_run, str(p)
+            try:
+                ledger.record_links("manual", [("pa", "pa1", "vid1")])
+                ledger.record_no_video("pa2", "민")
+                rows = [json.loads(x) for x in p.read_text(encoding="utf-8").splitlines()]
+                self.assertEqual([r["action"] for r in rows], ["manual", "no_video"])
+                self.assertEqual(rows[0]["link"]["start_sec"], 30)
+                self.assertNotIn("reviewed_at", rows[0]["link"])
+                calls.clear()
+                self.assertEqual(ledger.replay(), (2, 0))
+                self.assertIn("SET m += $link", calls[0][0])
+                self.assertEqual(calls[0][1]["link"]["status"], "approved")
+            finally:
+                ledger.run = old_run
+                if old_env is None:
+                    os.environ.pop("REVIEW_LEDGER", None)
+                else:
+                    os.environ["REVIEW_LEDGER"] = old_env
 
 
 class AdminTokenTest(unittest.TestCase):

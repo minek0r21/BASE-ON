@@ -734,6 +734,20 @@ export type ReviewItem = {
   reasons: string | null;
   review_reason: string | null;
   tags: string[] | null;
+  /** 타석만: Gemini 확인 판독(etl/10_check_clips.py) — 제목 없이 화면 · 해설에서 읽은 것과 기록 대조 */
+  check?: ClipCheck | null;
+};
+export type ClipVerdict = "match2" | "match1" | "name_only" | "conflict" | "other" | "none";
+export type ClipCheck = {
+  verdict: ClipVerdict; checks: string; conflicts: string;
+  read_batter: string | null; read_hr_no: number | null; read_inning: number | null; read_score: string | null;
+  evidence: string; model: string | null;
+};
+/** NFR-07 표본 (API 7''): 사람이 볼 것만(match2가 아닌 것 + match2 앞 20개), 위험한 판정부터 */
+export type Nfr07 = ReviewQueue & {
+  season: number; sample: number; spot: number;
+  progress: { must: number; seen: number; wrong: number; match2: number; estimate_wrong: number | null };
+  by_verdict: Record<ClipVerdict | "unread", { n: number; seen: number; wrong: number }>;
 };
 export type ReviewQueue = {
   total: number; limit: number; offset: number;
@@ -777,6 +791,9 @@ export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | n
   admin<ReviewQueue>("GET", "/admin/review/queue", { status: f.mode, target_kind: f.targetKind, reason: f.reason, season: f.season, limit: 20, offset: f.offset });
 
 export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
+
+export const getNfr07 = (season: number, offset: number) =>
+  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset });
 
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
 const reviewPath = (it: ReviewItem) =>
@@ -830,6 +847,7 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
+  nfr07: (season: number, o: number) => ["reviewQueue", "nfr07", season, o] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,
