@@ -9,6 +9,8 @@ Gemini에 YouTube 영상을 보내 JSON으로 판독 받는 공통 호출기 (do
     과부하(500·503, 「high demand」) → 10초 뒤 한 번 더, 그래도면 그 모델을 뒤로(다음 모델로). 모든 모델이 연달아 과부하면 5분 쉼
       (11-03: 무료 등급에서 최신 flash 둘이 계속 503 · 다음 버전은 바로 응답 → 오래 기다리지 않고 넘긴다)
     결제 잔액 없음(402) → 멈춘다 (모델을 바꿔도 같다)
+- 비용 (11-04부터 유료 · 선불): 응답의 토큰 수로 달러를 계산해 videos/gemini/spend.jsonl에 한 줄씩 남긴다.
+  Judge(usd=...)를 주면 이번 실행에서 그만큼 쓰면 더 부르지 않고 OverBudget을 낸다 (예산은 장면.md 11-6)
 """
 import json
 import os
@@ -22,6 +24,27 @@ from pathlib import Path
 
 GEM = "https://generativelanguage.googleapis.com/v1beta/"
 ROOT = Path(__file__).resolve().parents[1]
+SPEND = ROOT / "videos" / "gemini" / "spend.jsonl"
+# 100만 토큰당 달러 (입력, 출력 — 생각 토큰 포함). 2026-12-31까지 값이고 2027-01-01부터 두 배 (AI Studio 요금표)
+PRICE = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.6-flash": (0.75, 3.75)}
+PRICE_DEFAULT = (1.5, 7.5)  # 모르는 모델은 비싸게 잡는다
+
+
+class OverBudget(Exception):
+    pass
+
+
+def cost(model: str, usage: dict) -> float:
+    pin, pout = PRICE.get(model, PRICE_DEFAULT)
+    out = usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0)
+    return usage.get("promptTokenCount", 0) / 1e6 * pin + out / 1e6 * pout
+
+
+def spent_total() -> float:
+    """지금까지 쓴 돈 (spend.jsonl 합계 — 11-04 유료 전환 뒤부터)"""
+    if not SPEND.exists():
+        return 0.0
+    return sum(json.loads(line)["usd"] for line in open(SPEND, encoding="utf-8") if line.strip())
 
 
 def api_key() -> str:
@@ -86,8 +109,9 @@ def _quota(body: dict) -> tuple[bool, float]:
 
 
 class Judge:
-    def __init__(self, out_dir: Path, sleep: float = 6.0, log=print):
+    def __init__(self, out_dir: Path, sleep: float = 6.0, log=print, usd: float | None = None):
         self.key = api_key()
+        self.usd, self.spent = usd, 0.0
         self.models = flash_models(self.key)
         self.exhausted: set[str] = set()
         self.out = Path(out_dir)
@@ -106,6 +130,8 @@ class Judge:
         body = {"contents": [{"parts": [part, {"text": prompt}]}],
                 "generationConfig": {"responseMimeType": "application/json", "responseSchema": schema, "temperature": 0,
                                      "mediaResolution": os.environ.get("GEMINI_MEDIA_RES", "MEDIA_RESOLUTION_LOW")}}
+        if self.usd is not None and self.spent >= self.usd:
+            raise OverBudget(f"이번 실행 상한 ${self.usd:.2f}에 닿음 (쓴 돈 ${self.spent:.2f})")
         busy = 0
         while True:
             live = [m for m in self.models if m not in self.exhausted]
@@ -120,10 +146,16 @@ class Judge:
             if st == 200:
                 res = {"status": 200, "model": model, "sec": round(time.time() - t0, 1), "body": d}
                 json.dump(res, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                usd = cost(model, d.get("usageMetadata") or {})
+                self.spent += usd
+                SPEND.parent.mkdir(parents=True, exist_ok=True)
+                with open(SPEND, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "key": key,
+                                        "model": model, "usd": round(usd, 5), "usage": d.get("usageMetadata")}) + "\n")
                 time.sleep(self.sleep)
                 return res
             if st == 402:
-                raise SystemExit("402 결제 잔액 부족: 결제가 연결되지 않은 프로젝트의 키(무료 등급)로 바꿔 주세요")
+                raise SystemExit("402 선불 잔액 없음: AI Studio → Billing에서 충전한 뒤 다시 돌리면 이어서 한다")
             if st == 404:
                 self.log("  ", model, "404 → 뺌"); self.models.remove(model); continue
             if st == 429:
