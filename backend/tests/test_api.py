@@ -68,6 +68,14 @@ class ApiTest(unittest.TestCase):
         self.assertTrue({"이주형", "이진하", "이정현", "윤정현"} <= names("ㅇㅈㅎ"))  # 상한 없음: 겹치는 초성도 모두
         self.assertIn("코엔 윈", names("ㅋㅇㅇ"))  # 이름의 띄어쓰기는 빼고 맞춘다
         self.assertIn("코엔 윈", names("코엔윈"))
+        # 동명이인 · 옛 이름 표시 (FR-01-04): 같은 이름이면 same_name + 출생 연도 · 등번호, 옛 이름으로도 찾는다
+        twins = [p for p in self.ok("/players", {"q": "박준영"})["players"] if p["name"] == "박준영"]
+        self.assertGreaterEqual(len(twins), 2)
+        self.assertTrue(all(p["same_name"] for p in twins))
+        self.assertEqual(len({(p["team"], p["position"], p["bats_throws"], p["birth_year"], p["back_number"]) for p in twins}), len(twins))
+        hit = self.ok("/players", {"q": "김윤수"})["players"]
+        self.assertTrue(any(p["name"] == "김무신" and "김윤수" in p["former_names"] for p in hit))
+        self.assertTrue(all(p["name"] not in p["former_names"] for p in self.ok("/players", {"q": "김민수"})["players"]))
 
     # ---------------------------------------------------------------- 선수 (API-02)
     def test_batter_summary(self):
