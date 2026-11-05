@@ -26,7 +26,7 @@ from reading import EVENTS, HITS, SCENE_ITEM, SCENE_RULES, S, assign, assign_sce
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "videos" / "gemini"
-PROMPT_V = "scene-blind-2"  # 1은 time 칸을 맨 앞에 둬서 10개 중 8개가 무너짐 (장면.md 11-7)
+PROMPT_V = "scene-blind-3"  # 1: time 칸을 맨 앞에 둬서 무너짐 · 2: 점수판 없이 이닝 · 점수를 짐작해 채움 → 3 (장면.md 11-7)
 OLD_V = "hr-blind-1"  # 09의 홈런 전용 판독 — 같은 영상이면 홈런끼리 견준다
 CONFIRMED = ["auto_confirmed", "approved"]
 LEAD, TAIL = 8, 12  # 시작 = 친 순간 − 8초, 끝 = + 12초 (09와 같음)
@@ -71,10 +71,13 @@ def main():
     ap.add_argument("--season", type=int, default=2026)
     ap.add_argument("--videos", type=int, default=10, help="이번에 새로 판독할 하이라이트 수")
     ap.add_argument("--usd", type=float, default=1.5, help="이번 실행에서 쓸 돈 상한(달러)")
+    ap.add_argument("--only", nargs="*", help="이 영상 ID만 (프롬프트를 고친 뒤 같은 영상으로 견줄 때)")
     a = ap.parse_args()
 
     driver = get_driver()
     hls = run(driver, Q_HIGHLIGHTS, season=a.season, confirmed=CONFIRMED)
+    if a.only:
+        hls = [h for h in hls if h["video_id"] in a.only]
     cache = lambda vid, v=PROMPT_V: OUT / "hl" / f"hl_{vid}.{v}.json"  # noqa: E731
     # 이미 읽은 것 → 옛 판독이 있는 것 → 나머지, 같은 묶음 안에서는 영상 ID 해시 순 (실행마다 같은 순서)
     hls.sort(key=lambda h: (not cache(h["video_id"]).exists(), not cache(h["video_id"], OLD_V).exists(),

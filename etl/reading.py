@@ -119,6 +119,7 @@ SCENE_ITEM = dict(batter=STR, evidence=EVIDENCE, team=STR, kind={"type": "STRING
                   season_hr_no=INT, inning=INT, half=STR, outs=INT, score_after=SCORE, pitcher=STR, time=STR)
 SCENE_RULES = """화면(중계 점수판, 자막 그래픽, 유니폼 이름·등번호)과 음성(중계 해설)에서 실제로 보이거나 들린 것만 적고, 보이지 않으면 null로 두세요.
 제목이나 상식으로 추측하지 마세요. 같은 플레이의 다시 보기(리플레이)는 한 번만 적으세요. 영상에 나오는 순서대로 적으세요.
+이닝(inning, half)과 점수(score_after)는 점수판에서 직접 본 것만 적고, 점수판이 안 보이면 비워 두세요.
 홈런 · 안타 · 삼진 장면만 적고, 그 밖의 결과(볼넷, 땅볼·뜬공 아웃, 호수비 등)는 적지 마세요.
 장면마다 (모든 칸은 짧은 값만, 설명 문장 금지):
 - batter: 타자 이름 (한글)
