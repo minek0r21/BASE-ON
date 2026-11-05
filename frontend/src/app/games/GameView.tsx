@@ -18,6 +18,7 @@ import { ApiError, gameDate, getDay, getGameBox, qk, type BoxTeam, type Clip, ty
 import { innings, md, rate3 } from "@/lib/format";
 import { useReducedMotion } from "@/lib/motion";
 import { team as teamOf, teamHref } from "@/lib/teams";
+import { useDocTitle } from "@/lib/title";
 
 const RUNS = ["", "솔로", "투런", "스리런", "만루"];
 type Now = { key: string; clip: Clip; label: string; title: string };
@@ -37,6 +38,7 @@ export default function GameView() {
   const [ended, setEnded] = useState<string | null>(null); // 끝까지 본 장면의 key → 다음 장면 카운트다운
 
   const g = day.data?.games.find((x) => x.game_pk === id);
+  useDocTitle(g && date ? `${md(date)} ${g.away.team} ${g.away.score} : ${g.home.score} ${g.home.team}` : null);
   // 없는 경기 번호면 그날(번호에서 읽은 날짜가 맞으면) 일정으로 보낸다
   const missing = !id || !date || (box.error instanceof ApiError && box.error.status === 404) || (!!day.data && !g);
   if (missing) {
@@ -71,7 +73,9 @@ export default function GameView() {
       </nav>
       <div className="mt-4 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
         <div className="min-w-0">
-          <Stage now={cur} onStart={() => cur && play(cur)} onEnded={() => cur && setEnded(cur.key)}>
+          <Stage now={cur} onStart={() => cur && play(cur)} onEnded={() => cur && setEnded(cur.key)}
+                 fallback={base && cur && cur.key !== base.key && cur.clip.videoId !== base.clip.videoId
+                   ? { label: "이 경기 하이라이트로 보기", onClick: () => play(base) } : undefined}>
             {cur?.on && ended === cur.key && next && <NextUp key={next.key} next={next} onGo={() => play(next)} onCancel={() => setEnded(null)} />}
           </Stage>
           <p className="mt-5 flex flex-wrap items-center gap-2 text-xs font-bold">
@@ -148,13 +152,18 @@ const orderScenes = (ss: DayScene[]) => [
 
 /** 위쪽 무대 — 처음엔 썸네일 + ▶ (누를 때 영상을 불러온다), 고른 장면은 바로 재생 */
 // 플레이어는 장면이 바뀌어도 다시 만들지 않는다(loadVideoById) — 첫 재생 뒤라 다음 장면도 이어 재생된다
-function Stage({ now, onStart, onEnded, children }: { now: (Now & { on: boolean }) | null; onStart: () => void; onEnded: () => void; children?: ReactNode }) {
+function Stage({ now, onStart, onEnded, fallback, children }: {
+  now: (Now & { on: boolean }) | null; onStart: () => void; onEnded: () => void;
+  /** 장면 영상이 재생되지 않을 때 「이 경기 하이라이트로 보기」 (경기 하이라이트를 보고 있을 때는 없음) */
+  fallback?: { label: string; onClick: () => void };
+  children?: ReactNode;
+}) {
   return (
     <div className="relative aspect-video overflow-hidden rounded-[28px] bg-night">
       {!now ? (
         <div className="flex h-full items-center justify-center text-sm text-[#a1a1a8]">이 경기 영상이 아직 없어요</div>
       ) : now.on ? (
-        <div className="h-full w-full animate-grow"><ScenePlayer bare clip={now.clip} label={now.title} onEnded={onEnded} /></div>
+        <div className="h-full w-full animate-grow"><ScenePlayer bare clip={now.clip} label={now.title} onEnded={onEnded} fallback={fallback} /></div>
       ) : (
         <button onClick={onStart} className="group absolute inset-0" aria-label={`${now.title} 재생`}>
           <img src={bigThumb(now.clip.videoId)} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.02]" />

@@ -10,7 +10,7 @@ import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
 import { playerHref } from "@/components/SearchBox";
-import { Retry } from "@/components/ui/Chip";
+import { Empty, Retry } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
 import {
   getMeta, getStandings, getTeamBatters, getTeamGames, getTeamPitchers, getTeamScenes, qk,
@@ -20,7 +20,8 @@ import { axisCopy } from "@/lib/axes";
 import { weekdayOf } from "@/lib/dates";
 import { innings, md, outingLine, rate3 } from "@/lib/format";
 import { useMyTeam } from "@/lib/local";
-import { team as teamOf } from "@/lib/teams";
+import { TEAM_NAMES, team as teamOf, teamHref } from "@/lib/teams";
+import { useDocTitle } from "@/lib/title";
 import TeamHead from "./TeamHead";
 
 const HR_RUNS = ["", "솔로", "투런", "스리런", "만루"];
@@ -42,7 +43,16 @@ export default function TeamView() {
   const batters = useQuery({ queryKey: qk.team("batters", name ?? ""), queryFn: ({ signal }) => getTeamBatters(name!, signal), enabled: !!name });
   const pitchers = useQuery({ queryKey: qk.team("pitchers", name ?? ""), queryFn: ({ signal }) => getTeamPitchers(name!, signal), enabled: !!name });
   const [playing, setPlaying] = useState<(Playing & { at: "games" | "scenes" }) | null>(null);
+  const asked = params.get("team");
+  useDocTitle(asked && !teamOf(asked) ? null : t ? name : null); // 없는 팀이면 「팀」 그대로
 
+  // 없는 팀 이름(?team=zzz): 말없이 다른 팀을 보여 주지 않고 이유와 10개 구단을 준다 (09 예외 상태)
+  if (asked && !teamOf(asked)) return (
+    <Wrap className="pt-10 pb-24">
+      <Empty text={`‘${asked}’ 팀을 찾지 못했어요`} sub="KBO 10개 구단 중에서 골라 주세요."
+             actions={TEAM_NAMES.map((n) => ({ label: n, href: teamHref(n) }))} />
+    </Wrap>
+  );
   if (!name || !t) return (
     <Wrap className="pt-10 pb-24">
       {standings.isError
