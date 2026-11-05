@@ -32,6 +32,7 @@ CONFIRMED = ["auto_confirmed", "approved"]
 LEAD, TAIL = 8, 12  # 시작 = 친 순간 − 8초, 끝 = + 12초 (09와 같음)
 USD_PER_VIDEO = 0.10  # 실행 전 어림 (입력 약 8.4만 토큰 + 장면이 늘어난 출력)
 SPOT = 15  # 사람이 눌러 볼 안타 · 삼진 장면 수
+MIN_SCENES, LONG = 8, 600  # 10분 넘는 하이라이트에 장면이 8개 미만이면 중간에 멈춘 응답 → 한 번 다시 묻는다 (11-05: 10개 중 1개, 1개 적고 멈춤)
 
 MAX_TOKENS = 16000  # 생각 포함. 정상 응답은 6천 안팎
 SCHEMA = S(scenes={"type": "ARRAY", "items": {**S(**SCENE_ITEM), "propertyOrdering": list(SCENE_ITEM)}})
@@ -57,6 +58,10 @@ ORDER BY gpk, ab
 """
 
 
+def scenes_of(path: Path) -> list[dict] | None:
+    return (parsed(json.load(open(path, encoding="utf-8"))) or {}).get("scenes")
+
+
 def group(kind: str | None) -> str:
     return "hit" if kind in HITS else kind or "?"
 
@@ -74,14 +79,18 @@ def main():
     # 이미 읽은 것 → 옛 판독이 있는 것 → 나머지, 같은 묶음 안에서는 영상 ID 해시 순 (실행마다 같은 순서)
     hls.sort(key=lambda h: (not cache(h["video_id"]).exists(), not cache(h["video_id"], OLD_V).exists(),
                             hashlib.sha1(h["video_id"].encode()).hexdigest()))
-    todo = [h for h in hls if not cache(h["video_id"]).exists()][:a.videos]
+    # 중간에 멈춘 응답은 같은 영상을 한 번 더 묻는다 (키 끝 .r1). 다시 물은 것도 이번 --videos 수에 든다
+    short = [h for h in hls if cache(h["video_id"]).exists() and not cache(h["video_id"], PROMPT_V + ".r1").exists()
+             and (h["dur"] or 0) > LONG and len(scenes_of(cache(h["video_id"])) or []) < MIN_SCENES]
+    todo = (short + [h for h in hls if not cache(h["video_id"]).exists()])[:a.videos]
     print(f"{a.season} 하이라이트 {len(hls)}개 · 읽어 둔 것 {sum(cache(h['video_id']).exists() for h in hls)}개 · "
-          f"옛 홈런 판독 있는 것 {sum(cache(h['video_id'], OLD_V).exists() for h in hls)}개 · 이번에 새로 {len(todo)}개(어림 ${len(todo) * USD_PER_VIDEO:.2f}) · 상한 ${a.usd:.2f} · 지금까지 ${spent_total():.2f}")
+          f"옛 홈런 판독 있는 것 {sum(cache(h['video_id'], OLD_V).exists() for h in hls)}개 · 다시 물을 것 {len(short)}개 · 이번에 새로 {len(todo)}개(어림 ${len(todo) * USD_PER_VIDEO:.2f}) · 상한 ${a.usd:.2f} · 지금까지 ${spent_total():.2f}")
 
     judge = Judge(OUT / "hl", sleep=6.0, usd=a.usd) if todo else None
     for h in todo:
+        v = PROMPT_V + (".r1" if cache(h["video_id"]).exists() else "")
         try:
-            res = judge.ask(f"hl_{h['video_id']}.{PROMPT_V}", h["video_id"], PROMPT, SCHEMA, max_tokens=MAX_TOKENS)
+            res = judge.ask(f"hl_{h['video_id']}.{v}", h["video_id"], PROMPT, SCHEMA, max_tokens=MAX_TOKENS)
         except OverBudget as e:
             print(e, "— 다시 돌리면 이어서 한다")
             break
@@ -96,8 +105,11 @@ def main():
 
     rec, read, matched, states, hr_cmp, videos, spot = Counter(), Counter(), Counter(), Counter(), Counter(), [], []
     for h in done:
-        res = json.load(open(cache(h["video_id"]), encoding="utf-8"))
-        items = (parsed(res) or {}).get("scenes")
+        # 다시 물은 응답이 있으면 장면이 더 많은 쪽
+        path = max((c for c in (cache(h["video_id"]), cache(h["video_id"], PROMPT_V + ".r1")) if c.exists()),
+                   key=lambda c: len(scenes_of(c) or []))
+        res = json.load(open(path, encoding="utf-8"))
+        items = scenes_of(path)
         if items is None:
             print("  ", h["video_id"], "응답을 읽지 못함")
             continue

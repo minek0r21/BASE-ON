@@ -79,7 +79,9 @@ def test_compare_scene_kind_must_match():
     assert R.compare_scene(sc("out", inning=5), SC[1]) is None
     # 안타끼리는 후보가 되고 1·2·3루타 차이는 근거로 센다
     assert R.compare_scene(sc("single", inning=5), SC[1]) == ("conflict", ["이닝"], ["종류"])
-    assert R.compare_scene(sc("double", inning=5, outs=0), SC[1]) == ("strong", ["종류", "이닝", "아웃"], [])
+    assert R.compare_scene(sc("double", inning=5), SC[1]) == ("strong", ["종류", "이닝"], [])
+    # 아웃 수는 판정에 쓰지 않는다 (자주 하나 적게 읽음)
+    assert R.compare_scene(sc("double", inning=5, outs=2), SC[1]) == ("strong", ["종류", "이닝"], [])
 
 
 def test_compare_scene_home_run_uses_hr_rules():

@@ -3,7 +3,7 @@
 - 판정은 Gemini가 아니라 이 코드가 한다. Gemini는 본 것을 적기만 한다
 - 홈런(scene = hr): 타자 이름 필수 + 근거(시즌 n호 · 이닝 · 홈런 뒤 점수). 초·말은 판정에 쓰지 않는다(11-2: 33/35로 가장 자주 틀림)
 - 하이라이트 장면(11, scene-blind-2): 홈런 · 안타(1·2·3루타) · 삼진을 한 번에 읽는다. 타자 이름 + 종류(홈런 · 안타 · 삼진)가 맞아야 후보,
-  근거는 n호(홈런) · 이닝 · 플레이 뒤 점수 · 아웃 수 · 투수 · 안타 종류. 근거 2개↑ 일치 · 어긋남 없음 = strong (장면.md 11-7)
+  근거는 n호(홈런) · 이닝 · 플레이 뒤 점수 · 투수 · 안타 종류. 아웃 수는 읽게만 하고 판정에 안 쓴다(11-05 시험: 4번에 1번 틀림, 초·말과 같은 처리). 근거 2개↑ 일치 · 어긋남 없음 = strong (장면.md 11-7)
 """
 from gemini import mmss
 
@@ -135,7 +135,7 @@ SCENE_RULES = """화면(중계 점수판, 자막 그래픽, 유니폼 이름·�
 
 def compare_scene(h: dict, pa: dict) -> tuple[str, list[str], list[str]] | None:
     """읽은 장면 하나 vs 기록 타석 하나 → ('strong' | 'weak' | 'conflict', 맞은 근거, 어긋난 근거) · 이름이나 종류가 다르면 None
-    pa: batter · pitcher · events · hr_seq · inning · outs · home · away · home_post · away_post
+    pa: batter · pitcher · events · hr_seq · inning · home · away · home_post · away_post
     안타끼리는 같은 종류로 보고 1·2·3루타 차이는 근거(「종류」)로 센다 — 중계 화면만으로 갈리기 쉬워서"""
     kind, ev = h.get("kind"), pa["events"]
     if kind not in EVENTS or not (EVENTS[kind] == ev or (kind in HITS and ev in HITS)):
@@ -157,8 +157,6 @@ def compare_scene(h: dict, pa: dict) -> tuple[str, list[str], list[str]] | None:
             if sa.get("away_team") and pa["home"] in sa["away_team"]:
                 both = {(sa["home"], sa["away"])}
             (ok if (pa["away_post"], pa["home_post"]) in both else bad).append("점수")
-    if h.get("outs") is not None and pa.get("outs") is not None:
-        (ok if h["outs"] == pa["outs"] else bad).append("아웃")
     if h.get("pitcher") and pa.get("pitcher"):
         (ok if name_hit(h["pitcher"], pa["pitcher"]) else bad).append("투수")
     if bad:
