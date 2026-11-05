@@ -2,7 +2,7 @@
 판독 대조 규칙 (docs/장면.md 11-6) — Gemini가 영상에서 읽은 것(제목 없이 화면 · 해설만)을 경기 기록과 맞춘다. 09 · 10이 같이 쓴다
 - 판정은 Gemini가 아니라 이 코드가 한다. Gemini는 본 것을 적기만 한다
 - 홈런(scene = hr): 타자 이름 필수 + 근거(시즌 n호 · 이닝 · 홈런 뒤 점수). 초·말은 판정에 쓰지 않는다(11-2: 33/35로 가장 자주 틀림)
-- 하이라이트 장면(11, scene-blind-1): 홈런 · 안타(1·2·3루타) · 삼진을 한 번에 읽는다. 타자 이름 + 종류(홈런 · 안타 · 삼진)가 맞아야 후보,
+- 하이라이트 장면(11, scene-blind-2): 홈런 · 안타(1·2·3루타) · 삼진을 한 번에 읽는다. 타자 이름 + 종류(홈런 · 안타 · 삼진)가 맞아야 후보,
   근거는 n호(홈런) · 이닝 · 플레이 뒤 점수 · 아웃 수 · 투수 · 안타 종류. 근거 2개↑ 일치 · 어긋남 없음 = strong (장면.md 11-7)
 """
 from gemini import mmss
@@ -110,24 +110,27 @@ def verdict(hrs: list[dict] | None, pa: dict) -> dict:
 
 
 # ------------------------------------------------------------------ 하이라이트 장면 (11, 장면.md 11-7)
-# 읽는 종류 → 기록 events. out · other는 세기만 하고 대조하지 않는다 (호수비 등은 다음 단계)
-KINDS = ["home_run", "single", "double", "triple", "strikeout", "walk", "out", "other"]
-EVENTS = {"home_run": "home_run", "single": "single", "double": "double", "triple": "triple", "strikeout": "strikeout"}
+# 읽는 종류 → 기록 events. 홈런 · 안타 · 삼진만 읽는다 (scene-blind-1에서 볼넷 · 아웃까지 다 적게 했더니 응답이 무너졌다, 장면.md 11-7)
+KINDS = ["home_run", "single", "double", "triple", "strikeout"]
+EVENTS = {k: k for k in KINDS}
 HITS = {"single", "double", "triple"}
-SCENE_ITEM = dict(time=STR, kind={"type": "STRING", "enum": KINDS}, batter=STR, pitcher=STR, evidence=EVIDENCE, team=STR,
-                  season_hr_no=INT, inning=INT, half=STR, outs=INT, score_after=SCORE)
+# 칸 순서가 곧 응답 순서다 — time을 맨 앞에 두면 그 칸에 생각을 늘어놓는다(scene-blind-1). 09처럼 이름 먼저 · time 맨 끝
+SCENE_ITEM = dict(batter=STR, evidence=EVIDENCE, team=STR, kind={"type": "STRING", "enum": KINDS, "nullable": True},
+                  season_hr_no=INT, inning=INT, half=STR, outs=INT, score_after=SCORE, pitcher=STR, time=STR)
 SCENE_RULES = """화면(중계 점수판, 자막 그래픽, 유니폼 이름·등번호)과 음성(중계 해설)에서 실제로 보이거나 들린 것만 적고, 보이지 않으면 null로 두세요.
 제목이나 상식으로 추측하지 마세요. 같은 플레이의 다시 보기(리플레이)는 한 번만 적으세요. 영상에 나오는 순서대로 적으세요.
-타석 결과가 나오는 장면마다:
-- time: 타자가 공을 친 순간(삼진·볼넷은 마지막 공을 던진 순간)의 영상 시각, 「분:초」 문자열 (예: 5:11)
-- kind: home_run(홈런) · single(1루타) · double(2루타) · triple(3루타) · strikeout(삼진) · walk(볼넷·몸에 맞는 공) · out(그 밖의 아웃, 호수비 포함) · other
-- batter: 타자 이름 (한글), pitcher: 투수 이름
+홈런 · 안타 · 삼진 장면만 적고, 그 밖의 결과(볼넷, 땅볼·뜬공 아웃, 호수비 등)는 적지 마세요.
+장면마다 (모든 칸은 짧은 값만, 설명 문장 금지):
+- batter: 타자 이름 (한글)
 - evidence: 타자 이름을 어디서 확인했는지 목록 (scoreboard, caption, commentary, jersey 중)
 - team: 타자 팀
+- kind: home_run(홈런) · single(1루타) · double(2루타) · triple(3루타) · strikeout(삼진)
 - season_hr_no: 홈런일 때 화면이나 해설에 나온 「시즌 N호」
 - inning, half: 이닝 숫자와 초/말
 - outs: 공을 던지기 전 점수판의 아웃 수 (0~2)
-- score_after: 플레이 직후 점수판 점수 {away_team, away, home_team, home}"""
+- score_after: 플레이 직후 점수판 점수 {away_team, away, home_team, home}
+- pitcher: 상대 투수 이름
+- time: 타자가 공을 친 순간(삼진은 마지막 공을 던진 순간)의 영상 시각, 「분:초」 문자열만 (예: 5:11)"""
 
 
 def compare_scene(h: dict, pa: dict) -> tuple[str, list[str], list[str]] | None:

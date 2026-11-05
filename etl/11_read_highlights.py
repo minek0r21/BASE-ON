@@ -26,15 +26,16 @@ from reading import EVENTS, HITS, SCENE_ITEM, SCENE_RULES, S, assign, assign_sce
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "videos" / "gemini"
-PROMPT_V = "scene-blind-1"
+PROMPT_V = "scene-blind-2"  # 1은 time 칸을 맨 앞에 둬서 10개 중 8개가 무너짐 (장면.md 11-7)
 OLD_V = "hr-blind-1"  # 09의 홈런 전용 판독 — 같은 영상이면 홈런끼리 견준다
 CONFIRMED = ["auto_confirmed", "approved"]
 LEAD, TAIL = 8, 12  # 시작 = 친 순간 − 8초, 끝 = + 12초 (09와 같음)
 USD_PER_VIDEO = 0.10  # 실행 전 어림 (입력 약 8.4만 토큰 + 장면이 늘어난 출력)
 SPOT = 15  # 사람이 눌러 볼 안타 · 삼진 장면 수
 
-SCHEMA = S(scenes={"type": "ARRAY", "items": S(**SCENE_ITEM)})
-PROMPT = ("이 영상은 KBO(한국 프로야구) 경기 하이라이트입니다. 영상에 나오는 타석 결과 장면을 빠짐없이 모두 찾아 주세요.\n"
+MAX_TOKENS = 16000  # 생각 포함. 정상 응답은 6천 안팎
+SCHEMA = S(scenes={"type": "ARRAY", "items": {**S(**SCENE_ITEM), "propertyOrdering": list(SCENE_ITEM)}})
+PROMPT = ("이 영상은 KBO(한국 프로야구) 경기 하이라이트입니다. 영상에 나오는 홈런 · 안타 · 삼진 장면을 빠짐없이 모두 찾아 주세요.\n"
           + SCENE_RULES)
 
 Q_HIGHLIGHTS = """
@@ -80,7 +81,7 @@ def main():
     judge = Judge(OUT / "hl", sleep=6.0, usd=a.usd) if todo else None
     for h in todo:
         try:
-            res = judge.ask(f"hl_{h['video_id']}.{PROMPT_V}", h["video_id"], PROMPT, SCHEMA)
+            res = judge.ask(f"hl_{h['video_id']}.{PROMPT_V}", h["video_id"], PROMPT, SCHEMA, max_tokens=MAX_TOKENS)
         except OverBudget as e:
             print(e, "— 다시 돌리면 이어서 한다")
             break
