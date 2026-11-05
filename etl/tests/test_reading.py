@@ -64,6 +64,43 @@ def test_assign_order_check():
     assert got["a"]["strength"] == got["b"]["strength"] == "weak" and invented == 0
 
 
+# 하이라이트 장면 (11): 같은 경기 김도영 3회 홈런 · 5회 2루타 · 7회 삼진
+SC = [dict(PA, pa_id="h", events="home_run", outs=1, pitcher="박세웅"),
+      dict(PA, pa_id="d", events="double", hr_seq=None, inning=5, outs=0, pitcher="박세웅", away_post=2, home_post=5),
+      dict(PA, pa_id="k", events="strikeout", hr_seq=None, inning=7, outs=2, pitcher="김원중", away_post=3, home_post=5)]
+
+
+def sc(kind, **k):
+    return {"kind": kind, "batter": "김도영", "evidence": ["caption"], **k}
+
+
+def test_compare_scene_kind_must_match():
+    assert R.compare_scene(sc("strikeout", inning=5), SC[1]) is None
+    assert R.compare_scene(sc("out", inning=5), SC[1]) is None
+    # 안타끼리는 후보가 되고 1·2·3루타 차이는 근거로 센다
+    assert R.compare_scene(sc("single", inning=5), SC[1]) == ("conflict", ["이닝"], ["종류"])
+    assert R.compare_scene(sc("double", inning=5, outs=0), SC[1]) == ("strong", ["종류", "이닝", "아웃"], [])
+
+
+def test_compare_scene_home_run_uses_hr_rules():
+    assert R.compare_scene(sc("home_run", season_hr_no=20, inning=3), SC[0]) == ("strong", ["n호", "이닝"], [])
+    assert R.compare_scene(sc("home_run", inning=3, pitcher="세웅"), SC[0]) == ("strong", ["이닝", "투수"], [])
+    assert R.compare_scene(sc("home_run", inning=3), SC[0])[0] == "weak"  # 근거 1개는 weak (11은 2개부터 strong)
+
+
+def test_assign_scenes():
+    items = [sc("home_run", season_hr_no=20, inning=3, time="1:00"), sc("double", inning=5, outs=0, time="3:00"),
+             sc("strikeout", inning=7, pitcher="김원중", time="5:00"), sc("out", time="6:00"),
+             sc("strikeout", inning=8, time="7:00"), {"kind": "single", "batter": "최형우", "time": "8:00"}]
+    got, state = R.assign_scenes(items, SC, 600)
+    assert {p: g["strength"] for p, g in got.items()} == {"h": "strong", "d": "strong", "k": "strong"}
+    assert [state[i] for i in range(6)] == ["matched", "matched", "matched", "skipped", "conflict", "unmatched"]
+    # 시각이 타석 순서와 거꾸로면 weak
+    items[0]["time"] = "4:00"
+    got, _ = R.assign_scenes(items, SC, 600)
+    assert got["h"]["strength"] == got["d"]["strength"] == "weak"
+
+
 if __name__ == "__main__":
     for name, f in list(globals().items()):
         if name.startswith("test_"):
