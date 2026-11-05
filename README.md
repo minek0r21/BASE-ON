@@ -66,13 +66,38 @@ KBO 입문 팬을 위한 기록 해석 · 장면 연결 서비스다. 타석 기
 
 ## 장면 연결 (기록 ↔ 영상)
 
-영상 화면을 판독하지 않고, **영상 제목 · 설명란 글자를 경기 기록과 맞춰** 잇는다(`etl/07_match_videos.py`).
+기록 한 줄(타석 · 등판 · 경기)에 KBO · 구단 공식 YouTube 영상의 **그 장면**을 잇는다. 근거는 두 가지다.
 
+| 층 | 무엇으로 | 코드 |
+| --- | --- | --- |
+| ① 어느 경기 · 어느 영상인가 | 영상 **제목 · 설명란 글자**를 경기 기록과 맞춘다 (날짜 · 팀 · 선수 · n호 · n회 · 타점) | `etl/07_match_videos.py` → `08` |
+| ② 영상 안 어느 장면 · 몇 초인가 | Gemini가 **제목 없이 화면 · 해설만** 보고 장면을 적고, 코드가 경기 기록과 대조한다 | `etl/11_read_highlights.py` (규칙 `etl/reading.py`) |
+
+**① 제목 규칙** (`07`)
 - 경기 하이라이트 → 경기 (모든 경기의 기본층), 홈런 · 안타 클립 → 타석, 투수 클립 → 등판, 설명란 챕터 줄(「5회말 ○○○ 2타점 적시타」) → 그 이닝 구간
-- 제목의 날짜 · 팀 · 선수 · n호 · n회 · 타점 같은 주장이 기록과 모두 맞고 후보가 하나일 때만 **자동 확정**, 아니면 **검수 대기**(관리자 검수 화면). 화면에는 확정된 연결만 나온다.
-- 정밀도: 바로 그 장면(클립) > 그 이닝부터(챕터) > 경기 하이라이트 처음부터
+- 제목의 주장이 기록과 모두 맞고 후보가 하나일 때만 **자동 확정**, 아니면 **검수 대기**(관리자 검수 화면). 화면에는 확정된 연결만 나온다.
+
+**② 하이라이트 판독** (`11`) — 장면 연결의 기본
+- 선수별 클립은 「멀티 홈런」 · 「백투백」처럼 장면이 섞여, 클립 하나가 여러 타석에 **0초부터** 걸리는 문제가 있었다(2026 홈런 클립 48개 · 연결 100개). 그래서 경기마다 하나인 **경기 하이라이트 + 장면 시작 초**를 기본으로 바꿨다.
+- Gemini에는 YouTube 주소와 질문만 보낸다. 영상 파일을 내려받거나 올리지 않는다. 화면은 1초에 1장(낮은 해상도), 해설 음성과 함께 읽는다. 영상 제목과 그 경기 기록은 주지 않는다(유도 질문 방지).
+- Gemini는 **본 것을 적기만** 한다. 장면마다 홈런 · 안타 · 삼진의 타자 · 투수 · 종류 · 시즌 n호 · 이닝 · 점수 · 친 순간 시각을 적는다. 이닝과 점수는 점수판에서 본 것만, 안 보이면 비운다.
+- **판정은 코드가 한다.** 이름과 종류가 맞아야 후보가 된다. 그다음 근거(n호 · 이닝 · 점수 · 투수 · 안타 종류) **2개 이상이 맞고 어긋난 것이 없으면 자동 확정**한다. 장면 순서가 타석 순서와 거꾸로면 낮춘다. 자주 틀리는 초 · 말과 아웃 수는 판정에 쓰지 않는다.
+- 재생 구간은 친 순간 8초 전부터 12초 뒤까지다. 하이라이트 장면은 클립보다 먼저 재생한다.
+  - 홈런 · 안타 → 타석에 붙인다.
+  - 삼진 → 그 투수의 등판 장면으로 붙인다.
+  - 근거가 약한 홈런 → 검수 대기로 간다.
+  - 멀티 홈런 클립 → 자동 확정에서 내린다.
+  - 사람이 판정한 연결은 건드리지 않는다.
+- 하이라이트에 없는 장면은 ①의 클립(장면이 하나뿐인 것)이나 관리자 「수동 표시」로 메운다.
+
+**사람이 하는 일 · 측정**
+- 오매칭 측정(NFR-07)은 홈런마다 **화면에 실제로 나가는 자동 확정 연결**에서 300개를 고정해(`11 --sample`) 사람이 전부 본다. 기준은 「시작 15초 안에 그 타자의 그 홈런이 보이는가」다. 확정을 Gemini 판독이 정했으므로 Gemini로 다시 확인하지 않는다(자기 채점). 300개 중 틀림 0개면 95% 상한이 0.99%다.
+- 관리자 검수 화면(`/admin/review/`): 검수 대기 승인 · 반려, 「NFR-07 표본」(장면부터 자동 재생, J 맞음 · K 틀림), 장면 없는 홈런 「수동 표시」. 사람 판정은 장부(`data/review/decisions.jsonl`)에 남아 DB를 다시 적재해도 되살린다(`docker compose exec api python -m app.ledger replay`).
+
+**공통 규칙**
+- 정밀도: 바로 그 장면(하이라이트 장면 · 클립) > 그 이닝부터(챕터) > 경기 하이라이트 처음부터
 - 선수에게는 그 선수가 잘한 장면만 붙인다(타자 화면에 삼진, 투수 화면에 피홈런을 그리지 않는다).
-- 다음 단계: Gemini API로 연결된 영상 안에서 그 장면의 **정확한 시각(시작 · 끝 초)**을 찾아 「처음부터」를 「그 장면부터」로 올린다(시험 코드 `etl/research/video_judge/`).
+- Gemini 호출은 유료다. 응답은 `videos/gemini/`에 캐시해 같은 영상을 다시 부르지 않는다. 실행마다 달러 상한(`--usd`)을 두고, 쓴 돈은 `videos/gemini/spend.jsonl`에 남긴다.
 
 ## 폴더 구조
 
@@ -98,8 +123,10 @@ BASEON/
 │   ├─ 04 · 05                    정제 규칙 건수 세기 · 선수 프로필 추가
 │   ├─ 06 · 06b                   YouTube 영상 목록 받기 · 새 업로드 덧붙이기
 │   ├─ 07 · 08                    영상 매칭(scenes.py 분류, match_game · match_pa · match_outing) → DB에 연결
-│   ├─ research/video_judge/      Gemini 영상 판독 시험 코드
-│   └─ tests/                     계산 규칙 단위 시험
+│   ├─ gemini.py · reading.py     Gemini 호출기(캐시 · 비용 상한) · 판독 대조 규칙
+│   ├─ 09 · 10 · 11               Gemini 판독: 장면 없는 홈런 제안 시각 · 클립 확인 · 하이라이트 장면(장면 연결의 기본)
+│   ├─ research/video_judge/      Gemini 영상 판독 첫 시험 코드
+│   └─ tests/                     계산 규칙 · 판독 대조 규칙 단위 시험
 ├─ videos/                        영상 목록 · 매칭 결과 (대부분 git 제외 — etl/README.md)
 ├─ backend/                       API 서버 (자세한 건 backend/README.md)
 │   ├─ app/main.py                서버 시작, 라우터 등록
@@ -137,7 +164,16 @@ docker compose run --rm etl etl/07_match_videos.py --season 2025 --step outing -
 docker compose run --rm etl etl/08_load_videos.py --season 2025
 ```
 
-- **00은 사람이 한 검수(승인 · 반려)까지 지운다.** 검수를 시작한 뒤에는 00 없이 07 · 08만 다시 돌린다.
+그다음 하이라이트 판독(2026, Gemini 키 `GEMINI_API_KEY` 필요 · 유료):
+
+```bash
+docker compose run --rm etl etl/11_read_highlights.py --season 2026 --videos 10 --usd 1.5   # 판독 (캐시 · 상한, 다시 돌리면 이어서)
+docker compose run --rm etl etl/11_read_highlights.py --season 2026 --videos 0 --load       # 받아 둔 판독으로 장면 연결 저장
+docker compose run --rm etl etl/11_read_highlights.py --season 2026 --videos 0 --sample     # NFR-07 표본 300 고정 (한 번만)
+```
+
+- **00은 사람이 한 검수(승인 · 반려)까지 지운다.** 검수를 시작한 뒤에는 00 없이 07 · 08만 다시 돌린다(지웠다면 장부로 되살린다).
+- 07 · 08을 다시 돌리면 멀티 홈런 클립이 자동 확정으로 돌아오므로 `11 --videos 0 --load`도 다시 돌린다(Gemini는 다시 부르지 않는다).
 - API 문서 http://localhost:8000/docs · Neo4j 화면 http://localhost:17474
 - `backend/` 코드를 고치면 API가 알아서 다시 켜진다
 - 끄기 `docker compose down` (DB는 볼륨에 남는다). DB까지 지우기 `docker compose down -v`
@@ -209,10 +245,11 @@ python scripts/deploy.py code --local <폴더>   # 서버 대신 PC 폴더에 �
 
 ```bash
 python etl/tests/test_rules.py                       # 계산 규칙 단위 시험 (DB 없이. Docker: docker compose run --rm etl etl/tests/test_rules.py)
+python etl/tests/test_reading.py                     # 판독 대조 규칙 단위 시험 (DB · Gemini 없이)
 docker compose exec api python -m unittest discover -s tests -v    # API 테스트 (켜진 API · DB 대상, backend/tests)
 docker compose run --rm etl etl/03_check.py --sample 100            # 원천 대조: DB 타석 무작위 100건을 원본 parquet과 비교 (NFR-05)
 python scripts/perf_check.py                         # 선수 상세 API 응답 시간 p95 (NFR-01). 서버는 스크립트 머리말 참고
 cd frontend && npm run lint && npx tsc --noEmit      # 화면 lint · 타입 검사
 ```
 
-GitHub Actions(`.github/workflows/ci.yml`)가 PR · main 푸시마다 DB 없이 되는 검사(화면 lint · 타입 · 빌드, 계산 규칙, 관리자 토큰 검사)를 돌린다.
+GitHub Actions(`.github/workflows/ci.yml`)가 PR · main 푸시마다 DB 없이 되는 검사(화면 lint · 타입 · 빌드, 계산 규칙 · 판독 대조 규칙, 관리자 토큰 검사)를 돌린다.

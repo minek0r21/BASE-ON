@@ -20,9 +20,10 @@ parquet를 새 스키마(스키마 탭 확정본)대로 Neo4j에 넣는다. 1단
 | `08_load_videos.py` | VideoLink 노드, CANDIDATE·MATCHED_TO(검수 대기) 관계 적재. 이미 검수한 연결은 안 건드림 |
 | `scenes.py` | 07의 영상 분류 · 제목 읽기 공통 (경기 · 타석 · 등판) |
 | `gemini.py` | Gemini에 YouTube URL을 보내 JSON으로 판독 받는 호출기. 응답 캐시 · 모델 돌려 쓰기 · 비용 기록(`videos/gemini/spend.jsonl`) · 달러 상한 |
-| `reading.py` | 판독 대조 규칙 — 제목 없이 화면 · 해설에서 읽은 것을 경기 기록과 맞춘다(이름 + n호 · 이닝 · 점수). 09 · 10 공통 |
+| `reading.py` | 판독 대조 규칙 — 제목 없이 화면 · 해설에서 읽은 것을 경기 기록과 맞춘다. 홈런(09 · 10): 이름 + n호 · 이닝 · 점수. 하이라이트 장면(11): 이름 + 종류가 맞아야 후보, 근거 2개↑ 일치 · 어긋남 없음 = strong |
 | `09_suggest_times.py` | 장면 없는 홈런의 제안 시각: 경기 하이라이트의 홈런을 모두 읽고 기록과 대조 → `SUGGESTED` (관리자 수동 표시가 씀) |
-| `10_check_clips.py` | 자동 확정 클립 확인: NFR-07 표본 300개를 읽고 연결된 타석과 대조 → `CHECKED` (관리자 「NFR-07 표본」이 씀) |
+| `10_check_clips.py` | 클립 확인(11-04 시험): 자동 확정 홈런 클립 300개를 읽고 연결된 타석과 대조 → `CHECKED`. 멀티 홈런 클립 문제를 찾은 근거이고, NFR-07 측정은 11 표본으로 옮겼다 |
+| `11_read_highlights.py` | **장면 연결의 기본**: 경기 하이라이트에서 홈런 · 안타 · 삼진을 시각과 함께 읽고 기록과 대조. `--load` 홈런 · 안타 → 타석, 삼진 → 등판 장면(strong = 자동 확정, 홈런 weak = 검수 대기), 멀티 홈런 클립 내림. `--sample` NFR-07 표본 300 고정 |
 | `tests/test_rules.py` | 계산 규칙 단위 시험 (백분위 · 꾸준함 · 실점 귀속 · 유인 · 안타 장면). `python etl/tests/test_rules.py` |
 | `tests/test_reading.py` | 판독 대조 규칙 단위 시험 (Gemini를 부르지 않는다) |
 | `research/video_judge/` | Gemini 영상 판독 첫 시험 코드 (팀 문서 「장면.md」 11-2). 09 · 10의 출발점이고 적재에는 쓰지 않는다 |
