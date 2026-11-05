@@ -749,11 +749,12 @@ export type ClipCheck = {
   read_batter: string | null; read_hr_no: number | null; read_inning: number | null; read_score: string | null;
   evidence: string; model: string | null;
 };
-/** NFR-07 표본 (API 7''): 사람이 볼 것만(match2가 아닌 것 + match2 앞 20개), 위험한 판정부터 */
+/** NFR-07 표본 v2 (API 7''): 화면에 나가는 홈런 자동 확정 연결 300개(etl 11 --sample로 고정), 아직 안 본 것만 표본 순서로.
+ *  upper95 = 틀림 비율 95% 상한 — 300개를 다 본 뒤에만 */
 export type Nfr07 = ReviewQueue & {
-  season: number; sample: number; spot: number;
-  progress: { must: number; seen: number; wrong: number; match2: number; estimate_wrong: number | null };
-  by_verdict: Record<ClipVerdict | "unread", { n: number; seen: number; wrong: number }>;
+  season: number; sample: number; target: number;
+  progress: { seen: number; wrong: number; upper95: number | null };
+  by_origin: Record<string, { n: number; seen: number; wrong: number }>;
 };
 export type ReviewQueue = {
   total: number; limit: number; offset: number;

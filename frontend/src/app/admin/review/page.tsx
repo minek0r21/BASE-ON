@@ -1,7 +1,7 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   adminToken, ApiError, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
   type Clip, type ClipCheck, type ClipVerdict, type Nfr07, type ReviewItem, type ReviewMode, type TargetKind,
@@ -15,11 +15,13 @@ const REASON_KO: Record<string, string> = {
   doubleheader: "더블헤더 미판정", ambiguous: "후보 여럿·동명이인", claim_mismatch: "제목 주장 불일치",
   milestone: "기록 달성", neutral: "챕터 중립 · 무실점이지만 안타 허용", no_claim: "제목 주장 없음", excluded_words: "인터뷰·모음 등",
   low_gap: "1·2등 점수 차 작음", multi_hr: "그날 홈런 여럿", multi_hit: "어느 안타인지 모름", no_title_date: "제목에 날짜 없음",
-  not_hr: "결과 단어 없음 (타점 등)", not_hr_title: "제목에 홈런 단어 없음", unplayable: "영상 소실", "-": "기타",
+  not_hr: "결과 단어 없음 (타점 등)", not_hr_title: "제목에 홈런 단어 없음", unplayable: "영상 소실",
+  highlight_weak: "하이라이트 판독 근거 약함", multi_scene_clip: "멀티 홈런 클립 (어느 홈런인지 · 15초 밖)", "-": "기타",
 };
 const PRECISION_KO = { scene: "바로 그 장면", inning: "그 이닝부터", game: "경기 요약" } as const;
 const NAME_KEY = "baseon.admin.reviewer";
 const NFR07_SEASON = 2026;
+const ORIGIN_KO: Record<string, string> = { highlight: "하이라이트 장면", auto: "클립(제목 규칙)", manual: "사람 표시", gemini_manual: "사람 표시" };
 // Gemini 확인 판독(장면.md 11-6) — 위험한 것부터
 const VERDICT_KO: Record<ClipVerdict | "unread", string> = {
   conflict: "근거 충돌", other: "다른 타자", none: "홈런 못 읽음", name_only: "이름만", match1: "근거 1개 일치", match2: "근거 2개↑ 일치",
@@ -144,15 +146,33 @@ export default function ReviewPage() {
         )}
         {view === "nfr07" && (
           <span className="text-xs text-muted">
-            표본 300개 중 Gemini 근거가 2개↑ 일치하지 않은 것 전부 + 2개↑ 일치 앞 {(queue.data as Nfr07 | undefined)?.spot ?? 20}개. 위험한 판정부터. 맞음 · 틀림은 사람이 누릅니다.
+            화면에 나가는 홈런 장면 300개를 하나씩 재생합니다. 시작 15초 안에 그 타자의 그 홈런이 보이면 맞음(J), 아니면 틀림(K).
           </span>
         )}
       </div>
-      {view === "nfr07" && queue.data && "progress" in queue.data && <Nfr07Panel d={queue.data as Nfr07} />}
+      {view === "nfr07" && queue.data && "progress" in queue.data && (<>
+        <Nfr07Panel d={queue.data as Nfr07} />
+        {queue.data.items[0] ? (
+          <Nfr07Runner
+            key={`${queue.data.items[0].target_id}-${queue.data.items[0].video.video_id}`}
+            it={queue.data.items[0]}
+            left={queue.data.total}
+            busy={save.isPending || queue.isFetching}
+            canSave={reviewer.trim().length > 0}
+            onSave={(action) => save.mutate({ it: queue.data!.items[0], action })}
+          />
+        ) : (
+          <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">
+            {(queue.data as Nfr07).sample ? "표본을 다 봤습니다." : "표본이 아직 없습니다 (etl 11 --sample)."}
+          </p>
+        )}
+      </>)}
 
-      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : (<>
-      {/* 필터 (NFR-07 표본은 대상 · 이유가 정해져 있어 없음) */}
-      <div className={`flex flex-wrap items-center gap-2 text-sm ${view === "nfr07" ? "hidden" : ""}`}>
+      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : view === "nfr07" ? (
+        save.isError && <p className="text-sm text-red-600">저장하지 못했습니다: {(save.error as Error).message}</p>
+      ) : (<>
+      {/* 필터 */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         {([null, "game", "pa", "outing"] as (TargetKind | null)[]).map((k) => (
           <button
             key={k ?? "all"}
@@ -321,24 +341,66 @@ function ReviewRow({
   );
 }
 
-/** NFR-07 진행: 확인 수 · 틀림 · 추정 틀림 + Gemini 판정 × 사람 판정 */
+/** NFR-07 진행: 확인 수 · 틀림 · 95% 상한 + 출처(하이라이트 장면 · 클립)별 */
 function Nfr07Panel({ d }: { d: Nfr07 }) {
   const p = d.progress;
   return (
     <section className="rounded-xl border border-line bg-surface p-4 text-sm">
       <p className="font-semibold">
-        확인 <span className="tabular-nums">{p.seen} / {p.must}</span> · 틀림 <span className="tabular-nums">{p.wrong}</span>
+        확인 <span className="tabular-nums">{p.seen} / {d.sample}</span> · 틀림 <span className="tabular-nums">{p.wrong}</span>
         <span className="ml-2 font-normal text-muted">
-          {p.estimate_wrong != null ? `표본 ${d.sample}개 추정 틀림 ${p.estimate_wrong}개 (목표 1개 이하)` : "추정은 약한 쪽을 다 보고 2개↑ 일치를 1개 이상 보면 나옵니다"}
+          {p.upper95 != null ? `틀림 비율 95% 상한 ${(p.upper95 * 100).toFixed(2)}% (목표 1% 이하)` : `${d.sample}개를 다 보면 95% 상한이 나옵니다 (틀림 0개면 0.99%)`}
         </span>
       </p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted tabular-nums">
-        {(Object.keys(VERDICT_KO) as (ClipVerdict | "unread")[]).filter((k) => d.by_verdict[k]?.n).map((k) => (
-          <span key={k}>
-            {VERDICT_KO[k]} {d.by_verdict[k].n}
-            {d.by_verdict[k].seen > 0 && ` (확인 ${d.by_verdict[k].seen} · 틀림 ${d.by_verdict[k].wrong})`}
-          </span>
+        {Object.entries(d.by_origin).map(([k, t]) => (
+          <span key={k}>{ORIGIN_KO[k] ?? k} {t.n}{t.seen > 0 && ` (확인 ${t.seen} · 틀림 ${t.wrong})`}</span>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/** NFR-07 하나씩: 장면 시각부터 바로 재생, J 맞음 · K 틀림 · R 처음부터 다시. 저장하면 다음 장면으로 */
+function Nfr07Runner({ it, left, busy, canSave, onSave }: {
+  it: ReviewItem; left: number; busy: boolean; canSave: boolean; onSave: (action: "approve" | "reject") => void;
+}) {
+  const [again, setAgain] = useState(0);
+  const clip: Clip = {
+    videoId: it.video.video_id, title: it.video.title, startSec: it.start_sec ?? 0,
+    endSec: it.end_sec ?? it.video.duration_sec, durationSec: it.video.duration_sec, precision: it.precision,
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "r" || e.key === "R") { setAgain((n) => n + 1); return; }
+      if (busy || !canSave) return;
+      if (e.key === "j" || e.key === "J") onSave("approve");
+      if (e.key === "k" || e.key === "K") onSave("reject");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, canSave, onSave]);
+  return (
+    <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-semibold">{it.summary}</span>
+        <span className="text-xs text-muted">{it.date}</span>
+        <span className="rounded-full border border-line px-2 py-0.5 text-xs">{ORIGIN_KO[it.origin] ?? it.origin}</span>
+        <span className="ml-auto text-xs text-muted tabular-nums">남은 {left}개</span>
+      </div>
+      <div className="aspect-video w-full overflow-hidden rounded-lg">
+        <ScenePlayer key={again} clip={clip} label={`${it.summary} · ${clip.startSec}초부터`} bare />
+      </div>
+      <p className="truncate text-xs text-muted" title={it.video.title}>[{it.video.channel}] {it.video.title}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={busy || !canSave} onClick={() => onSave("approve")}
+          className="rounded-lg bg-fg px-4 py-1.5 text-sm font-semibold text-bg disabled:opacity-40">맞음 <kbd className="ml-1 text-xs opacity-70">J</kbd></button>
+        <button disabled={busy || !canSave} onClick={() => onSave("reject")}
+          className="rounded-lg border border-line px-4 py-1.5 text-sm font-semibold disabled:opacity-40">틀림 <kbd className="ml-1 text-xs opacity-70">K</kbd></button>
+        <button onClick={() => setAgain((n) => n + 1)} className="rounded-lg border border-line px-3 py-1.5 text-sm">처음부터 <kbd className="ml-1 text-xs opacity-70">R</kbd></button>
+        {!canSave && <span className="text-xs text-muted">검수자 이름을 먼저 적어 주세요</span>}
       </div>
     </section>
   );
