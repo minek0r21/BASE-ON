@@ -222,6 +222,8 @@ class AdminTokenTest(unittest.TestCase):
     def test_token(self):
         os.environ["ADMIN_TOKENS"] = "성준:secret-1,세라:secret-2"
         self.assertEqual(self.require_admin("Bearer secret-2"), "세라")
+        # 화면은 X-Admin-Token — Authorization은 서버 사이트 비밀번호(Basic)가 쓴다
+        self.assertEqual(self.require_admin("Basic dXNlcjpwdw==", "secret-1"), "성준")
         for bad in (None, "", "Bearer wrong", "secret-3"):
             with self.assertRaises(self.ApiError) as e:
                 self.require_admin(bad)

@@ -11,7 +11,7 @@ import hashlib
 import math
 import os
 import secrets
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
@@ -31,12 +31,15 @@ def _tokens() -> dict[str, str]:
     return {tok.strip(): name.strip() for name, _, tok in (p.partition(":") for p in raw.split(",")) if tok.strip()}
 
 
-def require_admin(authorization: str | None = Header(None)) -> str | None:
-    """토큰이 설정돼 있으면 검사하고 검수자 이름을 돌려준다. 설정이 없으면 None (로컬 개발)"""
+def require_admin(authorization: Annotated[str | None, Header()] = None,
+                  x_admin_token: Annotated[str | None, Header()] = None) -> str | None:
+    """토큰이 설정돼 있으면 검사하고 검수자 이름을 돌려준다. 설정이 없으면 None (로컬 개발)
+    화면은 X-Admin-Token으로 보낸다 — 서버는 사이트 비밀번호(HTTP Basic)가 Authorization 칸을 쓰므로,
+    거기에 Bearer를 넣으면 비밀번호가 빠져 로그인 창이 계속 뜬다 (11-07)"""
     tokens = _tokens()
     if not tokens:
         return None
-    given = (authorization or "").removeprefix("Bearer ").strip()
+    given = (x_admin_token or (authorization or "").removeprefix("Bearer ")).strip()
     for tok, name in tokens.items():
         if secrets.compare_digest(given, tok):
             return name

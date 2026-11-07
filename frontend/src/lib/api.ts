@@ -782,7 +782,7 @@ async function admin<T>(method: "GET" | "PATCH" | "POST", path: string, query: Q
   const token = adminToken.get();
   const res = await fetch(`${API_BASE}${path}${qs.size ? `?${qs}` : ""}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { "X-Admin-Token": token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
