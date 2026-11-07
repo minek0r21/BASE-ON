@@ -26,7 +26,8 @@ GEM = "https://generativelanguage.googleapis.com/v1beta/"
 ROOT = Path(__file__).resolve().parents[1]
 SPEND = ROOT / "videos" / "gemini" / "spend.jsonl"
 # 100만 토큰당 달러 (입력, 출력 — 생각 토큰 포함). 2026-12-31까지 값이고 2027-01-01부터 두 배 (AI Studio 요금표)
-PRICE = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.6-flash": (0.75, 3.75)}
+# 11-06 실측: 이 표로 어림한 값이 실제 청구(콘솔 28.2천 원)의 2배 남짓 — 상한은 넉넉한 쪽으로 걸린다. 실제 잔액은 콘솔로 본다
+PRICE = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.7-flash": (0.75, 3.75), "gemini-3.6-flash": (0.75, 3.75)}
 PRICE_DEFAULT = (1.5, 7.5)  # 모르는 모델은 비싸게 잡는다
 
 

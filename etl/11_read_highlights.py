@@ -32,11 +32,12 @@ from pathlib import Path
 
 from common import get_driver, run
 from gemini import Judge, OverBudget, parsed, spent_total
-from reading import EVENTS, HITS, SCENE_ITEM, SCENE_RULES, S, assign, assign_scenes
+from reading import EVENTS, HITS, SCENE_ITEM, SCENE_RULES, S, assign, assign_scenes, broken
 
 ROOT = Path(__file__).resolve().parent.parent
 OUT = ROOT / "videos" / "gemini"
 PROMPT_V = "scene-blind-3"  # 1: time 칸을 맨 앞에 둬서 무너짐 · 2: 점수판 없이 이닝 · 점수를 짐작해 채움 → 3 (장면.md 11-7)
+# 11-06: 팀 칸은 구단 enum, 시각은 분 · 초 숫자 두 칸으로. 무너진 응답만 이 스키마로 다시 묻고 .r1에 둔다
 OLD_V = "hr-blind-1"  # 09의 홈런 전용 판독 — 같은 영상이면 홈런끼리 견준다
 CONFIRMED = ["auto_confirmed", "approved"]
 LEAD, TAIL = 8, 12  # 시작 = 친 순간 − 8초, 끝 = + 12초 (09와 같음)
@@ -122,8 +123,17 @@ SET m.nfr07 = 'v2', m.nfr07_i = r.i
 NFR07_N = 300
 
 
-def scenes_of(path: Path) -> list[dict] | None:
-    return (parsed(json.load(open(path, encoding="utf-8"))) or {}).get("scenes")
+def scenes_of(path: Path, keep_broken: bool = False) -> list[dict] | None:
+    items = (parsed(json.load(open(path, encoding="utf-8"))) or {}).get("scenes")
+    return items if items is None or keep_broken else [h for h in items if not broken(h)]
+
+
+def needs_retry(path: Path, dur: float | None) -> bool:
+    """못 읽은 응답 · 칸이 무너진 장면이 있는 응답 · 10분 넘는데 장면이 8개 미만(중간에 멈춤)"""
+    items = scenes_of(path, keep_broken=True)
+    if items is None or any(broken(h) for h in items):
+        return True
+    return (dur or 0) > LONG and len(items) < MIN_SCENES
 
 
 def group(kind: str | None) -> str:
@@ -148,9 +158,9 @@ def main():
     # 이미 읽은 것 → 옛 판독이 있는 것 → 나머지, 같은 묶음 안에서는 영상 ID 해시 순 (실행마다 같은 순서)
     hls.sort(key=lambda h: (not cache(h["video_id"]).exists(), not cache(h["video_id"], OLD_V).exists(),
                             hashlib.sha1(h["video_id"].encode()).hexdigest()))
-    # 중간에 멈춘 응답은 같은 영상을 한 번 더 묻는다 (키 끝 .r1). 다시 물은 것도 이번 --videos 수에 든다
+    # 무너지거나 중간에 멈춘 응답은 같은 영상을 한 번 더 묻는다 (키 끝 .r1). 다시 물은 것도 이번 --videos 수에 든다
     short = [h for h in hls if cache(h["video_id"]).exists() and not cache(h["video_id"], PROMPT_V + ".r1").exists()
-             and (h["dur"] or 0) > LONG and len(scenes_of(cache(h["video_id"])) or []) < MIN_SCENES]
+             and needs_retry(cache(h["video_id"]), h["dur"])]
     todo = (short + [h for h in hls if not cache(h["video_id"]).exists()])[:a.videos]
     print(f"{a.season} 하이라이트 {len(hls)}개 · 읽어 둔 것 {sum(cache(h['video_id']).exists() for h in hls)}개 · "
           f"옛 홈런 판독 있는 것 {sum(cache(h['video_id'], OLD_V).exists() for h in hls)}개 · 다시 물을 것 {len(short)}개 · 이번에 새로 {len(todo)}개(어림 ${len(todo) * USD_PER_VIDEO:.2f}) · 상한 ${a.usd:.2f} · 지금까지 ${spent_total():.2f}")

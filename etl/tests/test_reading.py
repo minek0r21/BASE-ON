@@ -103,6 +103,22 @@ def test_assign_scenes():
     assert got["h"]["strength"] == got["d"]["strength"] == "weak"
 
 
+
+def test_broken_scene():
+    ok = {"batter": "김도영", "team": "KIA", "time": "5:11", "score_after": {"away_team": "LG", "home_team": "KIA"}}
+    assert not R.broken(ok)
+    assert R.broken({**ok, "score_after": {"away_team": "LG", "home_team": "두산" * 30}})
+    assert R.broken({**ok, "pitcher": "선발투수정보김택연박신지이병헌최지강이영하김명신"})
+    assert R.SCENE_ITEM["team"]["enum"] == R.TEAMS
+
+
+def test_scene_time_numbers_or_string():
+    assert R.scene_time({"time_min": 5, "time_sec": 11}) == 311
+    assert R.scene_time({"time": "5:11"}) == 311
+    assert R.scene_time({"time_min": 5, "time_sec": 75}) is None
+    assert list(R.SCENE_ITEM)[-2:] == ["time_min", "time_sec"]  # 시각은 맨 끝 (scene-blind-1)
+
+
 if __name__ == "__main__":
     for name, f in list(globals().items()):
         if name.startswith("test_"):

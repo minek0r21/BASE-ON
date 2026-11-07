@@ -115,8 +115,15 @@ KINDS = ["home_run", "single", "double", "triple", "strikeout"]
 EVENTS = {k: k for k in KINDS}
 HITS = {"single", "double", "triple"}
 # 칸 순서가 곧 응답 순서다 — time을 맨 앞에 두면 그 칸에 생각을 늘어놓는다(scene-blind-1). 09처럼 이름 먼저 · time 맨 끝
-SCENE_ITEM = dict(batter=STR, evidence=EVIDENCE, team=STR, kind={"type": "STRING", "enum": KINDS, "nullable": True},
-                  season_hr_no=INT, inning=INT, half=STR, outs=INT, score_after=SCORE, pitcher=STR, time=STR)
+# 팀 칸은 구단 이름 중에서만 고르게 한다 — 자유 문자열이면 home_team에 해설 · 선수 명단을 끝없이 적다 출력 상한에 걸린다
+# (11-06 전체 실행: 470개 중 52개가 응답을 못 읽고, 52개는 장면 일부가 깨짐, 장면.md 11-7)
+TEAMS = ["KIA", "삼성", "LG", "두산", "KT", "SSG", "롯데", "한화", "NC", "키움"]
+TEAM = {"type": "STRING", "enum": TEAMS, "nullable": True}
+SCENE_SCORE = {**S(away_team=TEAM, away=INT, home_team=TEAM, home=INT), "nullable": True}
+SCENE_ITEM = dict(batter=STR, evidence=EVIDENCE, team=TEAM, kind={"type": "STRING", "enum": KINDS, "nullable": True},
+                  season_hr_no=INT, inning=INT, half=STR, outs=INT, score_after=SCENE_SCORE, pitcher=STR,
+                  time_min=INT, time_sec=INT)  # 시각도 숫자 두 칸 — 문자열이면 같은 식으로 무너질 수 있다 (11-06)
+LONG_FIELD = 20  # 이보다 긴 이름 · 팀 · 시각 칸 = 무너진 장면 → 대조에서 뺀다
 SCENE_RULES = """화면(중계 점수판, 자막 그래픽, 유니폼 이름·등번호)과 음성(중계 해설)에서 실제로 보이거나 들린 것만 적고, 보이지 않으면 null로 두세요.
 제목이나 상식으로 추측하지 마세요. 같은 플레이의 다시 보기(리플레이)는 한 번만 적으세요. 영상에 나오는 순서대로 적으세요.
 이닝(inning, half)과 점수(score_after)는 점수판에서 직접 본 것만 적고, 점수판이 안 보이면 비워 두세요.
@@ -131,7 +138,7 @@ SCENE_RULES = """화면(중계 점수판, 자막 그래픽, 유니폼 이름·�
 - outs: 공을 던지기 전 점수판의 아웃 수 (0~2)
 - score_after: 플레이 직후 점수판 점수 {away_team, away, home_team, home}
 - pitcher: 상대 투수 이름
-- time: 타자가 공을 친 순간(삼진은 마지막 공을 던진 순간)의 영상 시각, 「분:초」 문자열만 (예: 5:11)"""
+- time_min, time_sec: 타자가 공을 친 순간(삼진은 마지막 공을 던진 순간)의 영상 시각을 분 · 초 숫자로 (예: 5분 11초 → 5, 11)"""
 
 
 def compare_scene(h: dict, pa: dict) -> tuple[str, list[str], list[str]] | None:
@@ -165,13 +172,28 @@ def compare_scene(h: dict, pa: dict) -> tuple[str, list[str], list[str]] | None:
     return ("strong" if len(ok) >= 2 else "weak"), ok, bad
 
 
+def broken(h: dict) -> bool:
+    """칸에 짧은 값 대신 문장이 들어간 장면 (enum 전 응답에 남아 있다)"""
+    sa = h.get("score_after") or {}
+    vals = [h.get(k) for k in ("batter", "team", "half", "pitcher", "time")] + [sa.get("away_team"), sa.get("home_team")]
+    return any(isinstance(v, str) and len(v) > LONG_FIELD for v in vals)
+
+
+def scene_time(h: dict) -> float | None:
+    """판독 장면의 영상 시각(초) — 분 · 초 숫자 칸(11-06 뒤) 또는 「분:초」 문자열(그 전 응답)"""
+    m, sec = h.get("time_min"), h.get("time_sec")
+    if isinstance(m, int) and isinstance(sec, int):
+        return m * 60 + sec if m >= 0 and 0 <= sec < 60 else None
+    return mmss(h.get("time"))
+
+
 def assign_scenes(items: list[dict], pas: list[dict], dur: float | None) -> tuple[dict, dict]:
     """하이라이트 한 개: 기록 타석마다 읽은 장면 하나(겹치지 않게, 근거 많은 쪽부터)
     pas는 타석 순서(at_bat_number)대로. 시각이 타석 순서와 거꾸로인 짝은 둘 다 weak
     돌려줌: {pa_id: 제안}, 판독 장면별 상태 {i: 'matched' | 'conflict' | 'unmatched' | 'skipped' | 'no_time'}"""
     pairs, state = [], {}
     for i, h in enumerate(items):
-        t = mmss(h.get("time"))
+        t = scene_time(h)
         if h.get("kind") not in EVENTS:
             state[i] = "skipped"
             continue
