@@ -799,8 +799,8 @@ export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | n
 
 export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
 
-export const getNfr07 = (season: number, offset: number) =>
-  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset });
+export const getNfr07 = (season: number, offset: number, part = 1, parts = 1) =>
+  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset, part, parts });
 
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
 const reviewPath = (it: ReviewItem) =>
@@ -854,7 +854,7 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
-  nfr07: (season: number, o: number) => ["reviewQueue", "nfr07", season, o] as const,
+  nfr07: (season: number, o: number, part: string) => ["reviewQueue", "nfr07", season, o, part] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,

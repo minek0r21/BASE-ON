@@ -148,6 +148,8 @@ def upper95(wrong: int, n: int) -> float | None:
 
 @router.get("/admin/review/nfr07", summary="7''. NFR-07 표본 v2 (화면에 나가는 홈런 자동 확정 연결 300개) — 진행 · 틀림 · 95% 상한")
 def nfr07_sample(season: int = Query(2026), limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge=0),
+                 part: int = Query(1, ge=1, description="여럿이 나눠 볼 때 내 몫 (1부터)"),
+                 parts: int = Query(1, ge=1, le=10, description="나눠 보는 사람 수 — 표본 순번 % parts로 나눈다"),
                  _reviewer: str | None = Depends(require_admin)):
     rows = run(Q_NFR07, season=season)
     seen = [r for r in rows if r["m"]["status"] != "auto_confirmed"]  # 사람이 맞음 · 틀림을 누름
@@ -158,7 +160,7 @@ def nfr07_sample(season: int = Query(2026), limit: int = Query(20, ge=1, le=200)
         t["n"] += 1
         t["seen"] += r["m"]["status"] != "auto_confirmed"
         t["wrong"] += r["m"]["status"] == "rejected"
-    todo = [r for r in rows if r["m"]["status"] == "auto_confirmed"]
+    todo = [r for r in rows if r["m"]["status"] == "auto_confirmed" and (r["i"] or 0) % parts == (part - 1) % parts]
     return {
         "season": season, "sample": len(rows), "target": NFR07_N,
         "progress": {"seen": len(seen), "wrong": wrong,

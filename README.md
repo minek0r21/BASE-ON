@@ -12,7 +12,7 @@ KBO 입문 팬을 위한 기록 해석 · 장면 연결 서비스다. 타석 기
 | 경기 상세 | `/games/?id=<경기번호>` | 경기 하이라이트 · 장면 재생, 이닝별 점수, 박스스코어 |
 | 팀 | `/teams/?team=` | 순위(펼치면 주마다 순위 변동 그래프) · 최근 경기 · 최근 장면 · 타자 · 선발 투수 |
 | 일정 · 장면 | `/schedule/` · `/scenes/` | 날짜별 경기 · 그날 장면 |
-| 장면 검수 (관리자) | `/admin/review/` | 자동 확정되지 못한 연결을 승인 · 반려 (공개 화면에 링크 없음, 서버에서는 막힘) |
+| 장면 검수 (관리자) | `/admin/review/` | 자동 확정되지 못한 연결을 승인 · 반려 (공개 화면에 링크 없음, 검수자 토큰 필요) |
 
 데스크톱(1440px) 기준으로 만들었고, 모바일 화면은 다음 단계다.
 
@@ -226,19 +226,21 @@ uvicorn app.main:app --reload
 
 ## 서버 배포
 
-서버는 **보여 주기만** 한다. 데이터 적재 · 매칭 · 검수는 PC에서 하고, 서버에는 커밋된 코드 · 빌드한 화면 · PC DB 덤프만 올린다(`scripts/deploy.py`, 표준 라이브러리와 ssh · scp만 씀).
+서버는 **보여 주기와 검수만** 한다. 데이터 적재 · 매칭은 PC에서 하고, 서버에는 커밋된 코드 · 빌드한 화면 · PC DB 덤프만 올린다(`scripts/deploy.py`, 표준 라이브러리와 ssh · scp만 씀).
 
 ```bash
 python scripts/deploy.py setup     # 처음 한 번: 스왑 · Docker · /opt/baseon (deploy/server_setup.sh)
 python scripts/deploy.py code      # 화면 빌드 → 커밋된 코드(git archive HEAD) + 화면 올리기 → 빌드 · 재시작
 python scripts/deploy.py db        # PC Neo4j를 1분쯤 멈추고 덤프 → 서버 DB를 통째로 바꾼다
 python scripts/deploy.py status    # 컨테이너 · 메모리 · 디스크 · /meta
+python scripts/deploy.py reviews   # 서버에서 한 판정을 PC 장부 · DB로 가져오기 (db 전에)
 python scripts/deploy.py code --local <폴더>   # 서버 대신 PC 폴더에 똑같이 띄워 시험 (http://localhost:8080)
 ```
 
 - PC `.env`에 `DEPLOY_HOST`(ubuntu@서버) · `DEPLOY_KEY`(SSH 키 경로)를 넣는다. 서버의 `deploy/.env`(도메인 · 비밀번호 · 관리자 토큰, `deploy/.env.example` 참고)는 서버에만 있다.
 - 커밋하지 않은 변경은 올라가지 않는다. 사진 · 엠블럼을 바꿨으면 `code` 전에 `sync_media.py`.
-- 서버 DB는 `db`를 할 때마다 PC 덤프로 바뀌므로, 서버에서 한 검수는 남지 않는다. 그래서 Caddy가 `/admin` · `/api/v1/admin`을 404로 막는다.
+- 검수는 서버에서도 한다(팀이 같이). 서버 판정은 서버 장부(`reviewdata` 볼륨)에 남고, `python scripts/deploy.py reviews`가 PC 장부에 없는 줄만 가져와 PC DB에 다시 적용한다. 서버 DB는 `db`를 할 때마다 PC 덤프로 바뀌므로, 안 가져온 서버 판정이 있으면 `db`는 멈춘다.
+- 검수자는 사람마다 토큰을 받는다(서버 `deploy/.env`의 `ADMIN_TOKENS=이름:토큰,…`). 판정의 검수자 이름은 토큰으로 정해진다. NFR-07 표본은 「나눠 보기」로 사람 수만큼 나눠 본다.
 - 기본은 비밀번호 잠금(`ACCESS=private`). 서버 컨테이너는 재부팅해도 다시 뜬다(`restart: unless-stopped`).
 
 ## 시험

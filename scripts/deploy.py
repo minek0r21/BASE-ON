@@ -1,10 +1,12 @@
 """
-서버 배포 — docs/배포.md. PC에서 돌린다. 서버에는 코드 · 화면 · DB 덤프만 올리고, 적재 · 검수는 PC에서만 한다.
+서버 배포 — docs/배포.md. PC에서 돌린다. 서버에는 코드 · 화면 · DB 덤프만 올리고, 적재는 PC에서만 한다.
+검수는 서버에서도 한다(11-07, 팀이 같이) — 서버 판정은 서버 장부에 남고, reviews로 PC에 가져와 다시 적용한다.
 
     python scripts/deploy.py setup     # 처음 한 번: deploy/server_setup.sh를 올려 실행 (스왑 · Docker · /opt/baseon)
     python scripts/deploy.py code      # 화면 빌드(npm run build) + 커밋된 코드 → 서버, docker compose up --build
     python scripts/deploy.py db        # PC DB 덤프(Neo4j 잠시 멈춤) → 서버 DB를 통째로 바꾼다
     python scripts/deploy.py status    # 컨테이너 · 메모리 · 디스크 · API 응답
+    python scripts/deploy.py reviews   # 서버 장부(서버에서 한 판정) 중 PC 장부에 없는 줄만 붙이고 PC DB에 다시 적용
     python scripts/deploy.py code --local <폴더>   # 서버 대신 이 PC의 폴더에 똑같이 (시험용, http://localhost:8080)
 
 .env (저장소 맨 위, PC)
@@ -28,6 +30,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "frontend" / "out"
 STAGE = ROOT / "data" / "deploy"       # 올리기 전 묶음 · 덤프 (git 제외)
+LEDGER = ROOT / "data" / "review" / "decisions.jsonl"  # PC 장부 (docker-compose.yml의 REVIEW_LEDGER)
 
 
 def read_env() -> dict:
@@ -80,6 +83,12 @@ done
 echo "API가 200초 안에 응답하지 않는다"; exit 4
 """
 
+# 서버 장부 읽기 — 아직 판정이 없으면 빈 출력
+REMOTE_LEDGER = r"""
+cd "$DEPLOY_DIR/app/deploy"
+docker compose exec -T api sh -c 'cat "$REVIEW_LEDGER" 2>/dev/null || true' </dev/null
+"""
+
 REMOTE_STATUS = r"""
 cd "$DEPLOY_DIR/app/deploy" 2>/dev/null || { echo "아직 code를 올리지 않았다"; exit 0; }
 docker compose ps --format '{{.Service}} {{.Status}}'
@@ -113,7 +122,7 @@ class Target:
         else:
             run(["scp", *self.ssh_opts, str(src), f"{self.host}:{dst}"])
 
-    def sh(self, script: str, check: bool = True) -> int:
+    def sh(self, script: str, check: bool = True, capture: bool = False):
         script = f'DEPLOY_DIR="{self.dir}"\n' + script
         if self.local:
             # 시험용: 서버와 겹치지 않는 프로젝트 이름 · 포트 (로컬 개발 환경이 켜져 있어도 된다)
@@ -123,10 +132,10 @@ class Target:
             cmd = [shutil.which("bash") or "bash", "-s"]
         else:
             env, cmd = None, ["ssh", *self.ssh_opts, self.host, "bash -s"]
-        p = subprocess.run(cmd, input=script.replace("\r\n", "\n").encode(), env=env)
+        p = subprocess.run(cmd, input=script.replace("\r\n", "\n").encode(), env=env, stdout=subprocess.PIPE if capture else None)
         if check and p.returncode:
             sys.exit(f"서버 명령 실패 (종료 코드 {p.returncode})")
-        return p.returncode
+        return p.stdout.decode("utf-8") if capture else p.returncode
 
 
 def run(cmd: list[str], **kw):
@@ -196,7 +205,29 @@ def dump_local(env: dict) -> Path:
     return STAGE / "neo4j.dump"
 
 
+def server_only_reviews(t: Target) -> list[str]:
+    """서버 장부에는 있고 PC 장부에는 없는 줄 (서버에서 한 판정 중 아직 안 가져온 것)"""
+    have = set(LEDGER.read_text(encoding="utf-8").splitlines()) if LEDGER.exists() else set()
+    return [line for line in t.sh(REMOTE_LEDGER, capture=True).splitlines() if line.strip() and line not in have]
+
+
+def cmd_reviews(t: Target):
+    new = server_only_reviews(t)
+    if not new:
+        print("서버에서 새로 한 판정이 없다")
+        return
+    LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    with open(LEDGER, "a", encoding="utf-8", newline="\n") as f:
+        f.writelines(line + "\n" for line in new)
+    print(f"서버 판정 {len(new)}줄 → PC 장부에 붙임. PC DB에 다시 적용", flush=True)
+    run(["docker", "compose", "exec", "-T", "api", "python", "-m", "app.ledger", "replay"], cwd=ROOT)
+
+
 def cmd_db(t: Target, env: dict, dump: str | None):
+    # 서버 DB를 바꾸면 서버에서 한 판정이 DB에서 사라진다 → PC로 먼저 가져왔는지 본다
+    new = server_only_reviews(t)
+    if new:
+        sys.exit(f"서버에서 한 판정 {len(new)}줄이 PC 장부에 없다 — 먼저 python scripts/deploy.py reviews")
     src = Path(dump) if dump else dump_local(env)
     t.put(src, f"{t.dir}/dumps/neo4j.dump")
     t.sh(REMOTE_DB)
@@ -206,7 +237,7 @@ def main():
     for stream in (sys.stdout, sys.stderr):
         stream.reconfigure(encoding="utf-8", errors="replace")
     ap = argparse.ArgumentParser(description="서버 배포 (docs/배포.md)")
-    ap.add_argument("action", choices=["setup", "code", "db", "status"])
+    ap.add_argument("action", choices=["setup", "code", "db", "status", "reviews"])
     ap.add_argument("--local", metavar="폴더", help="서버 대신 이 PC의 폴더에 (시험용)")
     ap.add_argument("--skip-build", action="store_true", help="code: 이미 빌드한 frontend/out을 그대로")
     ap.add_argument("--dump", help="db: 새로 덤프하지 않고 이 파일을 올린다 (예: data/deploy/neo4j.dump)")
@@ -222,6 +253,8 @@ def main():
         cmd_code(t, a.skip_build)
     elif a.action == "db":
         cmd_db(t, env, a.dump)
+    elif a.action == "reviews":
+        cmd_reviews(t)
     else:
         t.sh(REMOTE_STATUS, check=False)
 

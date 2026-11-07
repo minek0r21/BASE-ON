@@ -20,6 +20,9 @@ const REASON_KO: Record<string, string> = {
 };
 const PRECISION_KO = { scene: "바로 그 장면", inning: "그 이닝부터", game: "경기 요약" } as const;
 const NAME_KEY = "baseon.admin.reviewer";
+const PART_KEY = "baseon.admin.nfr07part";
+// NFR-07 표본을 여럿이 나눠 볼 때 내 몫 (「2/3」 = 세 명 중 두 번째, 표본 순번 % 3)
+const PARTS = ["1/1", "1/2", "2/2", "1/3", "2/3", "3/3", "1/4", "2/4", "3/4", "4/4"];
 const NFR07_SEASON = 2026;
 const ORIGIN_KO: Record<string, string> = { highlight: "하이라이트 장면", auto: "클립(제목 규칙)", manual: "사람 표시", gemini_manual: "사람 표시" };
 // Gemini 확인 판독(장면.md 11-6) — 위험한 것부터
@@ -42,12 +45,17 @@ export default function ReviewPage() {
     try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; }
   });
   const [token, setToken] = useState(() => (typeof window === "undefined" ? "" : adminToken.get()));
+  const [part, setPart] = useState(() => {
+    if (typeof window === "undefined") return "1/1";
+    try { const v = localStorage.getItem(PART_KEY); return v && PARTS.includes(v) ? v : "1/1"; } catch { return "1/1"; }
+  });
+  const [mine, of] = part.split("/").map(Number);
   const [playing, setPlaying] = useState<{ clip: Clip; label: string } | null>(null);
 
   const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats });
   const queue = useQuery({
-    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset) : qk.reviewQueue(mode, targetKind, reason, null, offset),
-    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
+    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset, part) : qk.reviewQueue(mode, targetKind, reason, null, offset),
+    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset, mine, of) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
     placeholderData: keepPreviousData,
     enabled: view !== "manual",
   });
@@ -149,6 +157,24 @@ export default function ReviewPage() {
             화면에 나가는 홈런 장면 300개를 하나씩 재생합니다. 시작 15초 안에 그 타자의 그 홈런이 보이면 맞음(J), 아니면 틀림(K).
           </span>
         )}
+        {view === "nfr07" && (
+          <label className="flex items-center gap-1 text-xs">
+            <span className="text-muted">나눠 보기</span>
+            <select
+              value={part}
+              onChange={(e) => {
+                setPart(e.target.value);
+                try { localStorage.setItem(PART_KEY, e.target.value); } catch { /* 저장소 막힘 */ }
+              }}
+              className="rounded border border-line bg-surface px-1 py-0.5"
+            >
+              {PARTS.map((p) => {
+                const [a, b] = p.split("/");
+                return <option key={p} value={p}>{b === "1" ? "혼자 전부" : `${b}명 중 ${a}번째`}</option>;
+              })}
+            </select>
+          </label>
+        )}
       </div>
       {view === "nfr07" && queue.data && "progress" in queue.data && (<>
         <Nfr07Panel d={queue.data as Nfr07} />
@@ -163,7 +189,7 @@ export default function ReviewPage() {
           />
         ) : (
           <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">
-            {(queue.data as Nfr07).sample ? "표본을 다 봤습니다." : "표본이 아직 없습니다 (etl 11 --sample)."}
+            {(queue.data as Nfr07).sample ? (of > 1 ? "내 몫을 다 봤습니다." : "표본을 다 봤습니다.") : "표본이 아직 없습니다 (etl 11 --sample)."}
           </p>
         )}
       </>)}
