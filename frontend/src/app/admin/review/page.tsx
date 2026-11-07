@@ -3,7 +3,7 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
-  adminToken, ApiError, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
+  adminToken, ApiError, getAdminMe, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
   type Clip, type ClipCheck, type ClipVerdict, type Nfr07, type ReviewItem, type ReviewMode, type TargetKind,
 } from "@/lib/api";
 import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
@@ -40,11 +40,12 @@ export default function ReviewPage() {
   const [reason, setReason] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   // 검수자 이름은 이 브라우저에 기억, 토큰은 sessionStorage에만 (설계 6-4). 정적 빌드 때(window 없음)는 빈 값
-  const [reviewer, setReviewer] = useState(() => {
+  const [name, setName] = useState(() => {
     if (typeof window === "undefined") return "";
     try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; }
   });
   const [token, setToken] = useState(() => (typeof window === "undefined" ? "" : adminToken.get()));
+  const [draft, setDraft] = useState("");
   const [part, setPart] = useState(() => {
     if (typeof window === "undefined") return "1/1";
     try { const v = localStorage.getItem(PART_KEY); return v && PARTS.includes(v) ? v : "1/1"; } catch { return "1/1"; }
@@ -52,12 +53,17 @@ export default function ReviewPage() {
   const [mine, of] = part.split("/").map(Number);
   const [playing, setPlaying] = useState<{ clip: Clip; label: string } | null>(null);
 
-  const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats });
+  // 「입력」을 누르면 토큰이 바뀌어 다시 확인한다. 통과해야 검수 화면을 연다
+  const me = useQuery({ queryKey: qk.adminMe(token), queryFn: getAdminMe, retry: false });
+  const authed = me.isSuccess;
+  const reviewer = me.data?.reviewer ?? name;  // 토큰이 있으면 토큰의 이름, 로컬 개발은 적은 이름
+
+  const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats, enabled: authed });
   const queue = useQuery({
     queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset, part) : qk.reviewQueue(mode, targetKind, reason, null, offset),
     queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset, mine, of) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
     placeholderData: keepPreviousData,
-    enabled: view !== "manual",
+    enabled: authed && view !== "manual",
   });
   const save = useMutation({
     mutationFn: (v: { it: ReviewItem; action: ReviewActionKind; start?: number; end?: number; to?: string }) =>
@@ -68,8 +74,47 @@ export default function ReviewPage() {
     },
   });
 
-  const unauthorized = queue.error instanceof ApiError && queue.error.status === 401;
   const reasons = (queue.data?.counts ?? []).filter((c) => !targetKind || c.target_kind === targetKind);
+
+  if (!authed) {
+    const wrong = me.error instanceof ApiError && me.error.status === 401;
+    return (
+      <div className="mx-auto w-full max-w-sm px-4 py-16">
+        <form
+          className="space-y-3 rounded-xl border border-line bg-surface p-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = draft.trim();
+            adminToken.set(t);
+            setToken(t);
+            if (t === token) me.refetch();
+          }}
+        >
+          <h1 className="text-xl font-extrabold">장면 검수</h1>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-muted">검수자 토큰</span>
+            <input
+              type="password"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoComplete="off"
+              autoFocus
+              className="w-full rounded-lg border border-line bg-bg px-3 py-2"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={!draft.trim() || me.isFetching}
+            className="w-full rounded-lg bg-fg px-3 py-2 font-semibold text-bg disabled:opacity-50"
+          >
+            {me.isFetching ? "확인 중" : "입력"}
+          </button>
+          {token && wrong && !me.isFetching && <p role="alert" className="text-sm text-red-600">토큰이 맞지 않습니다.</p>}
+          {me.isError && !wrong && !me.isFetching && <p role="alert" className="text-sm text-red-600">확인하지 못했습니다. 다시 눌러 주세요.</p>}
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
@@ -78,13 +123,15 @@ export default function ReviewPage() {
           <h1 className="text-2xl font-extrabold">장면 검수</h1>
           <p className="text-sm text-muted">자동 확정 조건을 넘지 못한 연결을 승인·반려하고, 장면 없는 홈런은 경기 하이라이트에서 직접 표시합니다.</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <label className="flex items-center gap-1.5">
+        {me.data?.reviewer ? (
+          <span className="text-sm"><span className="text-muted">검수자</span> <b>{me.data.reviewer}</b></span>
+        ) : (
+          <label className="flex items-center gap-1.5 text-sm">
             <span className="text-muted">검수자</span>
             <input
-              value={reviewer}
+              value={name}
               onChange={(e) => {
-                setReviewer(e.target.value);
+                setName(e.target.value);
                 try { localStorage.setItem(NAME_KEY, e.target.value); } catch { /* 저장소 막힘 */ }
               }}
               className="w-24 rounded-lg border border-line bg-surface px-2 py-1"
@@ -92,21 +139,7 @@ export default function ReviewPage() {
               suppressHydrationWarning
             />
           </label>
-          <label className="flex items-center gap-1.5">
-            <span className="text-muted">토큰</span>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => {
-                setToken(e.target.value);
-                adminToken.set(e.target.value);
-              }}
-              className="w-32 rounded-lg border border-line bg-surface px-2 py-1"
-              placeholder="서버에 설정했을 때만"
-              suppressHydrationWarning
-            />
-          </label>
-        </div>
+        )}
       </header>
 
       {/* 대상별 현황 */}
@@ -231,9 +264,7 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {unauthorized ? (
-        <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">관리자 토큰을 입력해 주세요.</p>
-      ) : queue.isPending ? (
+      {queue.isPending ? (
         <p className="text-muted">불러오는 중…</p>
       ) : queue.isError ? (
         <p className="text-muted">검수 목록을 불러오지 못했습니다.</p>

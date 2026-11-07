@@ -799,6 +799,9 @@ export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | n
 
 export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
 
+/** 토큰 확인. reviewer = 토큰의 이름, 토큰 설정이 없는 로컬 개발은 null */
+export const getAdminMe = () => admin<{ reviewer: string | null }>("GET", "/admin/me");
+
 export const getNfr07 = (season: number, offset: number, part = 1, parts = 1) =>
   admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset, part, parts });
 
@@ -854,6 +857,7 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
+  adminMe: (token: string) => ["adminMe", token] as const,
   nfr07: (season: number, o: number, part: string) => ["reviewQueue", "nfr07", season, o, part] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,

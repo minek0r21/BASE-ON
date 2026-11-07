@@ -240,7 +240,7 @@ python scripts/deploy.py code --local <폴더>   # 서버 대신 PC 폴더에 �
 - PC `.env`에 `DEPLOY_HOST`(ubuntu@서버) · `DEPLOY_KEY`(SSH 키 경로)를 넣는다. 서버의 `deploy/.env`(도메인 · 비밀번호 · 관리자 토큰, `deploy/.env.example` 참고)는 서버에만 있다.
 - 커밋하지 않은 변경은 올라가지 않는다. 사진 · 엠블럼을 바꿨으면 `code` 전에 `sync_media.py`.
 - 검수는 서버에서도 한다(팀이 같이). 서버 판정은 서버 장부(`reviewdata` 볼륨)에 남고, `python scripts/deploy.py reviews`가 PC 장부에 없는 줄만 가져와 PC DB에 다시 적용한다. 서버 DB는 `db`를 할 때마다 PC 덤프로 바뀌므로, 안 가져온 서버 판정이 있으면 `db`는 멈춘다.
-- 검수자는 사람마다 토큰을 받는다(서버 `deploy/.env`의 `ADMIN_TOKENS=이름:토큰,…`). 판정의 검수자 이름은 토큰으로 정해진다. NFR-07 표본은 「나눠 보기」로 사람 수만큼 나눠 본다.
+- 검수자는 사람마다 토큰을 받는다(서버 `deploy/.env`의 `ADMIN_TOKENS=이름:토큰,…`). 검수 화면에서 토큰을 넣고 「입력」을 누르면 서버가 확인한 뒤 화면을 연다. 판정의 검수자 이름은 토큰으로 정해진다. NFR-07 표본은 「나눠 보기」로 사람 수만큼 나눠 본다.
 - 기본은 비밀번호 잠금(`ACCESS=private`). 서버 컨테이너는 재부팅해도 다시 뜬다(`restart: unless-stopped`).
 
 ## 시험

@@ -3,6 +3,7 @@
   GET   /admin/review/queue?target_kind=&reason=&season=&limit=&offset=   검수 대기 연결 (연결 하나 = 한 줄)
   PATCH /admin/review/{target_kind}/{target_id}/videos/{video_id}         승인 · 반려 · 구간 고쳐 승인(retime)
   GET   /admin/review/stats                                               대상별·상태별 개수, 자동 연결 정확도
+  GET   /admin/me                                                         검수자 확인 (검수 화면 「입력」 버튼)
 
 인증 (설계 6-4): 환경변수 ADMIN_TOKENS="이름1:토큰1,이름2:토큰2"가 있으면 Authorization: Bearer <토큰>이 필요하고
 검수자 이름은 토큰으로 정한다. 없으면(로컬 개발) 인증 없이 본문의 reviewer를 쓴다.
@@ -44,6 +45,11 @@ def require_admin(authorization: Annotated[str | None, Header()] = None,
         if secrets.compare_digest(given, tok):
             return name
     raise ApiError(401, "UNAUTHORIZED", "관리자 토큰이 필요합니다")
+
+
+@router.get("/admin/me", summary="7'''. 검수자 확인 — 토큰의 이름 (토큰 설정이 없는 로컬 개발은 null)")
+def admin_me(reviewer: str | None = Depends(require_admin)):
+    return {"reviewer": reviewer}
 
 
 # ------------------------------------------------------------------ 검수 대기 목록
