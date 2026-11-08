@@ -188,7 +188,7 @@ export default function SearchBox({
         <ul
           id={listId}
           role="listbox"
-          className={screen ? "pt-2" : "absolute inset-x-0 top-full z-30 mt-1 max-h-96 animate-rise overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"}
+          className={screen ? "pt-2" : "absolute top-full right-0 z-30 mt-1 max-h-96 w-[max(100%,24rem)] animate-rise overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"}
         >
           {hits.map((p, i) => screen ? (
             <ScreenHit key={p.player_id} p={p} q={q} id={`${listId}-${i}`} selected={i === active} onPick={() => go(p)} />
@@ -203,16 +203,16 @@ export default function SearchBox({
               className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm ${i === active ? "bg-bg" : ""}`}
             >
               <span className="h-6 w-1 shrink-0 rounded-full" style={{ background: teamColor(p.team) }} />
-              <span className="font-medium"><Marked name={p.name} q={q} /></span>
+              <span className="shrink-0 font-medium whitespace-nowrap"><Marked name={p.name} q={q} /></span>
               {p.former_names.length > 0 && (
-                <span className="text-xs text-fg-2">옛 이름 <Marked name={p.former_names.join(" · ")} q={q} /></span>
+                <span className="shrink-0 text-xs whitespace-nowrap text-fg-2">옛 이름 <Marked name={p.former_names.join(" · ")} q={q} /></span>
               )}
-              <span className="text-muted">
+              <span className="min-w-0 truncate text-muted">
                 {[p.team, p.position, p.bats_throws].filter(Boolean).join(" · ")}
               </span>
               {/* 동명이인: 팀 · 포지션 · 투타까지 같은 경우가 있어 출생 연도 · 등번호도 (FR-01-04) */}
               {p.same_name && (
-                <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-fg-2">
+                <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-fg-2">
                   <span className="rounded-md bg-surface-2 px-1.5 py-0.5 font-semibold">동명이인</span>
                   {[p.birth_year && `${p.birth_year}년생`, p.back_number && `${p.back_number}번`].filter(Boolean).join(" · ")}
                 </span>
