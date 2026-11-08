@@ -1,0 +1,17 @@
+질문,기대메뉴,기대조건,시즌선택,기대개수,메모
+김도영 2024 홈런 영상 보여줘,pa,results=홈런; season=2024,,38,
+2024년 김도영이 잠실에서 3루타 친 날 언제야,pa,results=3루타; stadium=잠실; season=2024,,1,
+도영이 재작년 잠실 3루타,pa,results=3루타; stadium=잠실; season=2024,,1,재작년 = 2024 (2026 기준)
+김도영 홈런,되묻기,,,,연도 없음 → 시즌 되묻기
+김도영 홈런,pa,results=홈런,2024,38,되묻기에서 2024 선택
+KIA가 올러 선발일 때 LG 상대로 승률은?,되묻기,,,,연도 없음
+KIA가 올러 선발일 때 LG 상대로 승률은?,games,team=KIA; opponent=LG,0,7,전체 시즌 선택
+기아 엘지전 올러 선발 몇승 몇패야 전체 시즌으로,games,team=KIA; opponent=LG,,7,
+2025년 김도영이랑 나성범이 같이 뛴 경기,games,team=KIA; season=2025,,6,
+KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,
+원태인 2025 시즌 기록,stats,season=2025,,,
+김도영 2025 타율 몇이야,stats,season=2025,,,
+2025 오스틴 포심 쳐서 홈런,pa,results=홈런; season=2025; pitch_names=포심,,,
+2025년 기아 타자들 만루에서 장타,pa,bat_team=KIA; bases=만루; results=장타; season=2025,,,
+2025년 홈런 제일 많이 친 타자 5명,other,,,,메뉴 밖 → Cypher 직접
+안녕,chat,,,,

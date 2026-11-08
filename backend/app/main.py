@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import db, errors
-from .routers import admin, games, league, matchup, meta, outings, players, postseason, report
+from .routers import admin, chat, games, league, matchup, meta, outings, players, postseason, report
 
 
 @asynccontextmanager
@@ -35,7 +35,7 @@ errors.register(app)
 
 PREFIX = "/api/v1"
 for r in (players.router, games.router, matchup.router, league.router, outings.router, admin.router, report.router,
-          postseason.router, meta.router):
+          postseason.router, meta.router, chat.router):
     app.include_router(r, prefix=PREFIX)
 
 
