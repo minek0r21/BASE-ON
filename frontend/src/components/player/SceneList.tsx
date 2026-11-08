@@ -9,6 +9,7 @@ import InlinePlayer from "@/components/InlinePlayer";
 import { thumbnailUrl } from "@/components/ScenePlayer";
 import { Chip, Empty } from "@/components/ui/Chip";
 import { PlayGlyph, mmss } from "@/components/ui/Media";
+import Seg from "@/components/ui/Seg";
 import { getPitcherOutings, getPlayerScenes, qk, type Clip, type OutingRow, type PlayerPaScene } from "@/lib/api";
 import { josa } from "@/lib/abilities";
 import { innings, md } from "@/lib/format";
@@ -131,6 +132,7 @@ function ListShell({ title, sub, chips, chip, onChip, loading, error, empty, non
   loading: boolean; error: (() => void) | null; empty: string; none?: None; all?: boolean; rows: Row[];
 }) {
   const [playing, setPlaying] = useState<(Playing & { key: string }) | null>(null);
+  const [wide, setWide] = useState(false); // 모바일은 목록 앞부분만, 누르면 전부
   const scroller = useRef<HTMLUListElement>(null);
   const pick = (k: string) => { setPlaying(null); onChip(k); };
   const play = (r: Row) => setPlaying(playing?.key === r.key ? null : { key: r.key, clip: r.clip, title: r.playTitle, sub: r.playSub });
@@ -156,23 +158,26 @@ function ListShell({ title, sub, chips, chip, onChip, loading, error, empty, non
   } else if (!rows.length) state = <Empty text={empty} />;
 
   const chipRow = chips && (
-    <div className="flex flex-wrap gap-2" role="group" aria-label={`${title} 거르기`}>
+    <>
+    <Seg small className="w-full md:hidden" label={`${title} 거르기`} value={chip} onChange={pick} items={chips.map((x) => ({ key: x.key, label: `${x.label} ${x.n}` }))} />
+    <div className="hidden flex-wrap gap-2 md:flex" role="group" aria-label={`${title} 거르기`}>
       {chips.map((x) => (
         <Chip key={x.key} on={chip === x.key} onClick={() => pick(x.key)}>
           {x.label} <span className="font-num opacity-70">{x.n}</span>
         </Chip>
       ))}
     </div>
+    </>
   );
 
   if (!all) return (
     <section className="min-w-0">
       <SectionHead title={title} sub={sub} right={
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
           {chipRow}
           {rows.length > 4 && ([-1, 1] as const).map((d) => (
             <button key={d} onClick={() => scroller.current?.scrollBy({ left: d * scroller.current.clientWidth * 0.75, behavior: "smooth" })}
-                    aria-label={d < 0 ? "앞 장면" : "다음 장면"} className="flex h-9 w-9 items-center justify-center rounded-full border border-line bg-surface hover:bg-surface-2">
+                    aria-label={d < 0 ? "앞 장면" : "다음 장면"} className="hidden h-9 w-9 items-center justify-center rounded-full border border-line bg-surface hover:bg-surface-2 md:flex">
               {d < 0 ? "‹" : "›"}
             </button>
           ))}
@@ -188,36 +193,43 @@ function ListShell({ title, sub, chips, chip, onChip, loading, error, empty, non
       <SectionHead title={title} sub={sub} />
       {chipRow}
       {state ?? (
-        <ul className="mt-3 -mx-2.5 animate-appear">
-          {rows.map((r) => (
+        <ul className="mt-2 animate-appear divide-y divide-line rounded-2xl border border-line bg-surface px-3.5 md:mt-3 md:-mx-2.5 md:divide-y-0 md:rounded-none md:border-0 md:bg-transparent md:px-0">
+          {rows.map((r, i) => (
             <Fragment key={r.key}>
-              <SceneRow row={r} on={playing?.key === r.key} onPlay={() => play(r)} />
+              <SceneRow row={r} on={playing?.key === r.key} onPlay={() => play(r)} hide={!wide && i >= MOBILE_ROWS} />
               {playing?.key === r.key && <li><InlinePlayer playing={playing} onClose={() => setPlaying(null)} className="my-2" /></li>}
             </Fragment>
           ))}
         </ul>
       )}
+      {!state && !wide && rows.length > MOBILE_ROWS && (
+        <button onClick={() => setWide(true)} className="mt-2 flex h-11 w-full items-center justify-center rounded-xl bg-surface-2 text-[13px] font-bold md:hidden">
+          {rows.length - MOBILE_ROWS}개 더 보기
+        </button>
+      )}
     </section>
   );
 }
 
-function SceneRow({ row, on, onPlay }: { row: Row; on: boolean; onPlay: () => void }) {
+const MOBILE_ROWS = 6;
+
+function SceneRow({ row, on, onPlay, hide }: { row: Row; on: boolean; onPlay: () => void; hide: boolean }) {
   return (
-    <li>
-      <button onClick={onPlay} aria-expanded={on} className="group flex w-full items-center gap-4 rounded-2xl p-2.5 text-left hover:bg-surface aria-expanded:bg-surface">
-        <span className="relative block aspect-video w-[152px] shrink-0 overflow-hidden rounded-xl bg-night">
+    <li className={hide ? "hidden md:list-item" : ""}>
+      <button onClick={onPlay} aria-expanded={on} className="group flex w-full items-center gap-3 py-2 text-left hover:bg-surface aria-expanded:bg-surface md:gap-4 md:rounded-2xl md:p-2.5">
+        <span className="relative block aspect-video w-28 shrink-0 overflow-hidden rounded-lg bg-night md:w-[152px] md:rounded-xl">
           <img src={thumbnailUrl(row.clip.videoId)} alt="" className="h-full w-full object-cover" loading="lazy" />
           <span className="absolute right-2 bottom-2 rounded bg-black/70 px-1.5 py-0.5 font-num text-[11px] font-bold text-white">{mmss(clipLength(row.clip))}</span>
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-bold text-fg-2">{row.tag}</span>
-            <span className="truncate text-[17px] font-bold">{row.title}</span>
+            <span className="hidden rounded bg-surface-2 px-1.5 py-0.5 text-[11px] font-bold text-fg-2 md:block">{row.tag}</span>
+            <span className="truncate text-sm font-bold md:text-[17px]">{row.title}</span>
           </span>
-          <span className="mt-1 block truncate text-sm text-fg-2">{row.lines[0]}</span>
-          <span className="mt-0.5 block truncate text-xs text-muted">{row.lines[1]}</span>
+          <span className="mt-0.5 block truncate text-xs text-fg-2 md:mt-1 md:text-sm">{row.lines[0]}</span>
+          <span className="mt-0.5 block truncate text-xs text-fg-2 md:text-muted">{row.lines[1]}</span>
         </span>
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line bg-surface group-hover:border-accent group-hover:bg-accent group-hover:text-white group-aria-expanded:border-accent group-aria-expanded:bg-accent group-aria-expanded:text-white">
+        <span className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-full border border-line bg-surface group-hover:border-accent md:flex group-hover:bg-accent group-hover:text-white group-aria-expanded:border-accent group-aria-expanded:bg-accent group-aria-expanded:text-white">
           <PlayGlyph size={11} />
         </span>
       </button>

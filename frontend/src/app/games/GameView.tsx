@@ -18,7 +18,7 @@ import { ApiError, gameDate, getDay, getGameBox, qk, type BoxTeam, type Clip, ty
 import { innings, md, rate3 } from "@/lib/format";
 import { useReducedMotion } from "@/lib/motion";
 import { team as teamOf, teamHref } from "@/lib/teams";
-import { useDocTitle } from "@/lib/title";
+import { useDocTitle, useNavCrumb } from "@/lib/title";
 
 const RUNS = ["", "솔로", "투런", "스리런", "만루"];
 type Now = { key: string; clip: Clip; label: string; title: string };
@@ -38,6 +38,7 @@ export default function GameView() {
   const [ended, setEnded] = useState<string | null>(null); // 끝까지 본 장면의 key → 다음 장면 카운트다운
 
   const g = day.data?.games.find((x) => x.game_pk === id);
+  useNavCrumb("경기 상세");
   useDocTitle(g && date ? `${md(date)} ${g.away.team} ${g.away.score} : ${g.home.score} ${g.home.team}` : null);
   // 없는 경기 번호면 그날(번호에서 읽은 날짜가 맞으면) 일정으로 보낸다
   const missing = !id || !date || (box.error instanceof ApiError && box.error.status === 404) || (!!day.data && !g);
@@ -67,27 +68,28 @@ export default function GameView() {
   const next = at >= 0 ? nows[at + 1] ?? null : null;
 
   return (
-    <Wrap className="animate-appear pt-10 pb-24">
-      <nav className="text-[13px] text-muted" aria-label="위치">
+    <Wrap className="night-mobile animate-appear pb-6 md:pt-10 md:pb-24">
+      <nav className="hidden text-[13px] text-muted md:block" aria-label="위치">
         <Link href={`/schedule/?${new URLSearchParams({ date: date! })}`} className="hover:underline">일정</Link> <span aria-hidden>›</span> {md(date!)}({weekday(date!)})
       </nav>
-      <div className="mt-4 grid items-start gap-8 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0">
+      <div className="grid grid-cols-[minmax(0,1fr)] items-start md:mt-4 lg:grid-cols-[minmax(0,1fr)_380px] lg:gap-8">
+        {/* 좁은 폭 순서: 영상 → 정보 → 점수판 → 이 경기의 장면 → 경기 기록 */}
+        <div className="contents min-w-0 lg:block">
           <Stage now={cur} onStart={() => cur && play(cur)} onEnded={() => cur && setEnded(cur.key)}
                  fallback={base && cur && cur.key !== base.key && cur.clip.videoId !== base.clip.videoId
                    ? { label: "이 경기 하이라이트로 보기", onClick: () => play(base) } : undefined}>
             {cur?.on && ended === cur.key && next && <NextUp key={next.key} next={next} onGo={() => play(next)} onCancel={() => setEnded(null)} />}
           </Stage>
-          <p className="mt-5 flex flex-wrap items-center gap-2 text-xs font-bold">
+          <p className="mt-3 flex flex-wrap items-center gap-2 text-xs font-bold md:mt-5">
             {g.stage_label ? <StageTag label={g.stage_label} /> : <span className="rounded-md bg-fg px-2 py-1 text-bg">정규시즌</span>}
             <span className="rounded-md bg-surface-2 px-2 py-1 text-fg-2">{md(date!)} ({weekday(date!)})</span>
             {cur && <span className="rounded-md bg-surface-2 px-2 py-1 text-fg-2">{cur.label}</span>}
           </p>
-          <h1 className="mt-3 flex flex-wrap items-center gap-3 text-[36px] leading-tight font-extrabold tracking-tight">
-            <TeamLogo team={g.away.team} height={32} /> {scoreLine(g)} <TeamLogo team={g.home.team} height={32} />
+          <h1 className="mt-2 flex flex-wrap items-center gap-2 text-[22px] leading-tight font-bold tracking-tight md:mt-3 md:gap-3 md:text-[36px] md:font-extrabold">
+            <span className="hidden md:block"><TeamLogo team={g.away.team} height={32} /></span> {scoreLine(g)} <span className="hidden md:block"><TeamLogo team={g.home.team} height={32} /></span>
           </h1>
-          <p className="mt-1.5 text-sm text-fg-2">{meta}</p>
-          <div className="mt-4 flex flex-wrap gap-2">
+          <p className="mt-1 text-[13px] text-fg-2 md:mt-1.5 md:text-sm">{meta}</p>
+          <div className="mt-3 grid grid-cols-2 gap-1.5 md:mt-4 md:flex md:flex-wrap md:gap-2 [&>*]:max-md:h-11 [&>*]:max-md:justify-center [&>*]:max-md:rounded-xl [&>*]:max-md:px-1 [&>*]:max-md:text-[13px]">
             {[g.away.team, g.home.team].map((t) => (
               <Link key={t} href={teamHref(t)} className={`${BTN} flex items-center gap-2`}><TeamLogo team={t} height={18} /> {t} 팀 보기</Link>
             ))}
@@ -96,10 +98,10 @@ export default function GameView() {
           </div>
 
           <ThisGame g={g} winner={winner} current={cur?.key ?? null} onPlay={play} />
-          <Box box={box.data} pending={box.isPending} />
+          <div className="order-3 min-w-0"><Box box={box.data} pending={box.isPending} /></div>
         </div>
 
-        <aside className="space-y-5 lg:sticky lg:top-24">
+        <aside className="order-2 mt-4 space-y-3 md:space-y-5 lg:sticky lg:top-24 lg:mt-0">
           <Panel title={`이 경기의 장면 ${scenes.length}`}>
             {scenes.length ? (
               <ul className="space-y-1">
@@ -159,7 +161,7 @@ function Stage({ now, onStart, onEnded, fallback, children }: {
   children?: ReactNode;
 }) {
   return (
-    <div className="relative aspect-video overflow-hidden rounded-[28px] bg-night">
+    <div className="relative -mx-4 aspect-video overflow-hidden bg-night md:mx-0 md:rounded-[28px]">
       {!now ? (
         <div className="flex h-full items-center justify-center text-sm text-[#a1a1a8]">이 경기 영상이 아직 없어요</div>
       ) : now.on ? (
@@ -210,9 +212,9 @@ function NextUp({ next, onGo, onCancel }: { next: Now; onGo: () => void; onCance
 
 function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-3xl border border-line bg-surface p-5">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <h2 className="text-lg font-bold">{title}</h2>
+    <section className="rounded-2xl border border-line bg-surface p-3 md:rounded-3xl md:p-5">
+      <div className="mb-2 flex items-center justify-between gap-3 md:mb-3">
+        <h2 className="text-[15px] font-bold md:text-lg">{title}</h2>
         {right}
       </div>
       {children}
@@ -222,7 +224,7 @@ function Panel({ title, right, children }: { title: string; right?: ReactNode; c
 
 function Thumb({ clip }: { clip: Clip | null }) {
   return (
-    <span className="relative block aspect-video w-[128px] shrink-0 overflow-hidden rounded-xl bg-night">
+    <span className="relative block aspect-video w-28 shrink-0 overflow-hidden rounded-lg bg-night md:w-[128px] md:rounded-xl">
       {clip && <img src={thumbnailUrl(clip.videoId)} alt="" className="h-full w-full object-cover" loading="lazy" />}
       {clip && <span className="absolute right-1.5 bottom-1.5 rounded bg-black/75 px-1 py-px font-num text-[10px] font-semibold text-white">{mmss(clipLength(clip))}</span>}
     </span>
@@ -232,13 +234,16 @@ function Thumb({ clip }: { clip: Clip | null }) {
 function SceneRow({ clip, title, sub, on, onClick }: { clip: Clip; title: string; sub: string; on: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} aria-current={on ? "true" : undefined}
-            className="group flex w-full items-center gap-3 rounded-2xl p-2 text-left hover:bg-surface-2 aria-[current=true]:bg-surface-2">
-      <Thumb clip={clip} />
-      <span className="min-w-0">
-        <span className="block truncate text-[15px] font-bold group-hover:underline">{title}</span>
+            className="group flex w-full items-center gap-3 rounded-2xl px-2 py-2.5 text-left hover:bg-surface-2 aria-[current=true]:bg-surface-2 md:p-2">
+      {/* 휴대폰은 썸네일 대신 ▶ — 위 영상 칸과 같은 하이라이트 그림이 줄마다 되풀이돼서 (M04b · 11-08) */}
+      <span className="hidden md:block"><Thumb clip={clip} /></span>
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface-3 md:hidden"><PlayGlyph size={7} /></span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate text-sm font-bold group-hover:underline md:text-[15px]">{title}</span>
         <span className="mt-0.5 block truncate text-xs text-fg-2">{sub}</span>
         {on && <span className="mt-1 inline-block rounded bg-accent px-1.5 py-px text-[10px] font-bold text-white">지금 보는 장면</span>}
       </span>
+      <span className="shrink-0 font-num text-xs text-fg-2 md:hidden">{mmss(clipLength(clip))}</span>
     </button>
   );
 }
@@ -252,53 +257,54 @@ function ThisGame({ g, winner, current, onPlay }: { g: DayGame; winner: string |
   ];
   const withScene = g.homeRuns.filter((h) => h.clip).length;
   return (
-    <section className="mt-8 rounded-3xl border border-line bg-surface p-6">
+    <section className="mt-3 rounded-2xl border border-line bg-surface p-3 md:mt-8 md:rounded-3xl md:p-6">
       <div className="mb-4 flex items-center justify-between gap-3">
         <h2 className="text-xl font-bold">이 경기</h2>
         <span className="text-[13px] text-fg-2">종료 · {winner ? `${winner} 승` : "무승부"}</span>
       </div>
-      <div className="overflow-x-auto rounded-2xl bg-surface-2 px-4 py-3">
-        <table className="w-full min-w-[520px] font-num text-sm">
+      <div className="overflow-x-auto rounded-xl bg-surface-2 px-2.5 py-2 md:rounded-2xl md:px-4 md:py-3">
+        <table className="w-full table-fixed font-num text-xs md:min-w-[520px] md:table-auto md:text-sm">
           <thead className="text-xs text-fg-2">
             <tr>
-              <th className="w-24 py-1.5 text-left font-medium" />
+              <th className="w-10 py-1.5 text-left font-medium md:w-24" />
               {Array.from({ length: n }, (_, i) => <th key={i} className="py-1.5 text-center font-medium">{i + 1}</th>)}
-              <th className="py-1.5 pl-3 text-center font-medium">점수</th>
-              <th className="py-1.5 text-center font-medium">안타</th>
+              <th className="w-7 py-1.5 text-center font-medium md:w-auto md:pl-3">점수</th>
+              <th className="w-7 py-1.5 text-center font-medium md:w-auto">안타</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
               <tr key={r.team} className={r.team === winner ? "font-bold" : "text-fg-2"}>
-                <td className="py-1.5"><span className="flex items-center gap-1.5 font-sans"><TeamLogo team={r.team} height={14} /> {r.team}</span></td>
+                <td className="py-1.5"><span className="flex items-center gap-1.5 font-sans"><span className="hidden md:block"><TeamLogo team={r.team} height={14} /></span> {r.team}</span></td>
                 {r.runs.map((v, i) => <td key={i} className="py-1.5 text-center">{v ?? "–"}</td>)}
-                <td className="py-1.5 pl-3 text-center font-display text-[20px] font-extrabold text-fg">{r.score}</td>
-                <td className="py-1.5 text-center font-display text-[20px] font-extrabold">{r.h}</td>
+                <td className="py-1.5 text-center font-display text-lg font-extrabold text-fg md:pl-3 md:text-[20px]">{r.score}</td>
+                <td className="py-1.5 text-center font-display text-lg font-extrabold md:text-[20px]">{r.h}</td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
-      <p className="mt-4 text-[13px] text-fg-2">이 경기 홈런 {g.homeRuns.length}개{g.homeRuns.length ? ` · 장면 있음 ${withScene}` : ""}</p>
+      <p className="mt-4 text-[13px] text-fg-2">이 경기 홈런 {g.homeRuns.length}개{g.homeRuns.length ? ` · 장면 있음 ${withScene}` : ""}{withScene > 0 && <span className="md:hidden"> · 장면은 아래 목록</span>}</p>
       {g.homeRuns.length > 0 && (
-        <div className="mt-2.5 flex flex-wrap gap-2">
+        // 휴대폰은 장면이 있는 홈런을 아래 「이 경기의 장면」에서만 보여 준다 (같은 내용 두 번 → 한 번)
+        <div className={`mt-2.5 flex-wrap gap-2 ${withScene === g.homeRuns.length ? "hidden md:flex" : "flex"}`}>
           {g.homeRuns.map((h) => {
             const k = `home_run-${h.player_id}-${h.inning}${h.inningHalf}-${h.hrSeq ?? ""}`;
             const text = `${h.name} ${h.label ?? (h.hrSeq ? `${h.hrSeq}호` : "홈런")} · ${h.inning}회${h.inningHalf}${h.runs > 1 ? ` ${RUNS[h.runs] ?? ""}` : ""}`;
             return h.clip ? (
               <button key={k} onClick={() => onPlay({ key: k, clip: h.clip!, label: "홈런 장면", title: text })} aria-current={current === k ? "true" : undefined}
-                      className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-xs font-bold hover:border-accent hover:bg-accent hover:text-white aria-[current=true]:border-accent aria-[current=true]:bg-accent aria-[current=true]:text-white">
+                      className="hidden h-11 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 text-xs font-bold md:flex hover:border-accent md:h-8 md:rounded-full hover:bg-accent hover:text-white aria-[current=true]:border-accent aria-[current=true]:bg-accent aria-[current=true]:text-white">
                 <PlayGlyph size={7} /> {text}
               </button>
             ) : g.highlight ? (
               // 이 홈런만 영상이 없으면 경기 하이라이트로 (09 「한 장면만 영상이 없을 때」)
               <button key={k} onClick={() => onPlay({ key: k, clip: g.highlight!, label: "이 홈런은 영상 없음 · 경기 하이라이트", title: `${text} · 경기 하이라이트` })}
                       aria-current={current === k ? "true" : undefined} title="이 홈런은 연결된 영상이 없어요. 경기 하이라이트에 들어 있을 수 있어요."
-                      className="flex h-8 items-center rounded-full border border-dashed border-line px-3 text-xs text-fg-2 hover:border-fg-2 hover:text-fg aria-[current=true]:border-fg aria-[current=true]:text-fg">
+                      className="flex h-11 items-center rounded-xl border border-dashed border-line px-3 text-xs md:h-8 md:rounded-full text-fg-2 hover:border-fg-2 hover:text-fg aria-[current=true]:border-fg aria-[current=true]:text-fg">
                 {text}
               </button>
             ) : (
-              <span key={k} title="이 홈런은 연결된 영상이 없어요" className="flex h-8 items-center rounded-full border border-dashed border-line px-3 text-xs text-fg-2">{text}</span>
+              <span key={k} title="이 홈런은 연결된 영상이 없어요" className="flex h-11 items-center rounded-xl border border-dashed border-line px-3 text-xs md:h-8 md:rounded-full text-fg-2">{text}</span>
             );
           })}
         </div>
@@ -317,9 +323,9 @@ function Box({ box, pending }: { box?: { away: BoxTeam; home: BoxTeam; date: str
   const th = "py-2.5 pl-2 text-right font-medium";
   const td = "py-2.5 pl-2 text-right font-num";
   return (
-    <section className="mt-6 rounded-3xl border border-line bg-surface p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">경기 기록</h2>
+    <section className="mt-3 rounded-2xl border border-line bg-surface p-3 md:mt-6 md:rounded-3xl md:p-6">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3 md:mb-4">
+        <h2 className="text-[17px] font-bold md:text-xl">경기 기록</h2>
         <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="팀">
           {(["away", "home"] as const).map((k) => (
             <button key={k} onClick={() => setSide(k)} aria-pressed={side === k}
@@ -330,11 +336,11 @@ function Box({ box, pending }: { box?: { away: BoxTeam; home: BoxTeam; date: str
         </Slide>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[560px] text-sm">
+        <table className="w-full text-[13px] md:min-w-[560px] md:text-sm">
           <thead className="text-xs text-fg-2">
             <tr className="border-b border-line">
               <th className="py-2.5 text-left font-medium">타자</th>
-              <th className={th}>타석</th><th className={th}>타수</th><th className={th}>안타</th><th className={th}>홈런</th><th className={th}>볼넷</th><th className={th}>삼진</th>
+              <th className={th}>타석</th><th className={`${th} max-md:hidden`}>타수</th><th className={th}>안타</th><th className={th}>홈런</th><th className={th}>볼넷</th><th className={th}>삼진</th>
             </tr>
           </thead>
           <tbody>
@@ -342,28 +348,28 @@ function Box({ box, pending }: { box?: { away: BoxTeam; home: BoxTeam; date: str
               <tr key={b.player_id} className="border-b border-line">
                 <td className="py-2">
                   <Link href={playerHref(b.player_id)} className="group flex items-center gap-2.5">
-                    <PlayerAvatar id={b.player_id} name={b.name} team={t.team} size={28} />
+                    <span className="hidden md:block"><PlayerAvatar id={b.player_id} name={b.name} team={t.team} size={28} /></span>
                     <span className="font-bold group-hover:underline">{b.name}</span>
-                    {b.position && <span className="text-xs text-fg-2">{b.position}</span>}
+                    {b.position && <span className="hidden text-xs text-fg-2 md:block">{b.position}</span>}
                   </Link>
                 </td>
-                <td className={td}>{b.pa}</td><td className={td}>{b.ab}</td>
+                <td className={td}>{b.pa}</td><td className={`${td} max-md:hidden`}>{b.ab}</td>
                 <td className={`${td} ${b.h >= 2 ? "font-bold" : ""}`}>{b.h}</td>
                 <td className={`${td} ${b.hr ? "font-bold text-(--team-text)" : ""}`} style={b.hr ? ({ "--team-text": teamOf(t.team)?.text } as CSSProperties) : undefined}>{b.hr}</td>
                 <td className={td}>{b.bb}</td><td className={td}>{b.so}</td>
               </tr>
             ))}
             <tr className="font-bold">
-              <td className="py-2.5">합계 <span className="ml-1 text-xs font-normal text-fg-2">타율 {rate3(bat.ab ? bat.h / bat.ab : null)}</span></td>
-              <td className={td}>{bat.pa}</td><td className={td}>{bat.ab}</td><td className={td}>{bat.h}</td><td className={td}>{bat.hr}</td><td className={td}>{bat.bb}</td><td className={td}>{bat.so}</td>
+              <td className="py-2.5">합계 <span className="ml-1 hidden text-xs font-normal text-fg-2 md:inline">타율 {rate3(bat.ab ? bat.h / bat.ab : null)}</span></td>
+              <td className={td}>{bat.pa}</td><td className={`${td} max-md:hidden`}>{bat.ab}</td><td className={td}>{bat.h}</td><td className={td}>{bat.hr}</td><td className={td}>{bat.bb}</td><td className={td}>{bat.so}</td>
             </tr>
           </tbody>
         </table>
-        <table className="mt-6 w-full min-w-[560px] text-sm">
+        <table className="mt-4 w-full text-[13px] md:mt-6 md:min-w-[560px] md:text-sm">
           <thead className="text-xs text-fg-2">
             <tr className="border-b border-line">
               <th className="py-2.5 text-left font-medium">투수</th>
-              <th className={th}>이닝</th><th className={th}>상대 타자</th><th className={th}>피안타</th><th className={th}>볼넷 · 몸에 맞는 공</th><th className={th}>삼진</th><th className={th}>실점</th>
+              <th className={th}>이닝</th><th className={`${th} max-md:hidden`}>상대 타자</th><th className={th}>피안타</th><th className={`${th} max-md:hidden`}>볼넷 · 몸에 맞는 공</th><th className={th}>삼진</th><th className={th}>실점</th>
             </tr>
           </thead>
           <tbody>
@@ -371,13 +377,13 @@ function Box({ box, pending }: { box?: { away: BoxTeam; home: BoxTeam; date: str
               <tr key={p.outing_id} className="border-b border-line last:border-0">
                 <td className="py-2">
                   <Link href={playerHref(p.player_id, { view: "pitcher", tab: "games", season: String(box.season), month: String(Number(box.date.slice(5, 7))), outing: p.outing_id })} className="group flex items-center gap-2.5">
-                    <PlayerAvatar id={p.player_id} name={p.name} team={t.team} size={28} />
+                    <span className="hidden md:block"><PlayerAvatar id={p.player_id} name={p.name} team={t.team} size={28} /></span>
                     <span className="font-bold group-hover:underline">{p.name}</span>
-                    <span className="text-xs text-fg-2">{p.role}</span>
+                    <span className="hidden text-xs text-fg-2 md:block">{p.role}</span>
                   </Link>
                 </td>
-                <td className={td}>{innings(p.outs)}</td><td className={td}>{p.tbf}</td><td className={td}>{p.h}</td>
-                <td className={td}>{p.bb} · {p.hbp}</td><td className={td}>{p.so}</td>
+                <td className={td}>{innings(p.outs)}</td><td className={`${td} max-md:hidden`}>{p.tbf}</td><td className={td}>{p.h}</td>
+                <td className={`${td} max-md:hidden`}>{p.bb} · {p.hbp}</td><td className={td}>{p.so}</td>
                 <td className={`${td} ${p.r === 0 && p.outs >= 9 ? "font-bold" : ""}`}>{p.r}</td>
               </tr>
             ))}

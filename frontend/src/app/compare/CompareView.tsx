@@ -13,11 +13,13 @@ import { thumbnailUrl } from "@/components/ScenePlayer";
 import SearchBox, { playerHref } from "@/components/SearchBox";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
+import Seg from "@/components/ui/Seg";
 import Slide from "@/components/ui/Slide";
 import { ApiError, getCompare, getMeta, getPlayer, getSimilar, qk, type ComparePlayer, type PlayerSummary } from "@/lib/api";
 import { josa } from "@/lib/abilities";
 import { axisCopy } from "@/lib/axes";
 import { innings, md, rate3 } from "@/lib/format";
+import { useNavCrumb } from "@/lib/title";
 import { leaguePosition } from "@/lib/position";
 import { photoUrl, team as teamOf } from "@/lib/teams";
 
@@ -56,6 +58,7 @@ const PIT_ROWS: Row[] = [
  * 한 명뿐이면 「선수 추가」 칸에 비슷한 선수(API-31) 바로가기 + 검색
  */
 export default function CompareView() {
+  useNavCrumb("선수 › 비교");
   const params = useSearchParams();
   const router = useRouter();
   const role: Role = params.get("as") === "pitcher" ? "pitcher" : "batter";
@@ -82,16 +85,18 @@ export default function CompareView() {
     role === "pitcher" ? "순위는 각자 역할(선발 · 불펜) 비교 대상 안" : cmp.data?.group_size && `타자 ${cmp.data.group_size}명 중 순위`, `최대 ${MAX}명`].filter(Boolean).join(" · ");
 
   return (
-    <Wrap className="pt-10 pb-24">
-      <nav className="text-[13px] text-muted" aria-label="위치">
+    <Wrap className="pt-2 pb-6 md:pt-10 md:pb-24">
+      <nav className="hidden text-[13px] text-muted md:block" aria-label="위치">
         <Link href="/rankings/" className="hover:underline">선수</Link> <span aria-hidden>›</span> 비교
       </nav>
-      <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-2 md:mt-3">
         <div>
-          <h1 className="text-[40px] font-extrabold tracking-tight">선수 비교</h1>
-          <p className="mt-1.5 text-sm text-fg-2">{sub}</p>
+          <h1 className="text-[26px] font-black tracking-tight md:text-[40px] md:font-extrabold">선수 비교</h1>
+          <p className="mt-1 text-xs text-fg-2 md:mt-1.5 md:text-sm">{sub}</p>
         </div>
-        <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
+        {/* 휴대폰은 가로 꽉 전환 칸 (M07 · 11-08), PC는 오른쪽 작은 알약 */}
+        <Seg className="w-full md:hidden" label="타자 · 투수" value={role} onChange={(r) => r !== role && go([], r)} items={[{ key: "batter" as const, label: "타자" }, { key: "pitcher" as const, label: "투수" }]} />
+        <Slide mark="rounded-full bg-surface-3" className="hidden rounded-full border border-line bg-surface p-1 md:flex" role="group" aria-label="타자 · 투수">
           {(["batter", "pitcher"] as const).map((r) => (
             <button key={r} onClick={() => r !== role && go([], r)} aria-pressed={role === r}
                     className="relative h-[30px] rounded-full px-5 text-[13px] font-medium text-fg-2 aria-pressed:font-bold aria-pressed:text-fg">
@@ -101,7 +106,7 @@ export default function CompareView() {
         </Slide>
       </div>
 
-      <div className="mt-7 grid items-start gap-4 lg:grid-cols-3">
+      <div className="mt-3 grid grid-cols-2 items-stretch gap-2 md:mt-7 md:gap-4 lg:grid-cols-3 lg:items-start">
         {ids.map((id, i) => (
           <PlayerCard key={id} i={i} p={summaries[i]} c={data?.players[valid.indexOf(id)]} role={role} missing={missing.includes(id)}
                       onSwap={(nid) => go(ids.map((x) => (x === id ? nid : x)))}
@@ -119,7 +124,7 @@ export default function CompareView() {
       ) : (
         <div className="animate-appear">
           <Abilities data={data.players} n={data.group_size ?? null} />
-          <div className="mt-6 grid items-start gap-6 lg:grid-cols-2">
+          <div className="mt-3 grid items-start gap-3 md:mt-6 md:gap-6 lg:grid-cols-2">
             <Stats players={data.players} rows={role === "pitcher" ? PIT_ROWS : BAT_ROWS} />
             <Scenes ids={valid} summaries={valid.map((id) => summaries[ids.indexOf(id)])} role={role} names={data.players.map((p) => p.name)} />
           </div>
@@ -151,23 +156,23 @@ function PlayerCard({ i, p, c, role, missing, onSwap, onRemove, exclude }: {
     : p?.stats && `${p.stats.hr}홈런 · OPS ${rate3(p.stats.ops)}`;
   const pos = role === "pitcher" && pi ? `투수 (${pi.roleLabel})` : p?.position;
   return (
-    <div className="overflow-hidden rounded-3xl border border-line bg-surface">
+    <div className="overflow-hidden rounded-2xl border border-line bg-surface md:rounded-3xl">
       <div className="h-1" style={{ background: SERIES[i] }} aria-hidden />
-      <div className="flex gap-4 p-5">
+      <div className="flex flex-col items-center gap-2 p-3 text-center md:flex-row md:items-stretch md:gap-4 md:p-5 md:text-left">
         <span className="flex h-[88px] w-[70px] shrink-0 items-end justify-center overflow-hidden rounded-2xl" style={{ background: t?.soft ?? "var(--surface-2)" }}>
           {p && <img src={photoUrl(p.playerId)} alt="" className="h-full w-full object-cover object-top" onError={(e) => { e.currentTarget.style.visibility = "hidden"; }} />}
         </span>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <Link href={p ? playerHref(p.playerId) : "#"} className="flex min-w-0 items-center gap-2 text-[22px] leading-tight font-extrabold hover:underline">
-              <span className="truncate">{p?.name ?? c?.name ?? (missing ? "없는 선수" : "…")}</span> <TeamLogo team={t?.name} height={22} />
+        <div className="w-full min-w-0 flex-1">
+          <div className="flex flex-col items-center gap-1 md:flex-row md:items-start md:justify-between md:gap-2">
+            <Link href={p ? playerHref(p.playerId) : "#"} className="flex max-w-full min-w-0 items-center gap-1.5 text-base leading-tight font-bold hover:underline md:gap-2 md:text-[22px] md:font-extrabold">
+              <span className="truncate">{p?.name ?? c?.name ?? (missing ? "없는 선수" : "…")}</span> <TeamLogo team={t?.name} height={16} />
             </Link>
-            <span className="flex shrink-0 gap-2 text-xs font-bold text-fg-2">
-              <button onClick={() => setSwap(!swap)} className="hover:text-fg hover:underline">{swap ? "닫기" : "바꾸기"}</button>
-              {onRemove && <button onClick={onRemove} className="hover:text-fg hover:underline">빼기</button>}
+            <span className="order-last -mb-2 flex shrink-0 text-[13px] font-bold text-fg-2 md:order-none md:mb-0 md:gap-2 md:text-xs">
+              <button onClick={() => setSwap(!swap)} className="h-11 px-2.5 hover:text-fg hover:underline md:h-auto md:px-0">{swap ? "닫기" : "바꾸기"}</button>
+              {onRemove && <button onClick={onRemove} className="h-11 px-2.5 hover:text-fg hover:underline md:h-auto md:px-0">빼기</button>}
             </span>
           </div>
-          {!missing && <p className="mt-1 truncate text-[13px] text-fg-2">{[t?.full ?? p?.team, pos].filter(Boolean).join(" · ")}</p>}
+          {!missing && <p className="mt-1 truncate text-xs text-fg-2 md:text-[13px]">{[t?.full ?? p?.team, pos].filter(Boolean).join(" · ")}</p>}
           {chip && (
             <p className="mt-2 inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-bold" style={{ background: tint(i) }}>
               <span className="h-1.5 w-1.5 rounded-full" style={{ background: SERIES[i] }} aria-hidden /> {chip}
@@ -187,12 +192,12 @@ function AddCard({ role, base, season, exclude, open, onAdd }: {
 }) {
   const [on, setOn] = useState(false);
   if (!open && !on) return (
-    <button onClick={() => setOn(true)} className="flex min-h-[132px] flex-col items-center justify-center gap-1.5 rounded-3xl border-2 border-dashed border-line text-sm font-bold text-fg-2 hover:bg-surface">
+    <button onClick={() => setOn(true)} className="col-span-2 flex h-11 flex-row items-center justify-center gap-1.5 rounded-xl border border-line-strong md:col-span-1 md:min-h-[132px] md:flex-col md:rounded-3xl md:border-2 md:border-dashed md:border-line text-sm font-bold text-fg-2 hover:bg-surface">
       <span className="text-2xl leading-none" aria-hidden>+</span> 선수 추가
     </button>
   );
   return (
-    <div className="rounded-3xl border-2 border-dashed border-line p-5">
+    <div className="col-span-2 rounded-2xl border-2 border-dashed border-line p-3.5 md:col-span-1 md:rounded-3xl md:p-5">
       <p className="mb-3 text-sm font-bold">선수 추가</p>
       <Picker role={role} base={base} season={season} exclude={exclude} onPick={(id) => { setOn(false); onAdd(id); }} />
     </div>
@@ -229,9 +234,9 @@ function Picker({ role, base, season, exclude, onPick }: { role: Role; base?: st
 
 function Panel({ title, right, children }: { title: string; right?: ReactNode; children: ReactNode }) {
   return (
-    <section className="rounded-3xl border border-line bg-surface p-6">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-xl font-bold">{title}</h2>
+    <section className="rounded-2xl border border-line bg-surface p-3.5 md:rounded-3xl md:p-6">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-3 md:mb-4">
+        <h2 className="text-[17px] font-bold md:text-xl">{title}</h2>
         {right}
       </div>
       {children}
@@ -265,7 +270,7 @@ function Abilities({ data, n }: { data: ComparePlayer[]; n: number | null }) {
               : cells.map((c, i) => ({ i, p: c?.percentile ?? null })).filter((x) => x.p != null).sort((a, b) => b.p! - a.p!);
             const win = scored.length >= 2 ? (scored[0].p! - scored[1].p! < (mixed ? Number.EPSILON : CLOSE) ? null : scored[0].i) : null;
             return (
-              <li key={key} className="grid items-center gap-4 py-4 md:grid-cols-[180px_minmax(0,1fr)_96px]">
+              <li key={key} className="grid items-center gap-2 py-3 md:grid-cols-[180px_minmax(0,1fr)_96px] md:gap-4 md:py-4">
                 <div>
                   <p className="text-[15px] font-bold">{cells[0]?.label ?? copy?.chip}</p>
                   <p className="mt-0.5 text-xs text-fg-2">{copy?.sub}</p>
@@ -275,7 +280,7 @@ function Abilities({ data, n }: { data: ComparePlayer[]; n: number | null }) {
                     const size = n ?? data[i].group_size ?? 0;
                     const pos = c?.percentile != null && c.rank != null ? leaguePosition(c.percentile, c.rank, size) : null;
                     return (
-                      <div key={i} className="grid grid-cols-[96px_minmax(0,1fr)_118px_52px] items-center gap-3 text-[13px]">
+                      <div key={i} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-2 gap-y-1 text-xs md:grid-cols-[96px_minmax(0,1fr)_118px_52px] md:gap-3 md:text-[13px] [&>*:nth-child(2)]:max-md:order-last [&>*:nth-child(2)]:max-md:col-span-3">
                         <Name name={data[i].name} team={data[i].team} bold={false} />
                         {c?.percentile != null ? (
                           <span className="h-2 overflow-hidden rounded-full bg-surface-3">

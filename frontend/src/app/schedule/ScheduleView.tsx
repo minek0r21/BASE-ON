@@ -7,15 +7,18 @@ import { useState } from "react";
 import { Wrap, clipLength, gameHref } from "@/components/home/common";
 import type { Playing } from "@/components/home/DayScenes";
 import InlinePlayer from "@/components/InlinePlayer";
+import GameScore from "@/components/schedule/GameScore";
 import NoGames from "@/components/schedule/NoGames";
 import WeekStrip from "@/components/schedule/WeekStrip";
 import { Chip, Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo, mmss } from "@/components/ui/Media";
+import Seg from "@/components/ui/Seg";
 import { getDay, getMeta, qk, type DayGame, type DayHomeRun } from "@/lib/api";
 import { longDate } from "@/lib/dates";
 import { md } from "@/lib/format";
 import { useMyTeam } from "@/lib/local";
 import { team as teamOf, type Team } from "@/lib/teams";
+import { ChevronDown } from "@/components/ui/Chevron";
 
 /**
  * 08 일정 (Figma 158:2099) — 한 주 띠(API-34) → 고른 날의 경기 카드(API-14): 점수 · 이닝별 점수판 · 그 경기 홈런 칩.
@@ -44,16 +47,16 @@ export default function ScheduleView() {
   const future = !!(date && asOf && date > asOf);
 
   return (
-    <Wrap className="pt-10 pb-24">
+    <Wrap className="pt-3 pb-6 md:pt-10 md:pb-24">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h1 className="text-[40px] font-extrabold tracking-tight">일정</h1>
-          <p className="mt-1.5 text-sm text-fg-2">
+          <h1 className="text-[26px] font-black tracking-tight md:text-[40px] md:font-extrabold">일정</h1>
+          <p className="mt-1 text-xs text-fg-2 md:mt-1.5 md:text-sm">
             {[meta.data?.season && `${meta.data.season} 정규시즌`, asOf && `${md(asOf)} 기준`].filter(Boolean).join(" · ")}
           </p>
         </div>
         {myTeam && (
-          <div className="flex items-center gap-2" role="group" aria-label="팀">
+          <div className="hidden items-center gap-2 md:flex" role="group" aria-label="팀">
             <span className="text-xs text-muted">팀</span>
             <Chip on={!onlyMine} onClick={() => setOnlyMine(false)}>전체</Chip>
             <Chip on={onlyMine} onClick={() => setOnlyMine(true)}>
@@ -63,9 +66,14 @@ export default function ScheduleView() {
         )}
       </div>
 
+      {myTeam && (
+        <Seg className="mt-3 md:hidden" label="팀" value={onlyMine ? "mine" : "all"} onChange={(v) => setOnlyMine(v === "mine")}
+             items={[{ key: "all", label: "전체" }, { key: "mine", label: `${myTeam} 경기만` }]} />
+      )}
+
       {date && (
-        <div className="mt-7">
-          <WeekStrip date={date} onPick={pick} caption={(d) => `${d.games}경기 · 홈런 ${d.home_runs}`} />
+        <div className="mt-2 md:mt-7">
+          <WeekStrip date={date} onPick={pick} caption={(d) => `${d.games}경기 · 홈런 ${d.home_runs}`} short={(d) => `${d.games}경기`} />
         </div>
       )}
 
@@ -78,14 +86,14 @@ export default function ScheduleView() {
         <div className="mt-8 h-[600px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
         <div className="animate-appear">
-          <div className="mt-9 flex flex-wrap items-end justify-between gap-3">
-            <h2 className="text-2xl font-bold">
+          <div className="mt-5 flex flex-wrap items-end justify-between gap-x-3 gap-y-1 md:mt-9">
+            <h2 className="text-xl font-black md:text-2xl md:font-bold">
               {longDate(day.data.date)} · {games.length}경기
             </h2>
             {c && (
               <p className="flex items-center gap-2 text-xs text-fg-2">
-                <span className="flex h-6 items-center gap-1 rounded-full bg-accent px-2.5 font-bold text-white"><PlayGlyph size={6} /> 장면 있는 홈런</span>
-                <span className="flex h-6 items-center rounded-full bg-surface-2 px-2.5 font-medium">영상 없음</span>
+                <span className="hidden h-6 items-center gap-1 rounded-full bg-accent px-2.5 font-bold text-white md:flex"><PlayGlyph size={6} /> 장면 있는 홈런</span>
+                <span className="hidden h-6 items-center rounded-full bg-surface-2 px-2.5 font-medium md:flex">영상 없음</span>
                 홈런 {c.home_runs}개 중 장면 {c.home_run_scenes}개
               </p>
             )}
@@ -93,11 +101,12 @@ export default function ScheduleView() {
           {onlyMine && shown.length === 0 ? (
             <Empty text={`이날은 ${myTeam} 경기가 없어요`} />
           ) : (
-            <ul className="mt-5 space-y-4">
-              {shown.map((g) => (
+            <ul className="mt-2 space-y-2 md:mt-5 md:space-y-4">
+              {shown.map((g, i) => (
                 <GameCard
                   key={g.game_pk}
                   game={g}
+                  first={i < 2}
                   mine={mine(g) ? teamOf(myTeam) : null}
                   playing={playing?.gamePk === g.game_pk ? playing : null}
                   onPlay={(p) => setPlaying(p && { ...p, gamePk: g.game_pk })}
@@ -113,25 +122,41 @@ export default function ScheduleView() {
 
 const hrText = (h: DayHomeRun) => `${h.name}${h.hrSeq ? ` ${h.hrSeq}호` : ""} · ${h.inning}회${h.inningHalf}`;
 
-function GameCard({ game: g, mine, playing, onPlay }: {
+function GameCard({ game: g, first, mine, playing, onPlay }: {
   game: DayGame;
+  /** 모바일은 위 두 경기만 펼쳐 둔다 (M08). 나머지는 누르면 펼침 */
+  first: boolean;
   mine: Team | null;
   playing: Playing | null;
   onPlay: (p: Playing | null) => void;
 }) {
+  const [opened, setOpened] = useState(false);
+  const open = first || opened || !!mine || !!playing;
+  const fold = open ? "" : "hidden md:block";
   const extra = (g.innings ?? 9) > 9 ? `연장 ${g.innings}회` : null;
   const draw = g.away.result === "D" ? "무승부" : null;
   return (
     <li
-      className="grid items-center gap-6 rounded-3xl border border-line bg-surface p-6 lg:grid-cols-[220px_auto_1fr]"
+      className="grid items-center gap-2.5 rounded-2xl border border-line bg-surface p-3.5 md:gap-6 md:rounded-3xl md:p-6 lg:grid-cols-[220px_auto_1fr]"
       style={mine ? { borderColor: mine.band, borderWidth: 2 } : undefined} // 응원팀 경기는 팀 색 테두리
     >
-      <div>
+      {!open && (
+        <button onClick={() => setOpened(true)} aria-expanded={false} className="flex w-full items-center gap-2 text-left md:hidden">
+          <span className="min-w-0 flex-1">
+            <GameScore game={g} />
+            <span className="mt-1 block text-center text-xs text-fg-2">
+              {["종료", extra, draw].filter(Boolean).join(" · ")} · {g.homeRuns.length ? `이 경기 홈런 ${g.homeRuns.length}개` : "이 경기 홈런 없음"}
+            </span>
+          </span>
+          <ChevronDown />
+        </button>
+      )}
+      <div className={fold}>
         <p className="flex items-center gap-1.5 text-xs text-fg-2">
           {["종료", extra, draw, g.stage_label].filter(Boolean).join(" · ")}
           {mine && <span className="rounded-md bg-brand-soft px-1.5 py-0.5 text-[11px] font-bold text-brand-text">응원팀</span>}
         </p>
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 hidden space-y-2 md:block">
           {([[g.away, "원정"], [g.home, "홈"]] as const).map(([t, side]) => (
             <p key={side} className="flex items-center gap-2.5">
               <TeamLogo team={t.team} height={22} />
@@ -141,27 +166,27 @@ function GameCard({ game: g, mine, playing, onPlay }: {
             </p>
           ))}
         </div>
-        <Link href={gameHref(g.game_pk)} className="mt-3 inline-block text-xs font-bold text-brand-text hover:underline">경기 상세 ›</Link>
+        <Link href={gameHref(g.game_pk)} className="mt-3 hidden text-xs font-bold text-brand-text hover:underline md:inline-block">경기 상세 ›</Link>
       </div>
 
-      <LineScore game={g} />
+      <div className={`min-w-0 ${fold}`}><LineScore game={g} /></div>
 
-      <div className="min-w-0">
-        <p className="text-xs text-fg-2">{g.homeRuns.length ? `이 경기 홈런 ${g.homeRuns.length}개` : "이 경기 홈런 없음"}</p>
+      <div className={`min-w-0 ${fold}`}>
+        <p className="text-xs font-bold text-fg-2 md:font-normal">{g.homeRuns.length ? `이 경기 홈런 ${g.homeRuns.length}개` : "이 경기 홈런 없음"}</p>
         {g.homeRuns.length > 0 && (
-          <ul className="mt-2 flex flex-wrap gap-1.5">
+          <ul className="mt-2 divide-y divide-line overflow-hidden rounded-xl bg-surface-2 md:flex md:flex-wrap md:gap-1.5 md:divide-y-0 md:overflow-visible md:rounded-none md:bg-transparent">
             {g.homeRuns.map((h, i) => (
               <li key={`${h.player_id}-${i}`}>
                 {h.clip ? (
                   <button
                     onClick={() => onPlay({ clip: h.clip!, title: `${h.name}${h.hrSeq ? ` ${h.hrSeq}호` : ""} 홈런`, sub: `${h.inning}회${h.inningHalf}` })}
                     aria-current={playing?.title.startsWith(`${h.name}${h.hrSeq ? ` ${h.hrSeq}호` : ""} 홈런`) ? "true" : undefined}
-                    className="flex h-7 items-center gap-1 rounded-full bg-accent px-2.5 text-xs font-bold text-white hover:opacity-90 aria-[current=true]:bg-brand"
+                    className="flex h-11 w-full items-center gap-2 px-3.5 text-left text-[13px] font-bold hover:bg-surface-3 aria-[current=true]:bg-brand aria-[current=true]:text-white md:h-7 md:w-auto md:gap-1 md:rounded-full md:bg-accent md:px-2.5 md:text-xs md:text-white md:hover:bg-accent md:hover:opacity-90"
                   >
                     <PlayGlyph size={6} /> {hrText(h)}
                   </button>
                 ) : (
-                  <span className="flex h-7 items-center rounded-full bg-surface-2 px-2.5 text-xs font-medium text-fg-2" title="영상 없음">
+                  <span className="flex h-11 items-center px-3.5 text-[13px] font-medium text-fg-2 md:h-7 md:rounded-full md:bg-surface-2 md:px-2.5 md:text-xs" title="영상 없음">
                     {hrText(h)}
                   </span>
                 )}
@@ -169,14 +194,17 @@ function GameCard({ game: g, mine, playing, onPlay }: {
             ))}
           </ul>
         )}
-        {g.highlight && (
-          <button
-            onClick={() => onPlay({ clip: g.highlight!, title: `${g.away.team} ${g.away.score} : ${g.home.score} ${g.home.team} 경기 하이라이트`, sub: "처음부터" })}
-            className="mt-3 flex h-8 items-center gap-1.5 rounded-full bg-surface-2 px-3.5 text-xs font-bold hover:bg-surface-3"
-          >
-            <PlayGlyph size={7} /> 이 경기 하이라이트 {mmss(clipLength(g.highlight))}
-          </button>
-        )}
+        <div className="mt-2.5 grid grid-cols-2 gap-1.5 md:mt-3 md:block">
+          {g.highlight && (
+            <button
+              onClick={() => onPlay({ clip: g.highlight!, title: `${g.away.team} ${g.away.score} : ${g.home.score} ${g.home.team} 경기 하이라이트`, sub: "처음부터" })}
+              className="flex h-11 items-center justify-center gap-1.5 rounded-xl bg-accent text-[13px] font-bold text-white hover:bg-surface-3 md:h-8 md:rounded-full md:bg-surface-2 md:px-3.5 md:text-xs md:text-fg"
+            >
+              <PlayGlyph size={7} /> <span className="md:hidden">하이라이트</span><span className="hidden md:inline">이 경기 하이라이트</span> {mmss(clipLength(g.highlight))}
+            </button>
+          )}
+          <Link href={gameHref(g.game_pk)} className="flex h-11 items-center justify-center rounded-xl bg-surface-2 text-[13px] font-bold md:hidden">경기 기록 ›</Link>
+        </div>
       </div>
 
       {playing && <InlinePlayer playing={playing} onClose={() => onPlay(null)} className="lg:col-span-3" />}
@@ -187,16 +215,17 @@ function GameCard({ game: g, mine, playing, onPlay }: {
 /** 이닝별 점수판 — 9회(연장이면 그만큼) + 점수 · 안타. 안 한 반 이닝은 「–」 */
 function LineScore({ game: g }: { game: DayGame }) {
   const n = g.line.away.length;
-  const cell = "w-6 text-center";
+  const cell = "text-center md:w-6";
   return (
-    <div className="overflow-x-auto rounded-2xl bg-surface-2 px-4 py-3">
-      <table className="font-num text-xs">
+    <div className="overflow-x-auto rounded-xl bg-surface-2 px-2.5 py-2 md:rounded-2xl md:px-4 md:py-3">
+      {/* 모바일은 표가 폭을 다 쓰고 이닝 칸이 남는 폭을 나눠 가진다 — 연장 11회도 옆으로 밀지 않는다 */}
+      <table className="w-full table-fixed font-num text-xs md:w-auto md:table-auto">
         <thead>
           <tr className="text-muted">
             <th className="w-10" />
             {Array.from({ length: n }, (_, i) => <th key={i} className={`${cell} font-medium`}>{i + 1}</th>)}
-            <th className="w-9 text-center font-medium">점수</th>
-            <th className="w-9 text-center font-medium">안타</th>
+            <th className="w-7 text-center font-medium md:w-9">점수</th>
+            <th className="w-7 text-center font-medium md:w-9">안타</th>
           </tr>
         </thead>
         <tbody>

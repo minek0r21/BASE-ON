@@ -2,6 +2,8 @@ import type { Metadata, Viewport } from "next";
 import { Big_Shoulders, Geist, Noto_Sans_KR } from "next/font/google";
 import Footer from "@/components/layout/Footer";
 import Nav from "@/components/layout/Nav";
+import TabBar from "@/components/layout/TabBar";
+import ToTop from "@/components/layout/ToTop";
 import Providers from "./providers";
 import "./globals.css";
 
@@ -24,17 +26,20 @@ export const metadata: Metadata = {
   formatDetection: { telephone: false, date: false, address: false, email: false }, // 기록 숫자를 전화번호로 잡지 않게
 };
 
-export const viewport: Viewport = { themeColor: "#2b63f0" };
+// viewportFit: 이 값이 있어야 env(safe-area-inset-*)가 값을 돌려준다 (하단 탭 · 가로 화면 여백)
+export const viewport: Viewport = { themeColor: "#2b63f0", viewportFit: "cover" };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="ko" className={`h-full antialiased ${noto.variable} ${shoulders.variable} ${geist.variable}`}>
-      <body className="flex min-h-full flex-col">
+      <body className="flex min-h-dvh flex-col pb-[calc(3.5rem+1px+env(safe-area-inset-bottom))] md:pb-0">
         <Providers>
           <Nav />
           {/* 화면마다 폭이 달라서(메인은 히어로가 화면 끝까지) 폭은 각 화면이 정한다 */}
           <main className="flex-1">{children}</main>
           <Footer />
+          <TabBar />
+          <ToTop />
         </Providers>
       </body>
     </html>

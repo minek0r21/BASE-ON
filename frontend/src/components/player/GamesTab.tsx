@@ -63,7 +63,7 @@ export default function GamesTab({ playerId, playerName, season, month, onChange
                     선수 영상
                   </PlayButton>
                 )}
-                <Link href={gameHref(g.gamePk)} className="flex h-8 items-center rounded-full px-2 text-xs font-bold text-brand-text hover:underline">경기 상세 ›</Link>
+                <Link href={gameHref(g.gamePk)} className="flex h-11 items-center rounded-full px-2 text-xs font-bold text-brand-text hover:underline md:h-8">경기 상세 ›</Link>
                 {g.highlight && (
                   <PlayButton on={now?.key === `${key}-hl`} onClick={() => setNow(now?.key === `${key}-hl` ? null : { key: `${key}-hl`, clip: g.highlight!, title: `${where} 하이라이트`, sub: g.stageLabel ?? undefined })}>
                     하이라이트
@@ -96,14 +96,14 @@ function GamePas({ gamePk, playerId, playerName, g, now, onPlay }: {
   };
 
   return (
-    <ol className="mx-3 mb-3 divide-y divide-line rounded-2xl bg-surface-2 px-4">
+    <ol className="mx-2 mb-2 divide-y divide-line rounded-xl bg-surface-2 px-3 md:mx-3 md:mb-3 md:rounded-2xl md:px-4">
       {q.data.pas.map((p) => {
         const hr = p.events === "home_run";
         const seq = p.post_hr_seq ? `포스트시즌 ${p.post_hr_seq}호` : p.hr_seq ? `시즌 ${p.hr_seq}호` : null;
         return (
-          <li key={p.pa_id} className="flex h-11 items-center gap-4 text-[13px]">
-            <span className="w-14 shrink-0 font-num text-fg-2">{p.inning}회{p.inning_half}</span>
-            <span className={`w-36 shrink-0 truncate ${hr ? "font-bold text-(--team-text)" : "font-medium"}`}>
+          <li key={p.pa_id} className="flex h-11 items-center gap-2 text-[13px] md:gap-4">
+            <span className="w-11 shrink-0 font-num text-fg-2 md:w-14">{p.inning}회{p.inning_half}</span>
+            <span className={`w-24 shrink-0 truncate md:w-36 ${hr ? "font-bold text-(--team-text)" : "font-medium"}`}>
               {p.events_ko}{hr && seq && <span className="ml-1.5 text-xs">{seq}</span>}
             </span>
             <span className="min-w-0 flex-1 truncate text-fg-2">vs {p.pitcher.name}</span>
@@ -112,7 +112,7 @@ function GamePas({ gamePk, playerId, playerName, g, now, onPlay }: {
                 onClick={() => play(p.pa_id, `${playerName} ${p.inning}회${p.inning_half} ${p.events_ko}`)}
                 aria-expanded={now?.key === `${gamePk}-pa-${p.pa_id}`}
                 aria-label={`${p.inning}회${p.inning_half} ${p.events_ko} 장면 재생`}
-                className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-white"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent text-white md:h-8 md:w-8"
               >
                 <PlayGlyph size={9} />
               </button>
@@ -135,7 +135,7 @@ export function MonthChips({ months, month, onPick }: { months: number[]; month:
 }
 
 export function GameList({ children }: { children: ReactNode }) {
-  return <ul className="divide-y divide-line overflow-hidden rounded-3xl border border-line bg-surface">{children}</ul>;
+  return <ul className="divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface md:rounded-3xl">{children}</ul>;
 }
 
 /** 경기 한 줄 — 날짜 · 상대(로고 + 홈/원정) · 결과 · 점수 · 내 기록, 오른쪽 재생 버튼. 가운데를 누르면 아래로 펼친다.
@@ -144,6 +144,19 @@ export function GameLine({ date, opponent, home, stage, result, score, line, rol
   date: string; opponent: string; home: boolean; stage: string | null; result: "W" | "L" | "D"; score: { team: number; opponent: number };
   line: ReactNode; role?: string; open?: boolean; onToggle?: () => void; toggleLabel?: string; children?: ReactNode;
 }) {
+  // 모바일 M03c: 왼쪽 날짜 · 상대 / 그날 기록, 오른쪽 점수 · 승패 — 칸이 폭을 나눠 가져 고정 폭이 없다
+  const mobile = (
+    <span className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 md:hidden">
+      <span className="flex min-w-0 items-center gap-1.5 text-sm font-bold">
+        <span className="truncate">{date} · vs {opponent} ({home ? "홈" : "원정"})</span>
+      </span>
+      <span className="row-span-2 flex flex-col items-end gap-0.5">
+        <span className="font-display text-lg leading-none font-extrabold">{score.team} : {score.opponent}</span>
+        <span className="text-xs text-fg-2">{RESULT_KO[result]}</span>
+      </span>
+      <span className="truncate text-xs text-fg-2">{line}</span>
+    </span>
+  );
   const body = (
     <>
       <span className="w-[72px] shrink-0 font-num text-[13px] text-fg-2">{date}</span>
@@ -162,16 +175,17 @@ export function GameLine({ date, opponent, home, stage, result, score, line, rol
     </>
   );
   return (
-    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 py-3">
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3.5 py-3 md:px-5">
       {onToggle ? (
-        <button onClick={onToggle} aria-expanded={open} className="group flex min-w-0 flex-1 items-center gap-4 text-left">
-          {body}
-          <span className="shrink-0 text-xs font-bold text-fg-2 group-hover:text-fg">{toggleLabel} {open ? "▴" : "▾"}</span>
+        <button onClick={onToggle} aria-expanded={open} className="group flex min-h-11 w-full min-w-0 flex-1 basis-full items-center gap-2 text-left md:min-h-0 md:basis-0 md:gap-4">
+          {mobile}
+          <span className="hidden min-w-0 flex-1 items-center gap-4 md:flex">{body}</span>
+          <span className="shrink-0 text-xs font-bold text-fg-2 group-hover:text-fg"><span className="hidden md:inline">{toggleLabel} </span>{open ? "▴" : "▾"}</span>
         </button>
       ) : (
-        <div className="flex min-w-0 flex-1 items-center gap-4">{body}</div>
+        <div className="flex min-w-0 flex-1 basis-full items-center gap-4 md:basis-0">{mobile}<span className="hidden min-w-0 flex-1 items-center gap-4 md:flex">{body}</span></div>
       )}
-      {children && <div className="flex shrink-0 gap-2">{children}</div>}
+      {children && <div className="flex shrink-0 flex-wrap gap-2">{children}</div>}
     </div>
   );
 }
@@ -181,7 +195,7 @@ export function PlayButton({ on, onClick, children }: { on: boolean; onClick: ()
     <button
       onClick={onClick}
       aria-expanded={on}
-      className="flex h-8 items-center gap-1.5 rounded-full border border-line bg-surface px-3 text-xs font-bold hover:border-accent hover:bg-accent hover:text-white aria-expanded:border-accent aria-expanded:bg-accent aria-expanded:text-white"
+      className="flex h-11 items-center gap-1.5 rounded-xl border border-line bg-surface px-3 text-xs font-bold hover:border-accent md:h-8 md:rounded-full hover:bg-accent hover:text-white aria-expanded:border-accent aria-expanded:bg-accent aria-expanded:text-white"
     >
       <PlayGlyph size={7} /> {children}
     </button>

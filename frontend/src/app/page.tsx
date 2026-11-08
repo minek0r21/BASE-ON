@@ -51,7 +51,7 @@ export default function Home() {
     <>
       <Hero day={day.data} recommended={recommended} onPlay={onPlay} />
 
-      <Wrap className="space-y-[72px] pt-8">
+      <Wrap className="space-y-10 pt-1 md:space-y-[72px] md:pt-8">
         <PostseasonCorner onPlay={onPlay} />
 
         <div className="space-y-6">

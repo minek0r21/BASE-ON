@@ -49,9 +49,9 @@ export default function OutingsTab({ playerId, playerName, season, month, outing
   const sub = [`${d.month}월`, starts === d.outings.length ? `선발 ${starts}경기` : `${d.outings.length}경기`, `${innings(sum.outs)}이닝 ${sum.so}탈삼진`].join(" · ");
 
   return (
-    <div className="animate-appear grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">
-      <section className="overflow-hidden rounded-3xl border border-line bg-surface lg:sticky lg:top-32">
-        <div className="flex items-start justify-between gap-3 px-5 pt-5 pb-4">
+    <div className="animate-appear grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)]">{/* 좁은 폭은 줄 아래 펼침 */}
+      <section className="overflow-hidden rounded-2xl border border-line bg-surface md:rounded-3xl lg:sticky lg:top-32">
+        <div className="flex items-start justify-between gap-3 px-3.5 pt-3.5 pb-3 md:px-5 md:pt-5 md:pb-4">
           <div>
             <h2 className="text-xl font-bold">등판 경기</h2>
             <p className="mt-1 text-xs text-fg-2">{sub}</p>
@@ -59,17 +59,22 @@ export default function OutingsTab({ playerId, playerName, season, month, outing
           <label>
             <span className="sr-only">월</span>
             <select value={d.month ?? ""} onChange={(e) => onChange(d.season, Number(e.target.value))}
-                    className="h-9 rounded-full border border-line bg-surface px-3 text-[13px] font-bold">
+                    className="h-11 rounded-xl border border-line bg-surface px-3 text-[13px] font-bold md:h-9 md:rounded-full">
               {d.months.map((m) => <option key={m} value={m}>{m}월</option>)}
             </select>
           </label>
         </div>
         <ul className="border-t border-line">
-          {d.outings.map((o) => <OutingItem key={o.outingId} o={o} on={o.outingId === picked} onClick={() => onPick(o.outingId)} />)}
+          {d.outings.map((o) => (
+            <Fragment key={o.outingId}>
+              <OutingItem o={o} on={o.outingId === picked} onClick={() => onPick(o.outingId)} />
+              {o.outingId === picked && <li className="border-b border-line bg-bg p-2 last:border-0 lg:hidden"><Detail key={picked} id={picked} playerName={playerName} /></li>}
+            </Fragment>
+          ))}
         </ul>
-        <p className="border-t border-line px-5 py-3 text-[11px] text-fg-2">장면 = 투구만 모은 영상 · 경기 = 경기 하이라이트</p>
+        <p className="border-t border-line px-3.5 py-3 text-xs text-fg-2 md:px-5 md:text-[11px]">장면 = 투구만 모은 영상 · 경기 = 경기 하이라이트</p>
       </section>
-      <Detail key={picked} id={picked} playerName={playerName} />
+      <div className="hidden min-w-0 lg:block"><Detail key={picked} id={picked} playerName={playerName} /></div>
     </div>
   );
 }
@@ -79,7 +84,7 @@ function OutingItem({ o, on, onClick }: { o: OutingRow; on: boolean; onClick: ()
   return (
     <li className="border-b border-line last:border-0">
       <button onClick={onClick} aria-current={on ? "true" : undefined}
-              className="relative flex w-full items-center gap-3 px-5 py-3.5 text-left hover:bg-surface-2 aria-[current=true]:bg-surface-2">
+              className="relative flex w-full items-center gap-3 px-3.5 py-3 text-left hover:bg-surface-2 aria-[current=true]:bg-surface-2 md:px-5 md:py-3.5">
         {on && <span className="absolute inset-y-0 left-0 w-1 bg-(--team)" aria-hidden />}
         <span className="w-11 shrink-0 text-center">
           <span className="block font-num text-[15px] font-bold">{md(o.date)}</span>
@@ -122,17 +127,17 @@ function Detail({ id, playerName }: { id: string; playerName: string }) {
   ];
 
   return (
-    <div className="animate-appear min-w-0 space-y-5">
-      <section className="rounded-3xl border border-line bg-surface p-6">
+    <div className="animate-appear min-w-0 space-y-2 md:space-y-5">
+      <section className="rounded-2xl border border-line bg-surface p-3.5 md:rounded-3xl md:p-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="min-w-0">
             <p className="flex items-center gap-2 text-xs text-fg-2">{head} <StageTag label={d.stage_label} /></p>
-            <p className="mt-2 flex items-center gap-3 font-display text-[40px] leading-none font-extrabold">
+            <p className="mt-2 flex items-center gap-2 font-display text-[22px] leading-none font-extrabold whitespace-nowrap md:gap-3 md:text-[40px]">
               <TeamLogo team={d.team} height={30} /> {d.team} {d.score.team} : {d.score.opponent} {d.opponent} <TeamLogo team={d.opponent} height={30} />
               <span className={`ml-1 rounded-md px-2 py-0.5 font-sans text-xs font-bold ${d.result === "W" ? "bg-(--team) text-white" : "bg-surface-3 text-fg-2"}`}>팀 {RESULT_KO[d.result]}</span>
             </p>
             <p className="mt-2 flex flex-wrap items-center gap-3 text-sm font-bold">{playerName} · {d.role} · {innings(l.outs)}이닝 {l.r === 0 ? "무실점" : `${l.r}실점`}
-              <Link href={gameHref(d.game_pk)} className="text-xs text-brand-text hover:underline">경기 상세 ›</Link></p>
+              <Link href={gameHref(d.game_pk)} className="text-xs text-brand-text hover:underline max-md:-my-3 max-md:py-3">경기 상세 ›</Link></p>
           </div>
           {d.highlight && (
             <div className="text-right">
@@ -145,11 +150,11 @@ function Detail({ id, playerName }: { id: string; playerName: string }) {
             </div>
           )}
         </div>
-        <dl className="mt-5 grid grid-cols-4 gap-y-4 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_1.7fr_1fr] md:divide-x md:divide-line">
+        <dl className="mt-3 grid grid-cols-4 gap-x-1 gap-y-3 md:mt-5 md:grid-cols-[1fr_1fr_1fr_1fr_1fr_1.7fr_1fr] md:gap-x-0 md:gap-y-4 md:divide-x md:divide-line">
           {cells.map(([k, v]) => (
             <div key={k} className="min-w-0 md:px-4 md:first:pl-0">
-              <dt className="truncate text-xs text-fg-2" title={k}>{k}</dt>
-              <dd className="mt-1 font-display text-[28px] leading-none font-extrabold">{v}</dd>
+              <dt className="text-xs break-keep text-fg-2 md:truncate" title={k}>{k}</dt>
+              <dd className="mt-1 font-display text-[22px] leading-none font-extrabold md:text-[28px]">{v}</dd>
             </div>
           ))}
         </dl>
@@ -169,8 +174,8 @@ function SceneCard({ d, playerName, playing, onPlay }: { d: OutingDetail; player
   const kind = s.precision === "scene" ? "투구 장면" : "이닝 장면";
   const title = `${md(d.date)} ${d.opponent}전 · ${kind}`;
   return (
-    <section className="rounded-3xl border border-line bg-surface p-6">
-      <div className="grid items-center gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+    <section className="rounded-2xl border border-line bg-surface p-3.5 md:rounded-3xl md:p-6">
+      <div className="grid items-center gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] md:gap-6">
         <button onClick={() => onPlay(playing ? null : { clip: s, title: `${playerName} · ${title}`, sub: s.title })} aria-label={`${title} 재생`}
                 className="group relative block aspect-video overflow-hidden rounded-2xl bg-night">
           <img src={thumbnailUrl(s.videoId)} alt="" className="h-full w-full object-cover transition-transform duration-200 group-hover:scale-[1.03]" />
@@ -203,13 +208,13 @@ function Innings({ d }: { d: OutingDetail }) {
   const [kind, setKind] = useState<Kind>("strikeout");
   const [open, setOpen] = useState<string | null>(null);
   return (
-    <section className="rounded-3xl border border-line bg-surface p-6">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h3 className="text-xl font-bold">이닝별 상대 타자 {d.line.tbf}명</h3>
+    <section className="rounded-2xl border border-line bg-surface p-3.5 md:rounded-3xl md:p-6">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2 md:mb-3 md:gap-3">
+        <h3 className="text-[15px] font-bold md:text-xl">이닝별 상대 타자 {d.line.tbf}명</h3>
         <div className="flex gap-2" role="group" aria-label="강조할 결과">
           {KINDS.map(([k, label]) => (
             <button key={k} onClick={() => setKind(k)} aria-pressed={kind === k}
-                    className="h-8 rounded-full border border-line bg-surface px-3.5 text-xs font-bold hover:bg-surface-2 aria-pressed:border-fg aria-pressed:bg-fg aria-pressed:text-bg">
+                    className="h-9 rounded-full border border-line bg-surface px-3.5 text-xs font-bold md:h-8 hover:bg-surface-2 aria-pressed:border-fg aria-pressed:bg-fg aria-pressed:text-bg">
               {label}
             </button>
           ))}
@@ -220,12 +225,12 @@ function Innings({ d }: { d: OutingDetail }) {
           const sel = inn.plate_appearances.find((p) => p.pa_id === open);
           return (
             <li key={`${inn.inning}-${inn.inning_half}`} className="py-3">
-              <div className="grid grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-3">
-                <span>
-                  <span className="block text-[15px] font-bold">{inn.inning}회</span>
-                  <span className="block text-[11px] text-fg-2">{inn.summary.batters}타자</span>
+              <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1.5 md:grid-cols-[48px_minmax(0,1fr)_auto] md:gap-3">
+                <span className="flex items-baseline gap-1.5 md:block">
+                  <span className="block text-[13px] font-bold md:text-[15px]">{inn.inning}회</span>
+                  <span className="block text-xs text-fg-2 md:text-[11px]">{inn.summary.batters}타자</span>
                 </span>
-                <span className="flex flex-wrap gap-1.5">
+                <span className="col-span-2 row-start-2 flex flex-wrap gap-1.5 md:col-span-1 md:row-start-auto">
                   {inn.plate_appearances.map((p) => (
                     <Fragment key={p.pa_id}>
                       <PaChip p={p} hot={p.kind === kind} on={open === p.pa_id} onClick={() => setOpen(open === p.pa_id ? null : p.pa_id)} />
@@ -246,7 +251,7 @@ function Innings({ d }: { d: OutingDetail }) {
 function PaChip({ p, hot, on, onClick }: { p: OutingPa; hot: boolean; on: boolean; onClick: () => void }) {
   return (
     <button onClick={onClick} aria-expanded={on}
-            className={`flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-xs ${hot ? "border-fg bg-fg text-bg" : "border-line bg-surface hover:bg-surface-2"} aria-expanded:ring-2 aria-expanded:ring-(--team) aria-expanded:ring-offset-1`}>
+            className={`flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-xs md:h-8 ${hot ? "border-fg bg-fg text-bg" : "border-line bg-surface hover:bg-surface-2"} aria-expanded:ring-2 aria-expanded:ring-(--team) aria-expanded:ring-offset-1`}>
       <span className="font-bold">{p.batter.name}</span>
       <span className={hot ? "opacity-80" : "text-fg-2"}>{p.events_ko}</span>
       {!!p.runs_scored && <span className={`rounded px-1 text-[10px] font-bold ${hot ? "bg-bg/20" : "bg-surface-3"}`}>{p.runs_scored}점</span>}
@@ -267,7 +272,7 @@ function PaDetail({ p }: { p: OutingPa }) {
     !!p.runs_scored && `${p.runs_scored}점 내줌`,
   ].filter(Boolean) as string[];
   return (
-    <p className="mt-2 ml-[60px] rounded-xl bg-surface-2 px-3.5 py-2.5 text-xs">
+    <p className="mt-2 rounded-xl bg-surface-2 px-3 py-2.5 text-xs md:ml-[60px] md:px-3.5">
       <b className="mr-2">{p.batter.name} · {p.events_ko}</b>
       <span className="text-fg-2">{items.join(" · ")}</span>
     </p>

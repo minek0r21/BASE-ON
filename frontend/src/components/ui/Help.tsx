@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 /** 「?」 — 눌러서 열고, 바깥을 누르거나 Esc로 닫는다. inline이면 글줄 안에 끼우는 작은 크기 (능력 칸 · 선수 화면 · 능력별 순위) */
 export default function Help({ title, body, inline = false, below = false }: { title: string; body: string; inline?: boolean; below?: boolean }) {
@@ -25,8 +26,20 @@ export default function Help({ title, body, inline = false, below = false }: { t
       >
         ?
       </button>
+      {open && createPortal(
+        <div className="fixed inset-0 z-50 md:hidden">
+          <button aria-label="닫기" onClick={() => setOpen(false)} className="absolute inset-0 bg-black/45" />
+          <div role="dialog" aria-label={title} className="absolute inset-x-0 bottom-0 rounded-t-[20px] bg-raised px-5 pt-2.5 pb-[calc(1.5rem+env(safe-area-inset-bottom))] text-left text-fg">
+            <div className="mx-auto h-1 w-10 rounded-full bg-line-strong" aria-hidden />
+            <p className="mt-3 text-lg font-bold">{title}</p>
+            <p className="mt-2 text-[15px] leading-[23px] font-normal text-fg-2">{body}</p>
+            <button onClick={() => setOpen(false)} className="mt-3 h-11 w-full rounded-xl bg-fg text-[13px] font-bold text-white">닫기</button>
+          </div>
+        </div>,
+        document.body,
+      )}
       {open && (
-        <span role="tooltip" className={`absolute ${below ? "top-full mt-2 origin-top" : "bottom-full mb-2 origin-bottom"} left-1/2 z-20 block w-[282px] -translate-x-1/2 animate-pop rounded-xl bg-night px-4 py-3.5 text-left font-normal text-white shadow-lg`}>
+        <span role="tooltip" className={`absolute hidden md:block ${below ? "top-full mt-2 origin-top" : "bottom-full mb-2 origin-bottom"} left-1/2 z-20 w-[282px] -translate-x-1/2 animate-pop rounded-xl bg-night px-4 py-3.5 text-left font-normal text-white shadow-lg`}>
           <span className="block text-[13px] font-bold">{title}</span>
           <span className="mt-1.5 block text-xs leading-[18px] font-normal text-[#d3d4d8]">{body}</span>
         </span>
