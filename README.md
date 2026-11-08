@@ -19,7 +19,7 @@ KBO 입문 팬을 위한 기록 해석 · 장면 연결 서비스다. 타석 기
 - 백엔드: FastAPI (Python 3.11)
 - DB: Neo4j
 - 화면: `frontend/` — Next.js 16 · React 19 · Tailwind CSS 4 · TanStack Query 5 (정적 내보내기)
-- 서버: Docker Compose + Caddy (HTTPS · 비밀번호)
+- 서버: Docker Compose + Caddy (HTTPS, 검수 화면은 검수자 토큰)
 
 ## 데이터 출처 · 이용
 
@@ -52,10 +52,10 @@ KBO 입문 팬을 위한 기록 해석 · 장면 연결 서비스다. 타석 기
 
 ### 서비스 공개 범위
 
-- 지금 서버는 **비밀번호로 잠겨 있어** 팀원만 본다(`ACCESS=private`). 외부에 공개하기 전에 아래 범위를 확인한다.
+- 서버는 **누구나 본다**(`ACCESS=public`, 11-09부터). 검수 화면(`/admin`)과 관리자 API는 검수자 토큰(`X-Admin-Token`)으로만 열린다.
 - 화면에 보이는 것: 시즌 집계 기록 · 백분위 · 순위, 타석 결과 요약(「4회말 솔로 홈런」), 경기 박스스코어 · 이닝별 점수, 공식 채널 영상 임베드
 - 보이지 않는 것: 문자중계 원문, 원본 파일 내려받기
-- 공개 전 확인할 것: API(`/api/v1`)가 타석 단위 기록을 그대로 돌려주는 범위를 그대로 둘지
+- 화면이 브라우저에서 API(`/api/v1`)를 바로 부르므로 타석 단위 기록도 API로 보인다. 원천 데이터셋(HF, CC BY 4.0)이 공개본이고 문자중계 원문 · 원본 파일은 없어 이 범위로 연다(11-09 결정). 검색 노출은 robots.txt · noindex로 막는다
 
 ### 데이터 없이 실행하기
 
@@ -241,7 +241,7 @@ python scripts/deploy.py code --local <폴더>   # 서버 대신 PC 폴더에 �
 - 커밋하지 않은 변경은 올라가지 않는다. 사진 · 엠블럼을 바꿨으면 `code` 전에 `sync_media.py`.
 - 검수는 서버에서도 한다(팀이 같이). 서버 판정은 서버 장부(`reviewdata` 볼륨)에 남고, `python scripts/deploy.py reviews`가 PC 장부에 없는 줄만 가져와 PC DB에 다시 적용한다. 서버 DB는 `db`를 할 때마다 PC 덤프로 바뀌므로, 안 가져온 서버 판정이 있으면 `db`는 멈춘다.
 - 검수자는 사람마다 토큰을 받는다(서버 `deploy/.env`의 `ADMIN_TOKENS=이름:토큰,…`). 검수 화면에서 토큰을 넣고 「입력」을 누르면 서버가 확인한 뒤 화면을 연다. 판정의 검수자 이름은 토큰으로 정해진다. NFR-07 표본은 「나눠 보기」로 사람 수만큼 나눠 본다.
-- 기본은 비밀번호 잠금(`ACCESS=private`). 서버 컨테이너는 재부팅해도 다시 뜬다(`restart: unless-stopped`).
+- 지금은 공개(`ACCESS=public`). 다시 잠그려면 서버 `deploy/.env`에서 `ACCESS=private` 뒤 Caddy를 다시 켠다. 서버 컨테이너는 재부팅해도 다시 뜬다(`restart: unless-stopped`).
 
 ## 시험
 

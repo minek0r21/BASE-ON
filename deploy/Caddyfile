@@ -21,7 +21,7 @@
 
 	import auth_{$ACCESS}
 
-	# 검수 화면(/admin)은 서버에서도 연다 (11-07, 팀이 같이 검수). 사이트 비밀번호 + 검수자 토큰(ADMIN_TOKENS)으로 막고,
+	# 검수 화면(/admin)은 서버에서도 연다 (11-07, 팀이 같이 검수). 검수자 토큰(ADMIN_TOKENS)으로 막고(ACCESS=private면 사이트 비밀번호도),
 	# 판정은 서버 장부에 남는다 → scripts/deploy.py reviews로 PC에 가져간다 (안 가져가면 db가 서버 DB를 바꾸지 않는다)
 	handle /api/* {
 		reverse_proxy api:8000
