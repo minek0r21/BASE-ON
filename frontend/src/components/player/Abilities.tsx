@@ -20,7 +20,8 @@ type Cell = { key: AxisKey | PitchAxisKey; label: string; value: number | null; 
  * 판정 한 줄, 「n명 중 m위」 + 원 수치. 백분위가 가장 높은 칸에 「가장 강한 점」. 「?」는 눌러서 여는 말풍선.
  * 섹션 제목(기준 · 「다른 타자와 비교」) + 5칸 한 상자 — 06 팀 화면 표와 같은 틀
  */
-export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: Role; asOf: string | null }) {
+/** onCompare가 있으면(휴대폰 개요) 「다른 ~와 비교 ›」가 비교 화면을 연다 — 머리의 「비교하기」 줄을 없앤 자리 (M03 · 11-08) */
+export default function Abilities({ p, role, asOf, onCompare }: { p: PlayerSummary; role: Role; asOf: string | null; onCompare?: () => void }) {
   const box = useRef<HTMLUListElement>(null);
   const seen = useSeen(box); // 처음 보일 때 막대를 0에서 채운다 (600ms, 칸마다 60ms 간격)
   const pi = p.pitching;
@@ -35,10 +36,11 @@ export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: R
     role === "pitcher" ? `규정이닝 ${pi?.role === "reliever" ? "20%" : "50%"} 이상 ${pi?.roleLabel ?? "선발"}과 비교` : `${GROUP_RULE.batter}와 비교`].filter(Boolean).join(" · ");
   const sub = <>{criteria} <Help title={role === "pitcher" ? "규정이닝" : "규정타석"} body={GROUP_HELP[role]} inline /></>;
   const title = `${who} ${n}명 중 ${josa(p.name, "은", "는")}`;
-  const more = (
-    <Link href={rankingsHref(role, best)} className="text-sm font-bold text-brand-text hover:underline">
-      다른 {role === "pitcher" ? "투수" : "타자"}와 비교 ›
-    </Link>
+  const moreText = <>다른 {role === "pitcher" ? "투수" : "타자"}와 비교 ›</>;
+  const more = onCompare ? (
+    <button type="button" onClick={onCompare} className="text-sm font-bold text-brand-text hover:underline max-md:-my-3 max-md:py-3">{moreText}</button>
+  ) : (
+    <Link href={rankingsHref(role, best)} className="text-sm font-bold text-brand-text hover:underline max-md:-my-3 max-md:py-3">{moreText}</Link>
   );
   const cell = (c: Cell, i: number) => (
     <AbilityCell c={c} n={n} who={role === "pitcher" ? `${pi?.roleLabel ?? ""} ` : ""} name={p.name} best={c.key === best} run={seen} delay={i * 60} />
@@ -78,8 +80,8 @@ export default function Abilities({ p, role, asOf }: { p: PlayerSummary; role: R
   return (
     <section>
       <SectionHead title={title} sub={sub} right={more} />
-      <ul ref={box} className="grid grid-cols-2 gap-y-5 rounded-3xl border border-line bg-surface px-6 py-5 md:grid-cols-5 md:divide-x md:divide-line">
-        {cells.map((c, i) => <li key={c.key} className="min-w-0 md:px-5 md:first:pl-0 md:last:pr-0">{cell(c, i)}</li>)}
+      <ul ref={box} className="grid divide-y divide-line rounded-2xl border border-line bg-surface px-4 py-1 md:grid-cols-5 md:gap-y-5 md:divide-x md:divide-y-0 md:rounded-3xl md:px-6 md:py-5">
+        {cells.map((c, i) => <li key={c.key} className="min-w-0 py-3 md:px-5 md:py-0 md:first:pl-0 md:last:pr-0">{cell(c, i)}</li>)}
       </ul>
     </section>
   );
@@ -92,26 +94,26 @@ function AbilityCell({ c, n, who, name, best, run, delay }: { c: Cell; n: number
   const pos = c.percentile != null && c.rank != null ? leaguePosition(c.percentile, c.rank, n) : null;
   const strong = c.percentile != null && isTop20(c.percentile); // 상위 20% 안이면 큰 숫자 · 판정도 구단 색
   return (
-    <div>
-      <div className="flex items-center justify-between gap-2">
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 md:block">
+      <div className="flex items-center gap-2 md:justify-between">
         <span className="flex items-center gap-1.5 text-[15px] font-bold">
           {c.label}
           <Help title={`${c.label} · ${copy?.title ?? ""}`} body={`${helpOf(c.key)} ${josa(name, "은", "는")} ${value}예요.`} />
         </span>
-        {best && <span className="rounded bg-accent px-1.5 py-0.5 text-[11px] font-bold text-white">가장 강한 점</span>}
+        {best && <span className="rounded bg-brand px-1.5 py-0.5 text-xs font-bold text-white md:bg-accent md:text-[11px]">가장 강한 점</span>}
       </div>
       {pos ? (
         <>
-          <p className="mt-2 flex items-baseline gap-1.5">
-            <span className="text-[15px] font-medium text-fg-2">{pos.side}</span>
-            <span className={`font-display text-[46px] leading-none font-extrabold tabular-nums ${strong ? "text-(--team-text)" : ""}`}>{Math.round(pos.pct * t)}%</span>
+          <p className="col-start-2 row-span-2 row-start-1 flex items-baseline gap-1 md:mt-2 md:gap-1.5">
+            <span className="text-[13px] font-medium text-fg-2 md:text-[15px]">{pos.side}</span>
+            <span className={`font-display text-[34px] leading-none md:text-[46px] font-extrabold tabular-nums ${strong ? "text-(--team-text)" : ""}`}>{Math.round(pos.pct * t)}%</span>
           </p>
-          <span className="mt-2.5 block h-1.5 overflow-hidden rounded-full bg-surface-3">
+          <span className="col-span-2 mt-1.5 block h-1.5 overflow-hidden rounded-full bg-surface-3 md:mt-2.5">
             <span className="block h-full rounded-full bg-(--team)" style={{ width: `${c.percentile! * t}%`, opacity: barOpacity(c.percentile!) }} />
           </span>
-          <p className={`mt-2.5 text-[15px] font-bold ${strong ? "text-(--team-text)" : ""}`}>{verdict(c.key, c.percentile!)}</p>
-          <p className="mt-1 text-[13px] leading-5 text-fg-2">
-            {who}{n}명 중 {c.rank}위<br />
+          <p className={`col-start-1 row-start-2 text-[13px] font-bold md:mt-2.5 md:text-[15px] ${strong ? "text-(--team-text)" : ""}`}>{verdict(c.key, c.percentile!)}</p>
+          <p className="col-span-2 mt-1 text-xs leading-5 text-fg-2 md:text-[13px]">
+            {who}{n}명 중 {c.rank}위<span className="md:hidden"> · </span><br className="hidden md:block" />
             {copy?.metric} {value}
           </p>
         </>

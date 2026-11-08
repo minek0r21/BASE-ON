@@ -6,7 +6,7 @@ import { innings, md, rate3 } from "@/lib/format";
 import Help from "@/components/ui/Help";
 import type { Role } from "./Hero";
 
-const card = "rounded-3xl border border-line bg-surface p-6";
+const card = "rounded-2xl border border-line bg-surface p-4 md:rounded-3xl md:p-6";
 
 type Stat = { label: string; value: string; rank: { text: string; n?: number } | null; help?: string };
 
@@ -63,7 +63,7 @@ export function SeasonStrip({ p, role, seasons, asOf }: { p: PlayerSummary; role
       <p className="mb-2.5 flex flex-wrap items-baseline gap-2 text-sm font-bold">
         {d.title} <span className="text-xs font-medium text-muted">{d.sub}</span>
       </p>
-      <ul className="grid grid-cols-2 gap-1.5 sm:grid-cols-5">
+      <ul className="grid grid-cols-2 gap-1.5 max-sm:[&>li:last-child:nth-child(odd)]:col-span-2 sm:grid-cols-5">
         {d.items.map((s) => (
           <li key={s.label} className="rounded-2xl border border-line bg-surface px-4 py-3.5">
             <span className="flex items-center justify-between gap-2">

@@ -2,7 +2,7 @@
 
 /* eslint-disable @next/next/no-img-element -- 정적 내보내기: next/image 최적화 서버가 없다 */
 import { useState } from "react";
-import { logoUrl, photoUrl, team as teamOf } from "@/lib/teams";
+import { logoSmallUrl, logoUrl, photoUrl, team as teamOf } from "@/lib/teams";
 
 /** 선수 얼굴 (원형). 사진은 4배로 키운 376×472(scripts/upscale_media.py)라 72px까지 깨지지 않는다 — 없으면 이름 첫 글자 + 구단 연한 색 */
 export function PlayerAvatar({ id, name, team, size = 40 }: { id: string; name: string; team?: string | null; size?: number }) {
@@ -26,16 +26,16 @@ export function PlayerAvatar({ id, name, team, size = 40 }: { id: string; name: 
 
 /** 구단 엠블럼. 없으면 팀 이름 글자 */
 export function TeamLogo({ team, height = 16 }: { team: string | null | undefined; height?: number }) {
-  const [failed, setFailed] = useState(false);
-  const url = logoUrl(team);
-  if (!url || failed) {
+  const [step, setStep] = useState(height <= 32 ? 0 : 1); // 작은 파일 → 원본 → 글자
+  const url = step === 0 ? logoSmallUrl(team) : step === 1 ? logoUrl(team) : null;
+  if (!url) {
     return team ? (
       <span className="text-[11px] font-bold" style={{ color: teamOf(team)?.text }}>
         {team}
       </span>
     ) : null;
   }
-  return <img src={url} alt={team ?? ""} style={{ height }} className="w-auto shrink-0" onError={() => setFailed(true)} />;
+  return <img src={url} alt={team ?? ""} style={{ height }} className="w-auto shrink-0" onError={() => setStep(step + 1)} />;
 }
 
 /** 재생 ▶ 삼각형 — 잉크 바탕 버튼 안에 쓴다 */

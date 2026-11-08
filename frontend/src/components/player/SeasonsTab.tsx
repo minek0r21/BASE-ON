@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useQueries, useQuery } from "@tanstack/react-query";
 import { getPitcherOutings, getPlayerScenes, getPlayerSeasons, qk } from "@/lib/api";
 import { innings, rate3 } from "@/lib/format";
@@ -7,6 +8,7 @@ import { SectionHead } from "@/components/home/common";
 import StageTag from "@/components/StageTag";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo } from "@/components/ui/Media";
+import Seg from "@/components/ui/Seg";
 import type { Role } from "./Hero";
 
 // BO-PB-03 시즌 기록 (API-19). 타자 표 + 투수 표(투구 기록이 있으면). 숫자 머리에는 쉬운 설명(title). 프로필은 머리에 있어 뺐다 (10-31 사용자)
@@ -74,7 +76,8 @@ function Table<T extends { season: number; teams: string[] }>({ title, rows, col
   return (
     <section>
       <SectionHead title={title} sub={tableSub(rows, post)} />
-      <div className="overflow-x-auto rounded-3xl border border-line bg-surface px-6 py-2">
+      <MobileSeason rows={rows} cols={cols} post={post} unit={unit} scenes={scenes} onScenes={onScenes} />
+      <div className="hidden overflow-x-auto rounded-3xl border border-line bg-surface px-6 py-2 md:block">
         <table className="w-full min-w-[720px] font-num text-sm">
           <thead className="text-xs text-fg-2">
             <tr className="border-b border-line">
@@ -129,6 +132,52 @@ function Table<T extends { season: number; teams: string[] }>({ title, rows, col
 }
 
 /** 「2024~2026 정규시즌 3시즌 · 포스트시즌은 그 시즌 아래 줄」 */
+/** M03d: 칸이 열네 개라 표는 옆으로 밀어야 한다 → 시즌을 고르면 2열로 푼다. 같은 시즌에 줄이 여럿(투수 역할)이면 고른 뒤 다 보여 준다 */
+function MobileSeason<T extends { season: number; teams: string[] }>({ rows, cols, post, unit, scenes, onScenes }: {
+  rows: T[]; cols: Col<T>[]; post: Post[]; unit: string; scenes: Map<number, number>; onScenes: (season: number) => void;
+}) {
+  const seasons = [...new Set(rows.map((r) => r.season))];
+  const [season, setSeason] = useState(seasons[0]);
+  const cur = rows.filter((r) => r.season === season);
+  const postRow = post.find((p) => p.season === season);
+  const n = scenes.get(season) ?? 0;
+  const label = (c: Col<T>) => (c.label === "사구" ? "몸에 맞는 공" : c.label);
+  return (
+    <div className="space-y-2 md:hidden">
+      {seasons.length > 1 && <Seg label="시즌" value={season} onChange={setSeason} items={seasons.map((s) => ({ key: s, label: String(s) }))} />}
+      {cur.map((r, i) => (
+        <dl key={i} className="grid grid-cols-2 gap-x-5 rounded-2xl border border-line bg-surface px-3.5 py-1">
+          <div className="col-span-2 flex h-10 items-center gap-1.5 border-b border-line text-[13px] text-fg-2">
+            {r.teams.map((t) => <TeamLogo key={t} team={t} height={14} />)} {r.teams.join(" · ")}
+          </div>
+          {cols.map((c) => (
+            <div key={c.key} className="flex h-10 items-center justify-between gap-2 border-b border-line [&:nth-last-child(-n+2)]:border-0">
+              <dt className="truncate text-[13px] text-fg-2">{label(c)}</dt>
+              <dd className={`font-num text-[15px] font-semibold ${c.strong ? "font-bold" : ""}`}>{c.value(r)}</dd>
+            </div>
+          ))}
+        </dl>
+      ))}
+      {postRow && (
+        <dl className="grid grid-cols-2 gap-x-5 rounded-2xl bg-surface-2 px-3.5 py-1">
+          <div className="col-span-2 flex h-10 items-center"><StageTag label={`${season} 포스트시즌`} /></div>
+          {cols.filter((c) => postRow[c.key] != null).map((c) => (
+            <div key={c.key} className="flex h-10 items-center justify-between gap-2">
+              <dt className="truncate text-[13px] text-fg-2">{label(c)}</dt>
+              <dd className="font-num text-[15px] font-semibold">{String(c.value(postRow as unknown as T))}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {n > 0 && (
+        <button onClick={() => onScenes(season)} className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-accent text-[13px] font-bold text-white">
+          <PlayGlyph size={7} /> {season} {unit} {n}
+        </button>
+      )}
+    </div>
+  );
+}
+
 function tableSub(rows: { season: number }[], post: Post[]) {
   const ss = rows.map((r) => r.season);
   const span = ss.length ? `${Math.min(...ss)}~${Math.max(...ss)} 정규시즌 ${new Set(ss).size}시즌` : "";
@@ -159,7 +208,7 @@ export default function SeasonsTab({ playerId, onScenes }: { playerId: string; o
   const { batting, pitching, postBatting, postPitching } = q.data;
 
   return (
-    <div className="animate-appear space-y-14">
+    <div className="animate-appear space-y-8 md:space-y-14">
       {batting.length > 0 && (
         <Table title="타격 기록" rows={batting as Bat[]} cols={BAT} post={postBatting} unit="장면" scenes={batScenes} onScenes={(s) => onScenes(s, "batter")} />
       )}

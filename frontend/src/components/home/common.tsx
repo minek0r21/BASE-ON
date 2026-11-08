@@ -10,10 +10,10 @@ export function Wrap({ children, className = "" }: { children: ReactNode; classN
 /** 섹션 제목 — 기준 · 수치만 (AI 말투 부제 금지, 디자인_2.0_구현 6장) */
 export function SectionHead({ title, sub, right }: { title: string; sub?: ReactNode; right?: ReactNode }) {
   return (
-    <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mb-3 flex flex-wrap items-end justify-between gap-x-4 gap-y-2 md:mb-6">
       <div>
-        <h2 className="text-2xl font-bold tracking-tight">{title}</h2>
-        {sub && <p className="mt-2 text-[13px] text-fg-2">{sub}</p>}
+        <h2 className="text-xl font-black tracking-tight md:text-2xl md:font-bold">{title}</h2>
+        {sub && <p className="mt-1 text-xs text-fg-2 md:mt-2 md:text-[13px]">{sub}</p>}
       </div>
       {right}
     </div>

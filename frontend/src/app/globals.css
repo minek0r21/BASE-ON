@@ -56,6 +56,12 @@ body {
   background: var(--bg);
   color: var(--fg);
   font-family: var(--font-sans);
+  /* 한글은 낱말 단위로 줄을 바꾼다 (「103 / 명」 · 「않 / 음」 끊김 방지). 칸보다 긴 낱말만 쪼갠다 */
+  word-break: keep-all;
+  overflow-wrap: break-word;
+  /* 휴대폰을 가로로 눕히면 노치 쪽 내용이 가려지지 않게 (viewport-fit=cover) */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 /* 상태 기준(Figma 187:2112): 키보드 포커스는 파란 2px 테두리 + 2px 띄움 */
@@ -76,6 +82,25 @@ body {
   @keyframes appear { from { opacity: 0; } }
   @keyframes grow { from { opacity: 0; scale: 0.92; } }
   @keyframes countdown { from { stroke-dashoffset: 0; } to { stroke-dashoffset: 188.5; } }
+}
+
+/* 경기 상세는 모바일에서 어두운 화면 (M04b). 색 이름은 그대로 두고 값만 바꾼다. 데스크톱은 밝은 화면 그대로 */
+@media (max-width: 767.98px) {
+  .night-mobile {
+    --bg: #161618;
+    --raised: #1f1f22;
+    --surface: #26262a;
+    --surface-2: #323238;
+    --surface-3: #3e3e45;
+    --fg: #ffffff;
+    --fg-2: #b4b4bb;
+    --muted: #8f8f97;
+    --line: rgba(255, 255, 255, 0.1);
+    --line-strong: rgba(255, 255, 255, 0.18);
+    --brand-text: #8fb0ff;
+    color: var(--fg);
+  }
+  body:has(.night-mobile) { background: #161618; }
 }
 
 @media (prefers-reduced-motion: reduce) {

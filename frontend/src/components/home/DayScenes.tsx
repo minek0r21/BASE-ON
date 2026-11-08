@@ -68,17 +68,17 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
   const wk = ["일", "월", "화", "수", "목", "금", "토"][new Date(`${day.date}T00:00:00`).getDay()];
 
   return (
-    <section id="day-scenes" className="scroll-mt-20 rounded-[28px] bg-night px-6 pt-8 pb-9 text-white sm:px-9" aria-label="그날 장면">
-      <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
+    <section id="day-scenes" className="-mx-4 scroll-mt-12 bg-night px-4 pt-6 pb-5 text-white md:mx-0 md:scroll-mt-20 md:rounded-[28px] md:px-9 md:pt-8 md:pb-9" aria-label="그날 장면">
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-3 md:mb-6">
         <div>
-          <h2 className="text-[26px] font-bold">
+          <h2 className="text-xl font-black md:text-[26px] md:font-bold">
             {mm}월 {dd}일 ({wk}) 장면
           </h2>
-          <p className="mt-1.5 text-[13px] text-[#a1a1a8]">
+          <p className="mt-1 text-xs text-[#a1a1a8] md:mt-1.5 md:text-[13px]">
             홈런 {c.home_runs}개 중 장면 {c.home_run_scenes}개 · 투수 장면 {c.pitcher_scenes}개 · 영상이 있는 장면만
           </p>
         </div>
-        <Link href={`/scenes/?date=${day.date}`} className="text-sm font-bold text-white hover:underline">
+        <Link href={`/scenes/?date=${day.date}`} className="hidden text-sm font-bold text-white hover:underline md:block">
           장면 전체 보기 ›
         </Link>
       </div>
@@ -86,7 +86,7 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
       {!main && !playing ? (
         <p className="py-10 text-center text-sm text-[#a1a1a8]">이날 확정된 장면이 아직 없어요</p>
       ) : (
-        <div className="grid gap-8 lg:grid-cols-[680px_1fr]">
+        <div className="grid gap-2 md:gap-8 lg:grid-cols-[680px_1fr]">
           <div>
             {playing ? (
               <div className="aspect-video w-full animate-grow overflow-hidden rounded-2xl">
@@ -104,7 +104,7 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
                   aria-label={`${sceneTitle(main.scene)} 재생`}
                 >
                   {featured.map((f, k) => (
-                    <img key={f.scene.clip.videoId} src={thumbnailUrl(f.scene.clip.videoId)} alt=""
+                    <img key={k} src={thumbnailUrl(f.scene.clip.videoId)} alt=""
                          className={`absolute inset-0 h-full w-full object-cover transition-[opacity,scale] duration-500 group-hover:scale-[1.02] ${k === shown ? "opacity-100" : "opacity-0"}`} />
                   ))}
                   <span className="absolute bottom-4 left-4 flex h-12 w-12 items-center justify-center rounded-full bg-accent text-white">
@@ -117,17 +117,17 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
               )
             )}
             {!playing && featured.length > 1 && (
-              <div className="mt-3 flex gap-1.5" role="group" aria-label="큰 장면 고르기">
+              <div className="mt-3 hidden gap-1.5 md:flex" role="group" aria-label="큰 장면 고르기">
                 {featured.map((f, k) => (
-                  <button key={f.scene.clip.videoId} onClick={() => setShown(k)} aria-pressed={k === shown} aria-label={sceneTitle(f.scene)}
+                  <button key={k} onClick={() => setShown(k)} aria-pressed={k === shown} aria-label={sceneTitle(f.scene)}
                           className="h-1.5 w-6 rounded-full bg-white/25 transition-colors duration-300 aria-pressed:bg-white" />
                 ))}
               </div>
             )}
-            <p className="mt-4 text-[22px] font-bold">{playing ? playing.title : main && sceneTitle(main.scene)}</p>
+            <p className="mt-3 text-base font-bold md:mt-4 md:text-[22px]">{playing ? playing.title : main && sceneTitle(main.scene)}</p>
             <p className="mt-1 text-[13px] text-[#a1a1a8]">{playing ? playing.sub : main && sceneSub(main.scene, main.game)}</p>
             {main && isMain && (
-            <div className="mt-3 flex items-center gap-2.5">
+            <div className="mt-3 hidden items-center gap-2.5 md:flex">
               <PlayerAvatar id={main.scene.player.player_id} name={main.scene.player.name} team={main.scene.team} size={44} />
               <span className="text-[13px] font-medium text-[#d3d4d8]">
                 {main.scene.player.name} · {teamOf(main.scene.team)?.full ?? main.scene.team}
@@ -140,27 +140,30 @@ export default function DayScenes({ day, myTeam, playing, onPlay }: {
           </div>
 
           <ul className="divide-y divide-[#2c2c30]">
-            {[...(main && !isMain ? [main] : []), ...others].map(({ scene, game }) => (
-              <li key={`${game.game_pk}-${scene.clip.videoId}`}>
+            {[...(main && !isMain ? [main] : []), ...others].map(({ scene, game }, i) => (
+              <li key={`${game.game_pk}-${scene.clip.videoId}`} className={i > 1 ? "hidden md:block" : ""}>
                 <button
                   onClick={() => onPlay({ clip: scene.clip, title: sceneTitle(scene), sub: sceneSub(scene, game) })}
                   aria-current={playing?.clip.videoId === scene.clip.videoId ? "true" : undefined}
-                  className="group flex w-full items-center gap-4 py-3 text-left aria-[current=true]:opacity-50"
+                  className="group flex w-full items-center gap-3 py-2.5 text-left aria-[current=true]:opacity-50 md:gap-4 md:py-3"
                 >
-                  <span className="relative aspect-video w-44 shrink-0 overflow-hidden rounded-[10px]">
-                    <img src={thumbnailUrl(scene.clip.videoId)} alt="" className="h-full w-full object-cover" />
+                  <span className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-lg md:w-44 md:rounded-[10px]">
+                    <img src={thumbnailUrl(scene.clip.videoId)} alt="" loading="lazy" className="h-full w-full object-cover" />
                     <span className="absolute bottom-2 left-2 flex items-center gap-1 rounded-md bg-black/75 px-1.5 py-0.5 font-num text-[11px] font-semibold">
                       <PlayGlyph size={7} /> {mmss(clipLength(scene.clip))}
                     </span>
                   </span>
                   <span className="min-w-0">
-                    <span className="block text-[15px] font-bold group-hover:underline">{sceneTitle(scene)}</span>
+                    <span className="block text-sm font-bold group-hover:underline md:text-[15px]">{sceneTitle(scene)}</span>
                     <span className="mt-1 block text-xs text-[#a1a1a8]">{sceneSub(scene, game)}</span>
                   </span>
                 </button>
               </li>
             ))}
           </ul>
+          <Link href={`/scenes/?date=${day.date}`} className="flex h-11 items-center justify-center rounded-xl bg-[#26262a] text-[13px] font-bold md:hidden">
+            {day.date.split("-").map(Number)[1]}월 {day.date.split("-").map(Number)[2]}일 장면 전체 보기 ›
+          </Link>
         </div>
       )}
     </section>

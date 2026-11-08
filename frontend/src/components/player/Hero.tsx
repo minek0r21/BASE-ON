@@ -36,36 +36,37 @@ export default function Hero({ p, role, asOf, onCompare }: {
     .filter(Boolean) as string[];
 
   return (
-    <div className={`grid items-start gap-8 ${scene ? "lg:grid-cols-[minmax(0,1fr)_400px]" : ""}`}>
-      <div className="flex flex-col gap-6 sm:flex-row">
+    <div className={`grid items-start gap-3 md:gap-8 ${scene ? "lg:grid-cols-[minmax(0,1fr)_400px]" : ""}`}>
+      <div className="flex gap-3.5 md:gap-6">
         <Photo id={p.playerId} name={p.name} />
         <div className="min-w-0">
-          <h1 className="flex items-center gap-3 text-[48px] leading-tight font-extrabold tracking-tight">
+          <h1 className="flex items-center gap-2 text-[28px] leading-tight font-black tracking-tight md:gap-3 md:text-[48px] md:font-extrabold">
             {p.name} <TeamLogo team={p.team} height={28} />
           </h1>
-          <p className="mt-2 text-[15px] text-fg-2">{meta.join(" · ")}</p>
+          <p className="mt-1 text-[13px] text-fg-2 md:mt-2 md:text-[15px]">{meta.join(" · ")}</p>
           {tags.length > 0 && (
-            <p className="mt-4 flex flex-wrap gap-2 text-[13px] font-bold">
+            <p className="mt-2 flex flex-wrap gap-1.5 text-[13px] font-bold md:mt-4 md:gap-2">
               {tags.map((x, i) => (
-                <span key={x.text} className={`flex items-center gap-1 rounded-lg px-3 py-1.5 ${i === 0 ? "bg-accent text-white" : "bg-surface-2 text-fg-2"}`}>
+                <span key={x.text} className={`flex items-center gap-1 rounded-lg px-2.5 py-1 md:px-3 md:py-1.5 ${i === 0 ? "bg-accent text-white" : "bg-surface-2 text-fg-2"}`}>
                   {x.trophy && <Trophy />} {x.text}
                 </span>
               ))}
             </p>
           )}
-          <div className="mt-5 flex flex-wrap gap-2">
+          <div className="mt-5 hidden flex-wrap gap-2 md:flex">
             <button onClick={onCompare} className={BTN}>비교하기</button>
             <ShareButton />
           </div>
         </div>
       </div>
-      {scene && <SceneBox name={p.name} scene={scene} />}
+      {/* 모바일 M03 (11-08): 비교는 능력 칸 「다른 타자와 비교 ›」, 공유는 위 막대 아이콘. 대표 장면은 개요 탭 안 */}
+      {scene && <div className="hidden md:block"><SceneBox name={p.name} scene={scene} /></div>}
     </div>
   );
 }
 
 /** 대표 장면 — 처음엔 썸네일 + ▶ (영상은 누를 때 불러온다), 누르면 그 자리에서 재생 */
-function SceneBox({ name, scene }: { name: string; scene: { clip: Clip; title: string; sub: string } }) {
+export function SceneBox({ name, scene }: { name: string; scene: { clip: Clip; title: string; sub: string } }) {
   const [on, setOn] = useState(false);
   return (
     <figure className="min-w-0">
@@ -84,8 +85,8 @@ function SceneBox({ name, scene }: { name: string; scene: { clip: Clip; title: s
       </div>
       <figcaption className="mt-2 flex items-baseline justify-between gap-3">
         <span className="min-w-0 truncate">
-          <span className="text-xs font-bold text-fg-2">대표 장면</span>
-          <span className="ml-2 text-[15px] font-bold">{scene.title}</span>
+          <span className="hidden text-xs font-bold text-fg-2 md:inline">대표 장면</span>
+          <span className="text-[15px] font-bold md:ml-2">{scene.title}</span>
           <span className="ml-2 text-[13px] text-fg-2">{scene.sub}</span>
         </span>
         {on && <button onClick={() => setOn(false)} className="shrink-0 text-[13px] font-bold text-fg-2 hover:underline">닫기</button>}
@@ -100,7 +101,7 @@ export const bigThumb = (videoId: string) => `https://img.youtube.com/vi/${video
 function Photo({ id, name }: { id: string; name: string }) {
   const [failed, setFailed] = useState(false);
   return (
-    <div className="flex h-[225px] w-[180px] shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-line bg-surface">
+    <div className="flex h-[105px] w-[84px] shrink-0 items-center justify-center overflow-hidden rounded-[20px] border border-line bg-surface md:h-[225px] md:w-[180px] md:rounded-2xl">
       {failed ? (
         <span className="text-5xl font-extrabold text-muted" aria-hidden>{name.slice(0, 1)}</span>
       ) : (

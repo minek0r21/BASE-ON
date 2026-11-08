@@ -8,7 +8,8 @@ import { useState } from "react";
 import { Wrap } from "@/components/home/common";
 import { playerHref } from "@/components/SearchBox";
 import { Empty } from "@/components/ui/Chip";
-import { PlayGlyph, TeamLogo } from "@/components/ui/Media";
+import { PlayGlyph, PlayerAvatar, TeamLogo } from "@/components/ui/Media";
+import Seg from "@/components/ui/Seg";
 import { getMeta, getRoster, getStandings, qk, type AxisKey, type PitchAxisKey, type RosterBatter, type RosterPitcher } from "@/lib/api";
 import { barOpacity, isTop20, josa, verdict } from "@/lib/abilities";
 import { axisCopy } from "@/lib/axes";
@@ -58,11 +59,20 @@ export default function TeamRoster() {
   const count = (pitch: boolean) => groups.filter((g) => g.key.startsWith("p-") === pitch).reduce((n, g) => n + g.cards.length, 0);
 
   return (
-    <Wrap className="pt-10 pb-24">
+    <Wrap className="pt-3 pb-6 md:pt-10 md:pb-24">
       <PlayersHead tab="team" sub={[q.data && `${q.data.season} 정규시즌`, asOf && `${md(asOf)} 기준`, "출전 선수 전원"].filter(Boolean).join(" · ")} />
-      <div className="mt-6"><TeamPicker value={name} onPick={pick} /></div>
+      <div className="mt-3.5 md:mt-6"><TeamPicker value={name} onPick={pick} /></div>
 
-      <div className="mt-10 flex flex-wrap items-end justify-between gap-4 border-t-4 pt-6" style={{ borderColor: t.band }}>
+      <div className="mt-2.5 flex items-center gap-3 overflow-hidden rounded-2xl border-t-4 bg-surface px-3.5 py-3 md:hidden" style={{ borderColor: t.band }}>
+        <TeamLogo team={name} height={30} />
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-base font-bold">{t.full}</h2>
+          <p className="text-xs text-fg-2">{[st && `${st.rank}위 · ${st.w}승 ${st.d}무 ${st.l}패`, q.data && `선수 ${count(true) + count(false)}명`].filter(Boolean).join(" · ")}</p>
+        </div>
+        <Link href={teamHref(name)} className="shrink-0 text-[13px] font-bold text-brand-text max-md:-my-3 max-md:py-3">팀 화면 ›</Link>
+      </div>
+
+      <div className="mt-10 hidden flex-wrap items-end justify-between gap-4 border-t-4 pt-6 md:flex" style={{ borderColor: t.band }}>
         <div className="flex items-center gap-4">
           <TeamLogo team={name} height={44} />
           <div>
@@ -80,8 +90,10 @@ export default function TeamRoster() {
       ) : !q.data ? (
         <div className="mt-8 h-[640px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        groups.filter((g) => g.cards.length).map((g) => (
-          <section key={g.key} className="mt-12 animate-appear">
+        <>
+        <MobileRoster key={name} groups={groups} />
+        {groups.filter((g) => g.cards.length).map((g) => (
+          <section key={g.key} className="mt-12 hidden animate-appear md:block">
             <div className="mb-4 flex flex-wrap items-baseline gap-x-2.5 gap-y-1">
               <h3 className="text-xl font-bold">{g.title}</h3>
               <span className="font-num text-[15px] font-bold text-fg-2">{g.cards.length}</span>
@@ -91,9 +103,54 @@ export default function TeamRoster() {
               {g.cards.map((c) => <li key={c.id}><RosterCard c={c} team={name} /></li>)}
             </ul>
           </section>
-        ))
+        ))}
+        </>
       )}
     </Wrap>
+  );
+}
+
+const MOBILE_ROWS = 6;
+
+/** M05a: 포지션을 고르면 그 줄만 — 카드를 전부 쌓으면 한 팀이 화면 수십 장이 된다. 줄은 입문 팬 기준 그대로(익숙한 기록 + 장면) */
+function MobileRoster({ groups }: { groups: Group[] }) {
+  const tabs = [
+    { key: "p", label: "투수", cards: groups.filter((g) => g.key.startsWith("p-")).flatMap((g) => g.cards) },
+    { key: "c", label: "포수", cards: groups.find((g) => g.key === "c")?.cards ?? [] },
+    { key: "if", label: "내야수", cards: groups.find((g) => g.key === "if")?.cards ?? [] },
+    { key: "of", label: "외야수", cards: groups.find((g) => g.key === "of")?.cards ?? [] },
+    { key: "etc", label: "그 밖", cards: groups.find((g) => g.key === "etc")?.cards ?? [] },
+  ].filter((x) => x.cards.length);
+  const [pos, setPos] = useState(tabs[0]?.key ?? "p");
+  const [more, setMore] = useState(false);
+  const cur = tabs.find((x) => x.key === pos) ?? tabs[0];
+  if (!cur) return null;
+  const rows = more ? cur.cards : cur.cards.slice(0, MOBILE_ROWS);
+  return (
+    <div className="mt-2.5 md:hidden">
+      <Seg small label="포지션" value={cur.key} onChange={(k) => { setPos(k); setMore(false); }} items={tabs.map((x) => ({ key: x.key, label: `${x.label} ${x.cards.length}` }))} />
+      <ul className="mt-2 divide-y divide-line rounded-2xl border border-line bg-surface">
+        {rows.map((c) => (
+          <li key={c.id}>
+            <Link href={playerHref(c.id)} className="flex items-center gap-3 px-3.5 py-2.5">
+              <PlayerAvatar id={c.id} name={c.name} team={null} size={44} />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[15px] font-bold">{c.name}</span>
+                <span className="block truncate text-xs text-fg-2">{c.back != null && `#${c.back} · `}{c.main}</span>
+              </span>
+              {c.scenes > 0 && (
+                <span className="flex shrink-0 items-center gap-1 text-xs font-medium text-fg-2"><PlayGlyph size={7} /> 장면 {c.scenes}</span>
+              )}
+            </Link>
+          </li>
+        ))}
+      </ul>
+      {!more && cur.cards.length > MOBILE_ROWS && (
+        <button onClick={() => setMore(true)} className="mt-2 flex h-11 w-full items-center justify-center rounded-xl bg-surface-2 text-[13px] font-bold">
+          {cur.label} {cur.cards.length - MOBILE_ROWS}명 더 보기
+        </button>
+      )}
+    </div>
   );
 }
 

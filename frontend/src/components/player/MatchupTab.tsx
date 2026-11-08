@@ -9,6 +9,7 @@ import StageTag from "@/components/StageTag";
 import { Chip, Empty } from "@/components/ui/Chip";
 import Help from "@/components/ui/Help";
 import { PlayGlyph, PlayerAvatar, TeamLogo } from "@/components/ui/Media";
+import Seg from "@/components/ui/Seg";
 import { getMatchup, getMatchups, getPaClip, qk, type VsPitcher } from "@/lib/api";
 import { md, rate3 } from "@/lib/format";
 import type { Role } from "./Hero";
@@ -61,31 +62,63 @@ export default function MatchupTab({ playerId, playerName, season, role = "batte
   const open = (p: VsPitcher) => {
     setFilter(""); setTeam(null); setPicked(p);
     setMore(more || [...many].sort(cmp).findIndex((x) => x.player_id === p.player_id) >= FIRST); // 접힌 쪽에 있으면 펼친다
-    requestAnimationFrame(() => document.getElementById(`vs-${p.player_id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }));
+    requestAnimationFrame(() => [`vs-${p.player_id}`, `vs-m-${p.player_id}`].forEach((id) => document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "center" })));
   };
   const sortBy = (k: SortKey) => setSort(sort.key === k ? { key: k, desc: !sort.desc } : { key: k, desc: k !== "so" });
 
   return (
-    <section className="animate-appear">
+    <section className="flex animate-appear flex-col md:block">
       <SectionHead
         title={`상대한 ${who}`}
         sub={`${scopeLabel} · ${MIN_PA}타석 이상 맞붙은 ${who} ${many.length}명`}
         right={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex w-full flex-wrap items-center gap-2 md:w-auto">
             {([["all", "2024~2026 누적"], ["season", `${season ?? ""} 시즌`]] as const).map(([k, l]) => (
               <Chip key={k} on={scope === k} onClick={() => { setScope(k); reset(); }}>{l}</Chip>
             ))}
             <input value={filter} onChange={(e) => { setFilter(e.target.value); setTeam(null); }} placeholder={`그 밖 ${few.length}명 이름으로 찾기`} aria-label={`상대 ${who} 이름`}
-                   className="h-9 w-52 rounded-full border border-line bg-surface px-4 text-[13px]" />
+                   className="h-11 w-full rounded-xl border border-line bg-surface px-4 text-base md:h-9 md:w-52 md:rounded-full md:text-[13px]" />
           </div>
         }
       />
-      <Highlights rows={many} onOpen={open} pit={pit} />
-      {season != null && (
-        <ForecastPicker key={`${playerId}-${role}`} player={playerId} side={role} season={season}
-                        initial={all[0] ? { id: all[0].player_id, name: all[0].name, team: all[0].team } : null} />
+      {/* 모바일 M03e: 목록이 먼저, 요약 · 예상은 그 아래 */}
+      <div className="order-last mt-4 md:mt-0">
+        <Highlights rows={many} onOpen={open} pit={pit} />
+        {season != null && (
+          <ForecastPicker key={`${playerId}-${role}`} player={playerId} side={role} season={season}
+                          initial={all[0] ? { id: all[0].player_id, name: all[0].name, team: all[0].team } : null} />
+        )}
+      </div>
+      <Seg className="mb-2 md:hidden" label="정렬" value={sort.key === "avg" ? (sort.desc ? "hi" : "lo") : "pa"}
+           onChange={(v) => setSort(v === "pa" ? { key: "pa", desc: true } : { key: "avg", desc: v === "hi" })}
+           items={[{ key: "pa", label: "타석 순" }, { key: "hi", label: "타율 높은 순" }, { key: "lo", label: "타율 낮은 순" }]} />
+      <ul className="divide-y divide-line rounded-2xl border border-line bg-surface md:hidden">
+        {shown.map((p) => {
+          const on = picked?.player_id === p.player_id;
+          const avg = avgOf(p);
+          return (
+            <li key={p.player_id} id={`vs-m-${p.player_id}`} className="scroll-mt-28">
+              <button onClick={() => setPicked(on ? null : p)} aria-expanded={on} className="flex w-full items-center gap-3 px-3.5 py-2.5 text-left">
+                <PlayerAvatar id={p.player_id} name={p.name} team={p.team} size={40} />
+                <span className="min-w-0 flex-1">
+                  <span className="flex items-center gap-1.5 text-[15px] font-bold"><span className="truncate">{p.name}</span> <TeamLogo team={p.team} height={14} /></span>
+                  <span className="block truncate text-xs text-fg-2">{p.pa}타석 · {p.h}안타 · {p.hr}홈런 · {p.so}삼진</span>
+                </span>
+                <span className="font-num text-base font-semibold">{avg == null ? "–" : rate3(avg)}</span>
+                <span className="text-xs font-bold text-fg-2" aria-hidden>{on ? "▴" : "▾"}</span>
+              </button>
+              {on && <div className="px-2 pb-2"><Detail playerId={playerId} playerName={playerName} p={p} season={s} forecastSeason={season} pit={pit} /></div>}
+            </li>
+          );
+        })}
+        {shown.length === 0 && <li className="py-8 text-center text-sm text-fg-2">{f ? `그 이름의 상대 ${who}가 없어요` : `${MIN_PA}타석 이상 상대한 ${who}가 없어요`}</li>}
+      </ul>
+      {!f && rows.length > FIRST && (
+        <button onClick={() => setMore(!more)} className="mt-2 h-11 w-full rounded-xl bg-surface-2 text-[13px] font-bold md:hidden">
+          {more ? "접기" : `${rows.length - FIRST}명 더 보기`}
+        </button>
       )}
-      <div className="mb-4 flex flex-wrap items-center gap-2" role="group" aria-label="상대 팀">
+      <div className="mb-4 hidden flex-wrap items-center gap-2 md:flex" role="group" aria-label="상대 팀">
         <Chip on={team == null} onClick={() => setTeam(null)}>전체 <span className="font-num opacity-70">{base.length}</span></Chip>
         {teams.map((t) => (
           <Chip key={t} on={team === t} onClick={() => { setTeam(team === t ? null : t); setMore(false); }}>
@@ -94,7 +127,7 @@ export default function MatchupTab({ playerId, playerName, season, role = "batte
         ))}
         <span className="ml-auto text-xs text-fg-2">{sortLabel} {sort.key === "avg" ? (sort.desc ? "높은" : "낮은") : sort.desc ? "많은" : "적은"} 순</span>
       </div>
-      <div className="overflow-hidden rounded-3xl border border-line bg-surface px-6 pt-2 pb-3">
+      <div className="hidden overflow-hidden rounded-3xl border border-line bg-surface px-6 pt-2 pb-3 md:block">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-sm">
             <thead className="text-xs text-fg-2">
@@ -179,10 +212,10 @@ function Highlights({ rows, onOpen, pit }: { rows: VsPitcher[]; onOpen: (p: VsPi
     ...(hr.hr > 0 ? [{ label: pit ? "홈런을 가장 많이 맞은 타자" : "홈런을 가장 많이 친 투수", p: hr, big: `${hr.hr}홈런`, strong: !pit }] : []),
   ];
   return (
-    <ul className="mb-8 grid gap-4 md:grid-cols-3">
+    <ul className="mb-4 grid gap-2 md:mb-8 md:grid-cols-3 md:gap-4">
       {cards.map((c) => (
         <li key={c.label}>
-          <button onClick={() => onOpen(c.p)} className="group flex w-full items-center gap-4 rounded-3xl border border-line bg-surface p-5 text-left hover:bg-surface-2">
+          <button onClick={() => onOpen(c.p)} className="group flex w-full items-center gap-3 rounded-2xl border border-line bg-surface p-3 text-left md:gap-4 md:rounded-3xl md:p-5 hover:bg-surface-2">
             <PlayerAvatar id={c.p.player_id} name={c.p.name} team={c.p.team} size={56} />
             <span className="min-w-0 flex-1">
               <span className="block text-xs font-bold text-fg-2">{c.label}</span>
@@ -234,8 +267,8 @@ function Detail({ playerId, playerName, p, season, forecastSeason, pit }: {
               const when = `${pa.date.slice(0, 4)}. ${md(pa.date)}`;
               const hr = pa.events === "home_run";
               return (
-                <li key={pa.pa_id} className="flex h-11 items-center gap-4 text-[13px]">
-                  <span className="w-20 shrink-0 font-num text-fg-2">{when}</span>
+                <li key={pa.pa_id} className="flex h-11 items-center gap-2 text-[13px] md:gap-4">
+                  <span className="w-[72px] shrink-0 font-num text-xs text-fg-2 md:w-20 md:text-[13px]">{when}</span>
                   <span className="w-14 shrink-0 font-num text-fg-2">{pa.inning}회{pa.inning_half}</span>
                   <StageTag label={pa.stage_label} />
                   <span className={`min-w-0 flex-1 truncate ${hr ? "font-bold text-(--team-text)" : "font-medium"}`}>{pa.events_ko}</span>

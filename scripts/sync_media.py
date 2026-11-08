@@ -6,6 +6,9 @@
 scripts/upscale_media.py로 만든 4배 폴더(photos_x4/ · logos_x4/)가 있으면 그 파일을 먼저 쓴다.
 frontend/public/media/는 git 제외. 정적 빌드(out/)에 같이 들어가 서버에서 /media/… 로 나간다.
 파일이 없는 선수는 화면이 이름 첫 글자로 대신 그린다.
+
+작은 로고: 원본은 장당 최대 140KB인데 화면은 대부분 14~22px로 쓴다 → logos/s/(구단 코드.webp, 높이 96)를 따로 만든다.
+화면은 32px 이하에 이 파일을 쓰고, 없으면 원본으로 넘어간다. Pillow가 없으면 건너뛴다.
 """
 import shutil
 from pathlib import Path
@@ -30,3 +33,18 @@ for name in ("photos", "logos"):
                 n += 1
             n_big += pick.parent == big
     print(f"{name}: {n}개 복사 (4배 {n_big}개) → {out.relative_to(ROOT)}")
+
+try:
+    from PIL import Image
+except ImportError:
+    print("Pillow 없음 — 작은 로고 건너뜀 (화면은 원본을 쓴다)")
+else:
+    small = DEST / "logos" / "s"
+    small.mkdir(parents=True, exist_ok=True)
+    total = 0
+    for f in (DEST / "logos").glob("*.png"):
+        with Image.open(f) as im:
+            h = min(96, im.height)
+            im.convert("RGBA").resize((round(im.width * h / im.height), h), Image.LANCZOS).save(small / f"{f.stem}.webp", quality=88, method=6)
+        total += (small / f"{f.stem}.webp").stat().st_size
+    print(f"작은 로고: {total // 1024}KB → {small.relative_to(ROOT)}")

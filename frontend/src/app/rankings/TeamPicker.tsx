@@ -16,7 +16,29 @@ export default function TeamPicker({ value, onPick, withAll = false }: { value: 
   const order = useTeamOrder();
   const btn = "flex h-11 items-center gap-2 rounded-full border border-line bg-surface text-sm font-medium hover:bg-surface-2 aria-pressed:border-2 aria-pressed:font-bold";
   return (
-    <div className="flex flex-wrap gap-2" role="group" aria-label="팀">
+    <>
+    {/* 모바일: 순위 화면은 고르는 칸 하나(M05b), 팀별 선수는 5 × 2 격자(M05a) — 칸이 폭을 나눠 가져 320에서도 두 줄이다 */}
+    {withAll ? (
+      <label className="flex h-11 items-center rounded-xl border border-line bg-surface px-3.5 md:hidden">
+        <span className="sr-only">팀</span>
+        <select value={value ?? ""} onChange={(e) => onPick(e.target.value || null)} className="h-full w-full bg-transparent text-sm font-medium outline-none">
+          <option value="">전체 팀</option>
+          {order.map((x) => <option key={x} value={x}>{x}</option>)}
+        </select>
+      </label>
+    ) : (
+      <ul className="grid grid-cols-5 gap-1.5 md:hidden">
+        {order.map((x) => (
+          <li key={x}>
+            <button onClick={() => onPick(x)} aria-pressed={x === value}
+                    className="flex h-11 w-full items-center justify-center gap-1 rounded-xl border border-line bg-surface text-[13px] font-bold aria-pressed:border-fg aria-pressed:bg-fg aria-pressed:text-white">
+              <TeamLogo team={x} height={14} /> {x}
+            </button>
+          </li>
+        ))}
+      </ul>
+    )}
+    <div className="hidden flex-wrap gap-2 md:flex" role="group" aria-label="팀">
       {withAll && (
         <button onClick={() => onPick(null)} aria-pressed={value == null} className={`${btn} px-5 aria-pressed:border-fg`}>전체</button>
       )}
@@ -26,5 +48,6 @@ export default function TeamPicker({ value, onPick, withAll = false }: { value: 
         </button>
       ))}
     </div>
+    </>
   );
 }
