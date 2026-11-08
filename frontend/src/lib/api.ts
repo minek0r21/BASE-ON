@@ -749,11 +749,12 @@ export type ClipCheck = {
   read_batter: string | null; read_hr_no: number | null; read_inning: number | null; read_score: string | null;
   evidence: string; model: string | null;
 };
-/** NFR-07 표본 (API 7''): 사람이 볼 것만(match2가 아닌 것 + match2 앞 20개), 위험한 판정부터 */
+/** NFR-07 표본 v2 (API 7''): 화면에 나가는 홈런 자동 확정 연결 300개(etl 11 --sample로 고정), 아직 안 본 것만 표본 순서로.
+ *  upper95 = 틀림 비율 95% 상한 — 300개를 다 본 뒤에만 */
 export type Nfr07 = ReviewQueue & {
-  season: number; sample: number; spot: number;
-  progress: { must: number; seen: number; wrong: number; match2: number; estimate_wrong: number | null };
-  by_verdict: Record<ClipVerdict | "unread", { n: number; seen: number; wrong: number }>;
+  season: number; sample: number; target: number;
+  progress: { seen: number; wrong: number; upper95: number | null };
+  by_origin: Record<string, { n: number; seen: number; wrong: number }>;
 };
 export type ReviewQueue = {
   total: number; limit: number; offset: number;
@@ -781,7 +782,7 @@ async function admin<T>(method: "GET" | "PATCH" | "POST", path: string, query: Q
   const token = adminToken.get();
   const res = await fetch(`${API_BASE}${path}${qs.size ? `?${qs}` : ""}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { "X-Admin-Token": token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -798,8 +799,11 @@ export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | n
 
 export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
 
-export const getNfr07 = (season: number, offset: number) =>
-  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset });
+/** 토큰 확인. reviewer = 토큰의 이름, 토큰 설정이 없는 로컬 개발은 null */
+export const getAdminMe = () => admin<{ reviewer: string | null }>("GET", "/admin/me");
+
+export const getNfr07 = (season: number, offset: number, part = 1, parts = 1) =>
+  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset, part, parts });
 
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
 const reviewPath = (it: ReviewItem) =>
@@ -853,7 +857,8 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
-  nfr07: (season: number, o: number) => ["reviewQueue", "nfr07", season, o] as const,
+  adminMe: (token: string) => ["adminMe", token] as const,
+  nfr07: (season: number, o: number, part: string) => ["reviewQueue", "nfr07", season, o, part] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,

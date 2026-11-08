@@ -1,9 +1,9 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  adminToken, ApiError, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
+  adminToken, ApiError, getAdminMe, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
   type Clip, type ClipCheck, type ClipVerdict, type Nfr07, type ReviewItem, type ReviewMode, type TargetKind,
 } from "@/lib/api";
 import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
@@ -15,11 +15,16 @@ const REASON_KO: Record<string, string> = {
   doubleheader: "더블헤더 미판정", ambiguous: "후보 여럿·동명이인", claim_mismatch: "제목 주장 불일치",
   milestone: "기록 달성", neutral: "챕터 중립 · 무실점이지만 안타 허용", no_claim: "제목 주장 없음", excluded_words: "인터뷰·모음 등",
   low_gap: "1·2등 점수 차 작음", multi_hr: "그날 홈런 여럿", multi_hit: "어느 안타인지 모름", no_title_date: "제목에 날짜 없음",
-  not_hr: "결과 단어 없음 (타점 등)", not_hr_title: "제목에 홈런 단어 없음", unplayable: "영상 소실", "-": "기타",
+  not_hr: "결과 단어 없음 (타점 등)", not_hr_title: "제목에 홈런 단어 없음", unplayable: "영상 소실",
+  highlight_weak: "하이라이트 판독 근거 약함", multi_scene_clip: "멀티 홈런 클립 (어느 홈런인지 · 15초 밖)", "-": "기타",
 };
 const PRECISION_KO = { scene: "바로 그 장면", inning: "그 이닝부터", game: "경기 요약" } as const;
 const NAME_KEY = "baseon.admin.reviewer";
+const PART_KEY = "baseon.admin.nfr07part";
+// NFR-07 표본을 여럿이 나눠 볼 때 내 몫 (「2/3」 = 세 명 중 두 번째, 표본 순번 % 3)
+const PARTS = ["1/1", "1/2", "2/2", "1/3", "2/3", "3/3", "1/4", "2/4", "3/4", "4/4"];
 const NFR07_SEASON = 2026;
+const ORIGIN_KO: Record<string, string> = { highlight: "하이라이트 장면", auto: "클립(제목 규칙)", manual: "사람 표시", gemini_manual: "사람 표시" };
 // Gemini 확인 판독(장면.md 11-6) — 위험한 것부터
 const VERDICT_KO: Record<ClipVerdict | "unread", string> = {
   conflict: "근거 충돌", other: "다른 타자", none: "홈런 못 읽음", name_only: "이름만", match1: "근거 1개 일치", match2: "근거 2개↑ 일치",
@@ -35,19 +40,30 @@ export default function ReviewPage() {
   const [reason, setReason] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   // 검수자 이름은 이 브라우저에 기억, 토큰은 sessionStorage에만 (설계 6-4). 정적 빌드 때(window 없음)는 빈 값
-  const [reviewer, setReviewer] = useState(() => {
+  const [name, setName] = useState(() => {
     if (typeof window === "undefined") return "";
     try { return localStorage.getItem(NAME_KEY) ?? ""; } catch { return ""; }
   });
   const [token, setToken] = useState(() => (typeof window === "undefined" ? "" : adminToken.get()));
+  const [draft, setDraft] = useState("");
+  const [part, setPart] = useState(() => {
+    if (typeof window === "undefined") return "1/1";
+    try { const v = localStorage.getItem(PART_KEY); return v && PARTS.includes(v) ? v : "1/1"; } catch { return "1/1"; }
+  });
+  const [mine, of] = part.split("/").map(Number);
   const [playing, setPlaying] = useState<{ clip: Clip; label: string } | null>(null);
 
-  const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats });
+  // 「입력」을 누르면 토큰이 바뀌어 다시 확인한다. 통과해야 검수 화면을 연다
+  const me = useQuery({ queryKey: qk.adminMe(token), queryFn: getAdminMe, retry: false });
+  const authed = me.isSuccess;
+  const reviewer = me.data?.reviewer ?? name;  // 토큰이 있으면 토큰의 이름, 로컬 개발은 적은 이름
+
+  const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats, enabled: authed });
   const queue = useQuery({
-    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset) : qk.reviewQueue(mode, targetKind, reason, null, offset),
-    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
+    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset, part) : qk.reviewQueue(mode, targetKind, reason, null, offset),
+    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset, mine, of) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
     placeholderData: keepPreviousData,
-    enabled: view !== "manual",
+    enabled: authed && view !== "manual",
   });
   const save = useMutation({
     mutationFn: (v: { it: ReviewItem; action: ReviewActionKind; start?: number; end?: number; to?: string }) =>
@@ -58,8 +74,47 @@ export default function ReviewPage() {
     },
   });
 
-  const unauthorized = queue.error instanceof ApiError && queue.error.status === 401;
   const reasons = (queue.data?.counts ?? []).filter((c) => !targetKind || c.target_kind === targetKind);
+
+  if (!authed) {
+    const wrong = me.error instanceof ApiError && me.error.status === 401;
+    return (
+      <div className="mx-auto w-full max-w-sm px-4 py-16">
+        <form
+          className="space-y-3 rounded-xl border border-line bg-surface p-6"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const t = draft.trim();
+            adminToken.set(t);
+            setToken(t);
+            if (t === token) me.refetch();
+          }}
+        >
+          <h1 className="text-xl font-extrabold">장면 검수</h1>
+          <label className="block text-sm">
+            <span className="mb-1.5 block text-muted">검수자 토큰</span>
+            <input
+              type="password"
+              value={draft}
+              onChange={(e) => setDraft(e.target.value)}
+              autoComplete="off"
+              autoFocus
+              className="w-full rounded-lg border border-line bg-bg px-3 py-2"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={!draft.trim() || me.isFetching}
+            className="w-full rounded-lg bg-fg px-3 py-2 font-semibold text-bg disabled:opacity-50"
+          >
+            {me.isFetching ? "확인 중" : "입력"}
+          </button>
+          {token && wrong && !me.isFetching && <p role="alert" className="text-sm text-red-600">토큰이 맞지 않습니다.</p>}
+          {me.isError && !wrong && !me.isFetching && <p role="alert" className="text-sm text-red-600">확인하지 못했습니다. 다시 눌러 주세요.</p>}
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
@@ -68,13 +123,15 @@ export default function ReviewPage() {
           <h1 className="text-2xl font-extrabold">장면 검수</h1>
           <p className="text-sm text-muted">자동 확정 조건을 넘지 못한 연결을 승인·반려하고, 장면 없는 홈런은 경기 하이라이트에서 직접 표시합니다.</p>
         </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <label className="flex items-center gap-1.5">
+        {me.data?.reviewer ? (
+          <span className="text-sm"><span className="text-muted">검수자</span> <b>{me.data.reviewer}</b></span>
+        ) : (
+          <label className="flex items-center gap-1.5 text-sm">
             <span className="text-muted">검수자</span>
             <input
-              value={reviewer}
+              value={name}
               onChange={(e) => {
-                setReviewer(e.target.value);
+                setName(e.target.value);
                 try { localStorage.setItem(NAME_KEY, e.target.value); } catch { /* 저장소 막힘 */ }
               }}
               className="w-24 rounded-lg border border-line bg-surface px-2 py-1"
@@ -82,21 +139,7 @@ export default function ReviewPage() {
               suppressHydrationWarning
             />
           </label>
-          <label className="flex items-center gap-1.5">
-            <span className="text-muted">토큰</span>
-            <input
-              type="password"
-              value={token}
-              onChange={(e) => {
-                setToken(e.target.value);
-                adminToken.set(e.target.value);
-              }}
-              className="w-32 rounded-lg border border-line bg-surface px-2 py-1"
-              placeholder="서버에 설정했을 때만"
-              suppressHydrationWarning
-            />
-          </label>
-        </div>
+        )}
       </header>
 
       {/* 대상별 현황 */}
@@ -144,15 +187,51 @@ export default function ReviewPage() {
         )}
         {view === "nfr07" && (
           <span className="text-xs text-muted">
-            표본 300개 중 Gemini 근거가 2개↑ 일치하지 않은 것 전부 + 2개↑ 일치 앞 {(queue.data as Nfr07 | undefined)?.spot ?? 20}개. 위험한 판정부터. 맞음 · 틀림은 사람이 누릅니다.
+            화면에 나가는 홈런 장면 300개를 하나씩 재생합니다. 시작 15초 안에 그 타자의 그 홈런이 보이면 맞음(J), 아니면 틀림(K).
           </span>
         )}
+        {view === "nfr07" && (
+          <label className="flex items-center gap-1 text-xs">
+            <span className="text-muted">나눠 보기</span>
+            <select
+              value={part}
+              onChange={(e) => {
+                setPart(e.target.value);
+                try { localStorage.setItem(PART_KEY, e.target.value); } catch { /* 저장소 막힘 */ }
+              }}
+              className="rounded border border-line bg-surface px-1 py-0.5"
+            >
+              {PARTS.map((p) => {
+                const [a, b] = p.split("/");
+                return <option key={p} value={p}>{b === "1" ? "혼자 전부" : `${b}명 중 ${a}번째`}</option>;
+              })}
+            </select>
+          </label>
+        )}
       </div>
-      {view === "nfr07" && queue.data && "progress" in queue.data && <Nfr07Panel d={queue.data as Nfr07} />}
+      {view === "nfr07" && queue.data && "progress" in queue.data && (<>
+        <Nfr07Panel d={queue.data as Nfr07} />
+        {queue.data.items[0] ? (
+          <Nfr07Runner
+            key={`${queue.data.items[0].target_id}-${queue.data.items[0].video.video_id}`}
+            it={queue.data.items[0]}
+            left={queue.data.total}
+            busy={save.isPending || queue.isFetching}
+            canSave={reviewer.trim().length > 0}
+            onSave={(action) => save.mutate({ it: queue.data!.items[0], action })}
+          />
+        ) : (
+          <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">
+            {(queue.data as Nfr07).sample ? (of > 1 ? "내 몫을 다 봤습니다." : "표본을 다 봤습니다.") : "표본이 아직 없습니다 (etl 11 --sample)."}
+          </p>
+        )}
+      </>)}
 
-      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : (<>
-      {/* 필터 (NFR-07 표본은 대상 · 이유가 정해져 있어 없음) */}
-      <div className={`flex flex-wrap items-center gap-2 text-sm ${view === "nfr07" ? "hidden" : ""}`}>
+      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : view === "nfr07" ? (
+        save.isError && <p className="text-sm text-red-600">저장하지 못했습니다: {(save.error as Error).message}</p>
+      ) : (<>
+      {/* 필터 */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
         {([null, "game", "pa", "outing"] as (TargetKind | null)[]).map((k) => (
           <button
             key={k ?? "all"}
@@ -185,9 +264,7 @@ export default function ReviewPage() {
         </div>
       )}
 
-      {unauthorized ? (
-        <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">관리자 토큰을 입력해 주세요.</p>
-      ) : queue.isPending ? (
+      {queue.isPending ? (
         <p className="text-muted">불러오는 중…</p>
       ) : queue.isError ? (
         <p className="text-muted">검수 목록을 불러오지 못했습니다.</p>
@@ -321,24 +398,66 @@ function ReviewRow({
   );
 }
 
-/** NFR-07 진행: 확인 수 · 틀림 · 추정 틀림 + Gemini 판정 × 사람 판정 */
+/** NFR-07 진행: 확인 수 · 틀림 · 95% 상한 + 출처(하이라이트 장면 · 클립)별 */
 function Nfr07Panel({ d }: { d: Nfr07 }) {
   const p = d.progress;
   return (
     <section className="rounded-xl border border-line bg-surface p-4 text-sm">
       <p className="font-semibold">
-        확인 <span className="tabular-nums">{p.seen} / {p.must}</span> · 틀림 <span className="tabular-nums">{p.wrong}</span>
+        확인 <span className="tabular-nums">{p.seen} / {d.sample}</span> · 틀림 <span className="tabular-nums">{p.wrong}</span>
         <span className="ml-2 font-normal text-muted">
-          {p.estimate_wrong != null ? `표본 ${d.sample}개 추정 틀림 ${p.estimate_wrong}개 (목표 1개 이하)` : "추정은 약한 쪽을 다 보고 2개↑ 일치를 1개 이상 보면 나옵니다"}
+          {p.upper95 != null ? `틀림 비율 95% 상한 ${(p.upper95 * 100).toFixed(2)}% (목표 1% 이하)` : `${d.sample}개를 다 보면 95% 상한이 나옵니다 (틀림 0개면 0.99%)`}
         </span>
       </p>
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted tabular-nums">
-        {(Object.keys(VERDICT_KO) as (ClipVerdict | "unread")[]).filter((k) => d.by_verdict[k]?.n).map((k) => (
-          <span key={k}>
-            {VERDICT_KO[k]} {d.by_verdict[k].n}
-            {d.by_verdict[k].seen > 0 && ` (확인 ${d.by_verdict[k].seen} · 틀림 ${d.by_verdict[k].wrong})`}
-          </span>
+        {Object.entries(d.by_origin).map(([k, t]) => (
+          <span key={k}>{ORIGIN_KO[k] ?? k} {t.n}{t.seen > 0 && ` (확인 ${t.seen} · 틀림 ${t.wrong})`}</span>
         ))}
+      </div>
+    </section>
+  );
+}
+
+/** NFR-07 하나씩: 장면 시각부터 바로 재생, J 맞음 · K 틀림 · R 처음부터 다시. 저장하면 다음 장면으로 */
+function Nfr07Runner({ it, left, busy, canSave, onSave }: {
+  it: ReviewItem; left: number; busy: boolean; canSave: boolean; onSave: (action: "approve" | "reject") => void;
+}) {
+  const [again, setAgain] = useState(0);
+  const clip: Clip = {
+    videoId: it.video.video_id, title: it.video.title, startSec: it.start_sec ?? 0,
+    endSec: it.end_sec ?? it.video.duration_sec, durationSec: it.video.duration_sec, precision: it.precision,
+  };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "r" || e.key === "R") { setAgain((n) => n + 1); return; }
+      if (busy || !canSave) return;
+      if (e.key === "j" || e.key === "J") onSave("approve");
+      if (e.key === "k" || e.key === "K") onSave("reject");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [busy, canSave, onSave]);
+  return (
+    <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-semibold">{it.summary}</span>
+        <span className="text-xs text-muted">{it.date}</span>
+        <span className="rounded-full border border-line px-2 py-0.5 text-xs">{ORIGIN_KO[it.origin] ?? it.origin}</span>
+        <span className="ml-auto text-xs text-muted tabular-nums">남은 {left}개</span>
+      </div>
+      <div className="aspect-video w-full overflow-hidden rounded-lg">
+        <ScenePlayer key={again} clip={clip} label={`${it.summary} · ${clip.startSec}초부터`} bare />
+      </div>
+      <p className="truncate text-xs text-muted" title={it.video.title}>[{it.video.channel}] {it.video.title}</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <button disabled={busy || !canSave} onClick={() => onSave("approve")}
+          className="rounded-lg bg-fg px-4 py-1.5 text-sm font-semibold text-bg disabled:opacity-40">맞음 <kbd className="ml-1 text-xs opacity-70">J</kbd></button>
+        <button disabled={busy || !canSave} onClick={() => onSave("reject")}
+          className="rounded-lg border border-line px-4 py-1.5 text-sm font-semibold disabled:opacity-40">틀림 <kbd className="ml-1 text-xs opacity-70">K</kbd></button>
+        <button onClick={() => setAgain((n) => n + 1)} className="rounded-lg border border-line px-3 py-1.5 text-sm">처음부터 <kbd className="ml-1 text-xs opacity-70">R</kbd></button>
+        {!canSave && <span className="text-xs text-muted">검수자 이름을 먼저 적어 주세요</span>}
       </div>
     </section>
   );

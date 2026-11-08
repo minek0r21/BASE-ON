@@ -26,7 +26,8 @@ GEM = "https://generativelanguage.googleapis.com/v1beta/"
 ROOT = Path(__file__).resolve().parents[1]
 SPEND = ROOT / "videos" / "gemini" / "spend.jsonl"
 # 100만 토큰당 달러 (입력, 출력 — 생각 토큰 포함). 2026-12-31까지 값이고 2027-01-01부터 두 배 (AI Studio 요금표)
-PRICE = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.6-flash": (0.75, 3.75)}
+# 11-06 실측: 이 표로 어림한 값이 실제 청구(콘솔 28.2천 원)의 2배 남짓 — 상한은 넉넉한 쪽으로 걸린다. 실제 잔액은 콘솔로 본다
+PRICE = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.7-flash": (0.75, 3.75), "gemini-3.6-flash": (0.75, 3.75)}
 PRICE_DEFAULT = (1.5, 7.5)  # 모르는 모델은 비싸게 잡는다
 
 
@@ -120,7 +121,7 @@ class Judge:
         log("모델 순서:", self.models)
 
     def ask(self, key: str, video_id: str, prompt: str, schema: dict, start_sec: float | None = None,
-            end_sec: float | None = None) -> dict:
+            end_sec: float | None = None, max_tokens: int | None = None) -> dict:
         p = self.out / f"{key}.json"
         if p.exists():
             return json.load(open(p, encoding="utf-8"))
@@ -130,6 +131,8 @@ class Judge:
         body = {"contents": [{"parts": [part, {"text": prompt}]}],
                 "generationConfig": {"responseMimeType": "application/json", "responseSchema": schema, "temperature": 0,
                                      "mediaResolution": os.environ.get("GEMINI_MEDIA_RES", "MEDIA_RESOLUTION_LOW")}}
+        if max_tokens:  # 응답이 끝없이 길어지는 것 막기 (생각 토큰 포함 — 11-05 하나가 6.5만 토큰 $0.32)
+            body["generationConfig"]["maxOutputTokens"] = max_tokens
         if self.usd is not None and self.spent >= self.usd:
             raise OverBudget(f"이번 실행 상한 ${self.usd:.2f}에 닿음 (쓴 돈 ${self.spent:.2f})")
         busy = 0

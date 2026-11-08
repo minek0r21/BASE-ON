@@ -3,14 +3,16 @@
   GET   /admin/review/queue?target_kind=&reason=&season=&limit=&offset=   검수 대기 연결 (연결 하나 = 한 줄)
   PATCH /admin/review/{target_kind}/{target_id}/videos/{video_id}         승인 · 반려 · 구간 고쳐 승인(retime)
   GET   /admin/review/stats                                               대상별·상태별 개수, 자동 연결 정확도
+  GET   /admin/me                                                         검수자 확인 (검수 화면 「입력」 버튼)
 
 인증 (설계 6-4): 환경변수 ADMIN_TOKENS="이름1:토큰1,이름2:토큰2"가 있으면 Authorization: Bearer <토큰>이 필요하고
 검수자 이름은 토큰으로 정한다. 없으면(로컬 개발) 인증 없이 본문의 reviewer를 쓴다.
 """
 import hashlib
+import math
 import os
 import secrets
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, Query
 from pydantic import BaseModel, Field
@@ -30,16 +32,24 @@ def _tokens() -> dict[str, str]:
     return {tok.strip(): name.strip() for name, _, tok in (p.partition(":") for p in raw.split(",")) if tok.strip()}
 
 
-def require_admin(authorization: str | None = Header(None)) -> str | None:
-    """토큰이 설정돼 있으면 검사하고 검수자 이름을 돌려준다. 설정이 없으면 None (로컬 개발)"""
+def require_admin(authorization: Annotated[str | None, Header()] = None,
+                  x_admin_token: Annotated[str | None, Header()] = None) -> str | None:
+    """토큰이 설정돼 있으면 검사하고 검수자 이름을 돌려준다. 설정이 없으면 None (로컬 개발)
+    화면은 X-Admin-Token으로 보낸다 — 서버는 사이트 비밀번호(HTTP Basic)가 Authorization 칸을 쓰므로,
+    거기에 Bearer를 넣으면 비밀번호가 빠져 로그인 창이 계속 뜬다 (11-07)"""
     tokens = _tokens()
     if not tokens:
         return None
-    given = (authorization or "").removeprefix("Bearer ").strip()
+    given = (x_admin_token or (authorization or "").removeprefix("Bearer ")).strip()
     for tok, name in tokens.items():
         if secrets.compare_digest(given, tok):
             return name
     raise ApiError(401, "UNAUTHORIZED", "관리자 토큰이 필요합니다")
+
+
+@router.get("/admin/me", summary="7'''. 검수자 확인 — 토큰의 이름 (토큰 설정이 없는 로컬 개발은 null)")
+def admin_me(reviewer: str | None = Depends(require_admin)):
+    return {"reviewer": reviewer}
 
 
 # ------------------------------------------------------------------ 검수 대기 목록
@@ -115,61 +125,59 @@ def review_queue(
     }
 
 
-# ------------------------------------------------------------------ NFR-07 표본 (장면.md 11-6)
-# 표본 = 그 시즌 정규시즌 홈런의 자동 확정 장면 연결을 (pa_id|video_id) 해시 순으로 세운 앞 300개 (etl/10_check_clips.py와 같은 규칙).
-# 사람은 Gemini 판정(CHECKED)이 match2가 아닌 것 전부 + match2 앞 20개를 본다.
-# 틀림 추정 = 약한 쪽에서 찾은 틀림 + (match2 앞 20개 중 틀림 비율 × match2 수). match2 쪽은 「제목과 화면이 같이 틀리지 않는다」는 가정에 기댄다
-NFR07_N, NFR07_SPOT = 300, 20
-VERDICTS = ["conflict", "other", "none", "name_only", "match1", "match2"]  # 위험한 것부터 (etl/reading.py와 같은 순서)
+# ------------------------------------------------------------------ NFR-07 표본 v2 (장면.md 11-7)
+# 표본 = 홈런마다 화면에 나가는 자동 확정 연결을 (pa_id|video_id) 해시 순으로 세운 앞 300개. etl/11_read_highlights.py --sample이
+# m.nfr07 = 'v2' · m.nfr07_i(순서)로 고정한다. 하이라이트 장면은 Gemini 판독이 확정을 정했으므로 사람이 300개를 전부 본다.
+# 맞음 = approve, 틀림 = reject(화면에서 내려간다). 기준: 시작 15초 안에 그 타자의 그 홈런이 보이는가 (TRD NFR-07)
+NFR07_N = 300
 Q_NFR07 = """
-MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance {season: $season, events: 'home_run', game_type: 'regular'})-[m:MATCHED_TO]->(v:VideoLink)
-WHERE coalesce(m.precision, 'scene') = 'scene' AND coalesce(v.playable, true)
-  AND (m.status = 'auto_confirmed' OR m.reviewed_from = 'auto_confirmed')
-OPTIONAL MATCH (pa)-[ck:CHECKED]->(v)
+MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance {season: $season, events: 'home_run'})-[m:MATCHED_TO {nfr07: 'v2'}]->(v:VideoLink)
 RETURN 'pa' AS target_kind, pa.pa_id AS target_id, toString(pa.date) AS date,
        b.name + ' · ' + toString(pa.inning) + '회' + pa.inning_half + ' 홈런'
          + CASE WHEN pa.hr_seq IS NULL THEN '' ELSE ' (' + toString(pa.hr_seq) + '호)' END AS summary,
        m {.status, .origin, .scene_type, .precision, .start_sec, .end_sec, .score, .reasons, .review_reason, .tags} AS m,
-       v {.video_id, .title, .channel, .kind, .duration_sec} AS v,
-       ck {.verdict, .checks, .conflicts, .read_batter, .read_hr_no, .read_inning, .read_score, .evidence, .model} AS check
+       v {.video_id, .title, .channel, .kind, .duration_sec} AS v, m.nfr07_i AS i
+ORDER BY i
 """
 
 
-@router.get("/admin/review/nfr07", summary="7''. NFR-07 표본 (홈런 자동 확정 300개) — 사람이 볼 것 · 진행 · 틀림 추정")
+def upper95(wrong: int, n: int) -> float | None:
+    """틀림 비율의 95% 위쪽 한계 (Clopper-Pearson, 한쪽). 틀림 0개면 약 3/n"""
+    if not n:
+        return None
+    if wrong >= n:
+        return 1.0
+    cdf = lambda p: sum(math.comb(n, k) * p ** k * (1 - p) ** (n - k) for k in range(wrong + 1))  # noqa: E731
+    lo, hi = wrong / n, 1.0
+    for _ in range(60):  # P(X ≤ wrong | p) = 0.05가 되는 p
+        mid = (lo + hi) / 2
+        lo, hi = (mid, hi) if cdf(mid) > 0.05 else (lo, mid)
+    return round(hi, 4)
+
+
+@router.get("/admin/review/nfr07", summary="7''. NFR-07 표본 v2 (화면에 나가는 홈런 자동 확정 연결 300개) — 진행 · 틀림 · 95% 상한")
 def nfr07_sample(season: int = Query(2026), limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge=0),
+                 part: int = Query(1, ge=1, description="여럿이 나눠 볼 때 내 몫 (1부터)"),
+                 parts: int = Query(1, ge=1, le=10, description="나눠 보는 사람 수 — 표본 순번 % parts로 나눈다"),
                  _reviewer: str | None = Depends(require_admin)):
     rows = run(Q_NFR07, season=season)
-    rows.sort(key=lambda r: hashlib.sha1(f"{r['target_id']}|{r['v']['video_id']}".encode()).hexdigest())
-    sample = rows[:NFR07_N]
-    verdict = lambda r: (r["check"] or {}).get("verdict")  # noqa: E731 — 판독 전이면 None (사람이 본다)
-    m2 = [r for r in sample if verdict(r) == "match2"]
-    spot = {r["target_id"] + "|" + r["v"]["video_id"] for r in m2[:NFR07_SPOT]}
-    is_spot = lambda r: r["target_id"] + "|" + r["v"]["video_id"] in spot  # noqa: E731
-    must = [r for r in sample if verdict(r) != "match2" or is_spot(r)]
-    must.sort(key=lambda r: VERDICTS.index(verdict(r) or "none"))  # 정렬이 안정적이라 같은 판정 안에서는 표본 순서 그대로
-
-    seen = lambda rs: [r for r in rs if r["m"]["status"] != "auto_confirmed"]  # noqa: E731 — 사람이 맞음 · 틀림을 누름
-    wrong = lambda rs: sum(r["m"]["status"] == "rejected" for r in rs)  # noqa: E731
-    weak, spot_rows = [r for r in must if not is_spot(r)], [r for r in must if is_spot(r)]
-    spot_seen = seen(spot_rows)
-    est = None
-    if len(seen(weak)) == len(weak) and spot_seen:
-        est = round(wrong(weak) + wrong(spot_seen) / len(spot_seen) * len(m2), 1)
-    table = {v: {"n": 0, "seen": 0, "wrong": 0} for v in VERDICTS + ["unread"]}
-    for r in sample:
-        t = table[verdict(r) or "unread"]
+    seen = [r for r in rows if r["m"]["status"] != "auto_confirmed"]  # 사람이 맞음 · 틀림을 누름
+    wrong = sum(r["m"]["status"] == "rejected" for r in seen)
+    by_origin: dict = {}
+    for r in rows:  # highlight = 하이라이트 판독 장면, auto = 제목 규칙 클립
+        t = by_origin.setdefault(r["m"]["origin"] or "-", {"n": 0, "seen": 0, "wrong": 0})
         t["n"] += 1
         t["seen"] += r["m"]["status"] != "auto_confirmed"
         t["wrong"] += r["m"]["status"] == "rejected"
-    todo = [r for r in must if r["m"]["status"] == "auto_confirmed"]
+    todo = [r for r in rows if r["m"]["status"] == "auto_confirmed" and (r["i"] or 0) % parts == (part - 1) % parts]
     return {
-        "season": season, "sample": len(sample), "spot": NFR07_SPOT,
-        "progress": {"must": len(must), "seen": len(seen(must)), "wrong": wrong(must), "match2": len(m2),
-                     "estimate_wrong": est},
-        "by_verdict": table,  # Gemini 판정 × 사람 판정 (match2 쪽 seen은 앞 20개만 본 것)
+        "season": season, "sample": len(rows), "target": NFR07_N,
+        "progress": {"seen": len(seen), "wrong": wrong,
+                     "upper95": upper95(wrong, len(seen)) if seen and len(seen) == len(rows) else None},
+        "by_origin": by_origin,
         "total": len(todo), "limit": limit, "offset": offset, "counts": [],
         "items": [{"target_kind": "pa", "target_id": r["target_id"], "date": r["date"], "summary": r["summary"],
-                   "video": r["v"], "alt": 0, "check": r["check"], **r["m"]} for r in todo[offset:offset + limit]],
+                   "video": r["v"], "alt": 0, "check": None, **r["m"]} for r in todo[offset:offset + limit]],
     }
 
 
