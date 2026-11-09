@@ -742,7 +742,16 @@ export type ReviewItem = {
   tags: string[] | null;
   /** 타석만: Gemini 확인 판독(etl/10_check_clips.py) — 제목 없이 화면 · 해설에서 읽은 것과 기록 대조 */
   check?: ClipCheck | null;
+  /** 사람 판정: 보기 전 상태 · 마지막 판정한 사람 · NFR-07 표본(v2) · 틀림 이유 · 다시 보기 결과 */
+  reviewed_from?: string | null;
+  reviewer?: string | null;
+  nfr07?: string | null;
+  wrong_reason?: WrongReason | null;
+  recheck?: "mistake" | "retimed" | "confirmed" | null;
+  rechecked_by?: string | null;
 };
+/** 틀림 이유: 같은 영상의 다른 홈런(장면) · 15초 안에 안 나옴 · 영상에 없음 */
+export type WrongReason = "other_hr" | "late" | "absent";
 export type ClipVerdict = "match2" | "match1" | "name_only" | "conflict" | "other" | "none";
 export type ClipCheck = {
   verdict: ClipVerdict; checks: string; conflicts: string;
@@ -753,7 +762,8 @@ export type ClipCheck = {
  *  upper95 = 틀림 비율 95% 상한 — 300개를 다 본 뒤에만 */
 export type Nfr07 = ReviewQueue & {
   season: number; sample: number; target: number;
-  progress: { seen: number; wrong: number; upper95: number | null };
+  /** wrong = 틀림 + 다시 보기에서 시작 초를 고쳐 살린 것(자동 연결은 틀렸으므로), by_reason = 틀림 이유별(unknown = 이유 없이 누름) */
+  progress: { seen: number; wrong: number; by_reason: Partial<Record<WrongReason | "unknown", number>>; rechecked: number; upper95: number | null };
   by_origin: Record<string, { n: number; seen: number; wrong: number }>;
 };
 export type ReviewQueue = {
@@ -806,11 +816,23 @@ export const getNfr07 = (season: number, offset: number, part = 1, parts = 1) =>
   admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset, part, parts });
 
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
+/** 틀림 다시 보기: 자동 확정에 「틀림」을 누른 연결 중 아직 아무도 다시 안 본 것. mine = 내가 처음 누른 것(빼고 보여 줌) */
+export type RecheckQueue = ReviewQueue & { mine: number };
+export const getRecheck = (offset: number, reviewer: string) =>
+  admin<RecheckQueue>("GET", "/admin/review/recheck", { limit: 20, offset, reviewer: reviewer || null });
+/** 같은 경기 홈런 + 이 영상에 붙은 시작 초 */
+export type GameHr = { pa_id: string; batter: string; inning: number; half: string; hr_seq: number | null; this: boolean; start_sec: number | null; status: string | null };
+export const getGameHrs = (it: ReviewItem) =>
+  admin<{ hrs: GameHr[] }>("GET", `/admin/review/pa/${encodeURIComponent(it.target_id)}/videos/${encodeURIComponent(it.video.video_id)}/game-hrs`).then((r) => r.hrs);
+/** 다시 보기 결과: mistake 맞음(잘못 누름) · other_hr / late 시작 초 고쳐 살림 · absent 영상에 없음 */
+export type RecheckResult = "mistake" | "other_hr" | "late" | "absent";
 const reviewPath = (it: ReviewItem) =>
   `/admin/review/${it.target_kind}/${encodeURIComponent(it.target_id)}/videos/${encodeURIComponent(it.video.video_id)}`;
 
-export const saveReview = (it: ReviewItem, body: { action: ReviewActionKind; reviewer: string; start_sec?: number; end_sec?: number; to_target_id?: string }) =>
+export const saveReview = (it: ReviewItem, body: { action: ReviewActionKind; reviewer: string; start_sec?: number; end_sec?: number; to_target_id?: string; wrong_reason?: WrongReason }) =>
   admin<unknown>("PATCH", reviewPath(it), {}, body);
+export const saveRecheck = (it: ReviewItem, body: { result: RecheckResult; reviewer: string; start_sec?: number }) =>
+  admin<unknown>("POST", reviewPath(it) + "/recheck", {}, body);
 
 /** 옮김 후보: 타석 = 같은 경기 그 타자 다른 타석 + 영상 매칭 후보, 등판 = 같은 투수 앞뒤 7일 + 같은 경기 다른 투수, 경기 = 같은 날 다른 경기 */
 export type MoveCandidate = { target_id: string; date: string; why: string; summary: string };
@@ -859,6 +881,8 @@ export const qk = {
   reviewStats: () => ["reviewStats"] as const,
   adminMe: (token: string) => ["adminMe", token] as const,
   nfr07: (season: number, o: number, part: string) => ["reviewQueue", "nfr07", season, o, part] as const,
+  recheck: (o: number, reviewer: string) => ["reviewQueue", "recheck", o, reviewer] as const,
+  gameHrs: (paId: string, videoId: string) => ["gameHrs", paId, videoId] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,

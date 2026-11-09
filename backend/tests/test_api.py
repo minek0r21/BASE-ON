@@ -234,5 +234,31 @@ class AdminTokenTest(unittest.TestCase):
         self.assertIsNone(self.require_admin(None))
 
 
+class RecheckTest(unittest.TestCase):
+    """틀림 다시 보기 — 시작 초를 고쳐 살린 장면도 측정에서는 틀림, 다시 볼 목록에서 처음 누른 사람 것은 뺀다"""
+
+    def setUp(self):
+        try:
+            from app.routers.admin import _to_recheck, is_wrong
+        except ImportError as e:
+            self.skipTest(f"백엔드 패키지를 불러올 수 없다 ({e}) — API 컨테이너에서 돌린다")
+        self.is_wrong, self.to_recheck = is_wrong, _to_recheck
+
+    def test_is_wrong(self):
+        self.assertTrue(self.is_wrong({"status": "rejected"}))
+        self.assertTrue(self.is_wrong({"status": "rejected", "recheck": "confirmed"}))
+        self.assertTrue(self.is_wrong({"status": "approved", "recheck": "retimed"}))  # 화면엔 살렸지만 자동 연결은 틀렸다
+        self.assertFalse(self.is_wrong({"status": "approved", "recheck": "mistake"}))  # 처음 판정이 잘못
+        self.assertFalse(self.is_wrong({"status": "approved"}))
+
+    def test_queue(self):
+        def row(reviewer, **m):
+            return {"m": {"reviewed_from": "auto_confirmed", "moved_to": None, "recheck": None, "reviewer": reviewer, **m}}
+        rows = [row("성준"), row("세라"), row("세라", recheck="retimed"), row("세라", moved_to="x"), row("세라", reviewed_from="pending")]
+        todo, mine = self.to_recheck(rows, "성준")
+        self.assertEqual((len(todo), mine), (1, 1))  # 세라의 틀림 하나만 — 다시 본 것 · 옮김 · 검수 대기 반려는 빠진다
+        self.assertEqual(todo[0]["m"]["reviewer"], "세라")
+
+
 if __name__ == "__main__":
     unittest.main()

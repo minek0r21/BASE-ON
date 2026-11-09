@@ -1,12 +1,14 @@
 "use client";
 
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
-  adminToken, ApiError, getAdminMe, getMoveCandidates, getNfr07, getReviewQueue, getReviewStats, qk, saveReview, type ReviewActionKind,
-  type Clip, type ClipCheck, type ClipVerdict, type Nfr07, type ReviewItem, type ReviewMode, type TargetKind,
+  adminToken, ApiError, getAdminMe, getGameHrs, getMoveCandidates, getNfr07, getRecheck, getReviewQueue, getReviewStats, qk,
+  saveRecheck, saveReview, type ReviewActionKind, type Clip, type ClipCheck, type ClipVerdict, type Nfr07, type RecheckQueue,
+  type RecheckResult, type ReviewItem, type ReviewMode, type TargetKind, type WrongReason,
 } from "@/lib/api";
 import ScenePlayer, { thumbnailUrl } from "@/components/ScenePlayer";
+import { mmss } from "@/components/ui/Media";
 import ManualQueue from "./ManualQueue";
 
 // BO-AD-01 장면 검수 (설계 8-4). 공개 화면에 링크를 두지 않는다
@@ -30,11 +32,14 @@ const VERDICT_KO: Record<ClipVerdict | "unread", string> = {
   conflict: "근거 충돌", other: "다른 타자", none: "홈런 못 읽음", name_only: "이름만", match1: "근거 1개 일치", match2: "근거 2개↑ 일치",
   unread: "판독 전",
 };
+// 틀림 이유 (K 다음에 1 · 2 · 3). 홈런이 아니면 「다른 장면」
+const WRONG_KO: Record<WrongReason | "unknown", string> = { other_hr: "다른 홈런", late: "15초 안에 안 나옴", absent: "영상에 없음", unknown: "이유 없음" };
+const wrongLabel = (r: WrongReason, hr: boolean) => (r === "other_hr" && !hr ? "다른 장면" : WRONG_KO[r]);
 
 export default function ReviewPage() {
   const qc = useQueryClient();
   // 보기: 검수 대기 · 자동 확정 표본(API 7') · NFR-07 표본(API 7'') · 수동 표시(API 11-2)
-  const [view, setView] = useState<ReviewMode | "nfr07" | "manual">("pending");
+  const [view, setView] = useState<ReviewMode | "nfr07" | "recheck" | "manual">("pending");
   const mode: ReviewMode = view === "auto_confirmed" || view === "nfr07" ? "auto_confirmed" : "pending";
   const [targetKind, setTargetKind] = useState<TargetKind | null>(null);
   const [reason, setReason] = useState<string | null>(null);
@@ -60,18 +65,26 @@ export default function ReviewPage() {
 
   const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats, enabled: authed });
   const queue = useQuery({
-    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset, part) : qk.reviewQueue(mode, targetKind, reason, null, offset),
-    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset, mine, of) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
+    queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset, part)
+      : view === "recheck" ? qk.recheck(offset, reviewer) : qk.reviewQueue(mode, targetKind, reason, null, offset),
+    queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset, mine, of)
+      : view === "recheck" ? getRecheck(offset, reviewer) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
     placeholderData: keepPreviousData,
     enabled: authed && view !== "manual",
   });
+  const after = () => {
+    qc.invalidateQueries({ queryKey: ["reviewQueue"] });
+    qc.invalidateQueries({ queryKey: qk.reviewStats() });
+  };
   const save = useMutation({
-    mutationFn: (v: { it: ReviewItem; action: ReviewActionKind; start?: number; end?: number; to?: string }) =>
-      saveReview(v.it, { action: v.action, reviewer, start_sec: v.start, end_sec: v.end, to_target_id: v.to }),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["reviewQueue"] });
-      qc.invalidateQueries({ queryKey: qk.reviewStats() });
-    },
+    mutationFn: (v: { it: ReviewItem; action: ReviewActionKind; start?: number; end?: number; to?: string; why?: WrongReason }) =>
+      saveReview(v.it, { action: v.action, reviewer, start_sec: v.start, end_sec: v.end, to_target_id: v.to, wrong_reason: v.why }),
+    onSuccess: after,
+  });
+  const recheck = useMutation({
+    mutationFn: (v: { it: ReviewItem; result: RecheckResult; start?: number }) =>
+      saveRecheck(v.it, { result: v.result, reviewer, start_sec: v.start }),
+    onSuccess: after,
   });
 
   const reasons = (queue.data?.counts ?? []).filter((c) => !targetKind || c.target_kind === targetKind);
@@ -170,16 +183,21 @@ export default function ReviewPage() {
 
       {/* 보기: 검수 대기 / 자동 확정 표본 (NFR-07 오매칭 표본 확인) */}
       <div className="flex flex-wrap items-center gap-2 text-sm" role="group" aria-label="보기">
-        {(["pending", "auto_confirmed", "nfr07", "manual"] as const).map((m) => (
+        {(["pending", "auto_confirmed", "nfr07", "recheck", "manual"] as const).map((m) => (
           <button
             key={m}
             onClick={() => { setView(m); setReason(null); setOffset(0); }}
             aria-pressed={view === m}
             className={`rounded-lg border px-3 py-1 font-semibold ${view === m ? "border-fg bg-fg text-bg" : "border-line bg-surface text-muted hover:text-fg"}`}
           >
-            {{ pending: "검수 대기", auto_confirmed: "자동 확정 표본", nfr07: `NFR-07 표본 (${NFR07_SEASON} 홈런 300)`, manual: "수동 표시 (장면 없는 홈런)" }[m]}
+            {{ pending: "검수 대기", auto_confirmed: "자동 확정 표본", nfr07: `NFR-07 표본 (${NFR07_SEASON} 홈런 300)`, recheck: "틀림 다시 보기", manual: "수동 표시 (장면 없는 홈런)" }[m]}
           </button>
         ))}
+        {view === "recheck" && (
+          <span className="text-xs text-muted">
+            다른 사람이 「틀림」을 누른 장면을 한 번 더 봅니다. 그 홈런이 영상 안에 있으면 투구 직전에서 멈추고 「여기부터」를 누르세요 — 시작 초만 고쳐 화면에 다시 나갑니다. NFR-07에는 틀림으로 그대로 남습니다.
+          </span>
+        )}
         {view === "auto_confirmed" && (
           <span className="text-xs text-muted">
             자동 확정된 연결을 무작위 순서로 보여 줍니다. 맞으면 「맞음」, 틀리면 「틀림」을 누르세요(틀린 연결은 화면에서 내려갑니다). 홈런은 300개 중 틀림 1개 이하가 목표입니다(NFR-07).
@@ -218,7 +236,7 @@ export default function ReviewPage() {
             left={queue.data.total}
             busy={save.isPending || queue.isFetching}
             canSave={reviewer.trim().length > 0}
-            onSave={(action) => save.mutate({ it: queue.data!.items[0], action })}
+            onSave={(action, why) => save.mutate({ it: queue.data!.items[0], action, why })}
           />
         ) : (
           <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">
@@ -226,9 +244,28 @@ export default function ReviewPage() {
           </p>
         )}
       </>)}
+      {view === "recheck" && queue.data && "mine" in queue.data && (() => {
+        const d = queue.data as RecheckQueue;
+        const it = d.items[0];
+        return (<>
+          {it ? (
+            <RecheckRunner
+              key={`${it.target_kind}-${it.target_id}-${it.video.video_id}`}
+              it={it}
+              left={d.total}
+              busy={recheck.isPending || queue.isFetching}
+              canSave={reviewer.trim().length > 0}
+              onSave={(result, start) => recheck.mutate({ it, result, start })}
+            />
+          ) : (
+            <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">다시 볼 틀림이 없습니다.</p>
+          )}
+          {d.mine > 0 && <p className="text-xs text-muted">내가 「틀림」을 누른 {d.mine}개는 다른 검수자가 봅니다.</p>}
+        </>);
+      })()}
 
-      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : view === "nfr07" ? (
-        save.isError && <p className="text-sm text-red-600">저장하지 못했습니다: {(save.error as Error).message}</p>
+      {view === "manual" ? <ManualQueue reviewer={reviewer} canSave={reviewer.trim().length > 0} /> : view === "nfr07" || view === "recheck" ? (
+        (save.isError || recheck.isError) && <p className="text-sm text-red-600">저장하지 못했습니다: {((save.error ?? recheck.error) as Error).message}</p>
       ) : (<>
       {/* 필터 */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -414,15 +451,41 @@ function Nfr07Panel({ d }: { d: Nfr07 }) {
           <span key={k}>{ORIGIN_KO[k] ?? k} {t.n}{t.seen > 0 && ` (확인 ${t.seen} · 틀림 ${t.wrong})`}</span>
         ))}
       </div>
+      {p.wrong > 0 && (
+        <p className="mt-1 text-xs text-muted tabular-nums">
+          틀림 이유: {(Object.entries(p.by_reason) as [WrongReason | "unknown", number][]).map(([k, n]) => `${WRONG_KO[k]} ${n}`).join(" · ")}
+          {" · "}다시 봄 {p.rechecked} / {p.wrong}
+        </p>
+      )}
     </section>
   );
 }
 
-/** NFR-07 하나씩: 장면 시각부터 바로 재생, J 맞음 · K 틀림 · R 처음부터 다시. 저장하면 다음 장면으로 */
+/** 틀림 이유 고르기 (K 다음): 1 다른 홈런 · 2 15초 안에 안 나옴 · 3 영상에 없음, Esc 취소 */
+function WrongReasons({ hr, busy, canSave, onPick, onCancel }: {
+  hr: boolean; busy: boolean; canSave: boolean; onPick: (r: WrongReason) => void; onCancel: () => void;
+}) {
+  const order: WrongReason[] = ["other_hr", "late", "absent"];
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-bg p-2 text-sm">
+      <span className="text-xs text-muted">왜 틀렸나요?</span>
+      {order.map((r, i) => (
+        <button key={r} disabled={busy || !canSave} onClick={() => onPick(r)}
+          className="rounded-lg border border-line bg-surface px-3 py-1 font-semibold disabled:opacity-40">
+          {wrongLabel(r, hr)} <kbd className="ml-1 text-xs opacity-70">{i + 1}</kbd>
+        </button>
+      ))}
+      <button onClick={onCancel} className="rounded-lg px-2 py-1 text-xs text-muted">취소 <kbd className="ml-1 opacity-70">Esc</kbd></button>
+    </div>
+  );
+}
+
+/** NFR-07 하나씩: 장면 시각부터 바로 재생, J 맞음 · K 틀림(→ 이유 1 · 2 · 3) · R 처음부터 다시. 저장하면 다음 장면으로 */
 function Nfr07Runner({ it, left, busy, canSave, onSave }: {
-  it: ReviewItem; left: number; busy: boolean; canSave: boolean; onSave: (action: "approve" | "reject") => void;
+  it: ReviewItem; left: number; busy: boolean; canSave: boolean; onSave: (action: "approve" | "reject", why?: WrongReason) => void;
 }) {
   const [again, setAgain] = useState(0);
+  const [asking, setAsking] = useState(false);  // K를 눌러 이유를 고르는 중
   const clip: Clip = {
     videoId: it.video.video_id, title: it.video.title, startSec: it.start_sec ?? 0,
     endSec: it.end_sec ?? it.video.duration_sec, durationSec: it.video.duration_sec, precision: it.precision,
@@ -432,13 +495,19 @@ function Nfr07Runner({ it, left, busy, canSave, onSave }: {
       const el = e.target as HTMLElement | null;
       if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
       if (e.key === "r" || e.key === "R") { setAgain((n) => n + 1); return; }
+      if (asking && e.key === "Escape") { setAsking(false); return; }
       if (busy || !canSave) return;
+      if (asking) {
+        const why = ({ "1": "other_hr", "2": "late", "3": "absent" } as const)[e.key as "1" | "2" | "3"];
+        if (why) onSave("reject", why);
+        return;
+      }
       if (e.key === "j" || e.key === "J") onSave("approve");
-      if (e.key === "k" || e.key === "K") onSave("reject");
+      if (e.key === "k" || e.key === "K") setAsking(true);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [busy, canSave, onSave]);
+  }, [busy, canSave, onSave, asking]);
   return (
     <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
       <div className="flex flex-wrap items-center gap-2 text-sm">
@@ -454,11 +523,104 @@ function Nfr07Runner({ it, left, busy, canSave, onSave }: {
       <div className="flex flex-wrap items-center gap-2">
         <button disabled={busy || !canSave} onClick={() => onSave("approve")}
           className="rounded-lg bg-fg px-4 py-1.5 text-sm font-semibold text-bg disabled:opacity-40">맞음 <kbd className="ml-1 text-xs opacity-70">J</kbd></button>
-        <button disabled={busy || !canSave} onClick={() => onSave("reject")}
+        <button disabled={busy || !canSave} onClick={() => setAsking(true)} aria-expanded={asking}
           className="rounded-lg border border-line px-4 py-1.5 text-sm font-semibold disabled:opacity-40">틀림 <kbd className="ml-1 text-xs opacity-70">K</kbd></button>
         <button onClick={() => setAgain((n) => n + 1)} className="rounded-lg border border-line px-3 py-1.5 text-sm">처음부터 <kbd className="ml-1 text-xs opacity-70">R</kbd></button>
         {!canSave && <span className="text-xs text-muted">검수자 이름을 먼저 적어 주세요</span>}
       </div>
+      {asking && (
+        <WrongReasons hr={it.scene_type === "home_run"} busy={busy} canSave={canSave}
+          onPick={(why) => onSave("reject", why)} onCancel={() => setAsking(false)} />
+      )}
+    </section>
+  );
+}
+
+/** 틀림 다시 보기 하나씩: 영상 전체를 연결된 시각부터 틀고, 같은 경기 홈런의 시각으로 넘어갈 수 있다.
+ *  1 맞음(잘못 누름) · 2 다른 홈런 → 여기부터 · 3 늦게 나옴 → 여기부터 · 4 영상에 없음 · R 처음부터 */
+function RecheckRunner({ it, left, busy, canSave, onSave }: {
+  it: ReviewItem; left: number; busy: boolean; canSave: boolean; onSave: (result: RecheckResult, start?: number) => void;
+}) {
+  const hr = it.scene_type === "home_run";
+  const [from, setFrom] = useState({ sec: it.start_sec ?? 0, n: 0 });  // n: 같은 시각을 다시 눌러도 처음부터
+  const now = useRef<(() => number) | null>(null);
+  const [pos, setPos] = useState<number | null>(null);
+  const hrs = useQuery({
+    queryKey: qk.gameHrs(it.target_id, it.video.video_id),
+    queryFn: () => getGameHrs(it),
+    enabled: it.target_kind === "pa" && hr,
+  });
+  // 영상 끝까지 튼다 — 원래 구간 밖에 있는 그 홈런을 찾아야 하므로
+  const clip: Clip = {
+    videoId: it.video.video_id, title: it.video.title, startSec: from.sec,
+    endSec: it.video.duration_sec, durationSec: it.video.duration_sec, precision: "scene",
+  };
+  useEffect(() => {
+    const t = setInterval(() => { if (now.current) setPos(Math.floor(now.current())); }, 500);
+    return () => clearInterval(t);
+  }, []);
+  const here = () => Math.floor(now.current?.() ?? from.sec);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+      if (e.key === "r" || e.key === "R") { setFrom((f) => ({ sec: it.start_sec ?? 0, n: f.n + 1 })); return; }
+      if (busy || !canSave) return;
+      if (e.key === "1") onSave("mistake");
+      if (e.key === "2") onSave("other_hr", here());
+      if (e.key === "3") onSave("late", here());
+      if (e.key === "4") onSave("absent");
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+  const btn = "rounded-lg border border-line px-3 py-1.5 text-sm font-semibold disabled:opacity-40";
+  return (
+    <section className="space-y-3 rounded-xl border border-line bg-surface p-4">
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="font-semibold">{it.summary}</span>
+        <span className="text-xs text-muted">{it.date}</span>
+        <span className="rounded-full border border-line px-2 py-0.5 text-xs">{ORIGIN_KO[it.origin] ?? it.origin}</span>
+        {it.nfr07 === "v2" && <span className="rounded-full border border-accent px-2 py-0.5 text-xs font-semibold">NFR-07 표본</span>}
+        <span className="ml-auto text-xs text-muted tabular-nums">남은 {left}개</span>
+      </div>
+      <p className="text-xs text-muted">
+        처음 판정: <b className="text-fg">{it.reviewer ?? "–"}</b> 「틀림」{it.wrong_reason && ` · ${wrongLabel(it.wrong_reason, hr)}`}
+        {" · "}연결된 시각 {mmss(it.start_sec ?? 0)}~{mmss(it.end_sec ?? it.video.duration_sec ?? 0)}
+      </p>
+      <div className="aspect-video w-full overflow-hidden rounded-lg">
+        <ScenePlayer key={from.n} clip={clip} label={`${it.summary} · ${from.sec}초부터`} bare onReady={(f) => { now.current = f; }} />
+      </div>
+      <p className="truncate text-xs text-muted" title={it.video.title}>[{it.video.channel}] {it.video.title}</p>
+      {hrs.data && hrs.data.length > 1 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="text-muted">이 경기 홈런</span>
+          {hrs.data.map((h) => {
+            const label = `${h.batter}${h.hr_seq != null ? ` ${h.hr_seq}호` : ""} · ${h.inning}회${h.half}`;
+            return h.start_sec != null ? (
+              <button key={h.pa_id} onClick={() => setFrom((f) => ({ sec: h.start_sec!, n: f.n + 1 }))}
+                className={`rounded-full border px-2 py-0.5 tabular-nums ${h.this ? "border-fg font-semibold" : "border-line"} ${h.status === "rejected" && !h.this ? "text-muted line-through" : ""}`}
+                title={h.this ? "이 홈런의 연결된 시각" : h.status === "rejected" ? "이 연결도 틀림" : "이 시각으로 넘어가기"}>
+                {label} {mmss(h.start_sec)}
+              </button>
+            ) : (
+              <span key={h.pa_id} className="rounded-full border border-dashed border-line px-2 py-0.5 text-muted">{label} · 이 영상 시각 없음</span>
+            );
+          })}
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-muted tabular-nums">지금 {pos != null ? mmss(pos) : "–"}</span>
+        <button disabled={busy || !canSave} onClick={() => onSave("other_hr", here())}
+          className="rounded-lg bg-fg px-3 py-1.5 text-sm font-semibold text-bg disabled:opacity-40">{wrongLabel("other_hr", hr)}였음 → 여기부터 <kbd className="ml-1 text-xs opacity-70">2</kbd></button>
+        <button disabled={busy || !canSave} onClick={() => onSave("late", here())}
+          className="rounded-lg bg-fg px-3 py-1.5 text-sm font-semibold text-bg disabled:opacity-40">늦게 나옴 → 여기부터 <kbd className="ml-1 text-xs opacity-70">3</kbd></button>
+        <button disabled={busy || !canSave} onClick={() => onSave("absent")} className={btn}>영상에 없음 <kbd className="ml-1 text-xs opacity-70">4</kbd></button>
+        <button disabled={busy || !canSave} onClick={() => onSave("mistake")} className={btn}>맞음 (잘못 누름) <kbd className="ml-1 text-xs opacity-70">1</kbd></button>
+        <button onClick={() => setFrom((f) => ({ sec: it.start_sec ?? 0, n: f.n + 1 }))} className="rounded-lg border border-line px-3 py-1.5 text-sm">처음부터 <kbd className="ml-1 text-xs opacity-70">R</kbd></button>
+        {!canSave && <span className="text-xs text-muted">검수자 이름을 먼저 적어 주세요</span>}
+      </div>
+      <p className="text-xs text-muted">「여기부터」는 지금 재생 위치부터 20초를 이 홈런 장면으로 저장합니다(화면에 다시 나감). 투구 직전에 멈추고 누르세요.</p>
     </section>
   );
 }
