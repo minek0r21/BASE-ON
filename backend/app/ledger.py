@@ -19,7 +19,8 @@ from .db import run
 
 TARGETS = {"game": ("Game", "game_pk"), "pa": ("PlateAppearance", "pa_id"), "outing": ("Outing", "outing_id")}
 LINK_KEYS = ["status", "origin", "scene_type", "precision", "start_sec", "end_sec", "rank", "tags", "reasons",
-             "review_reason", "reviewed_from", "moved_to", "replaced_by", "suggested_sec", "reviewer"]
+             "review_reason", "reviewed_from", "moved_to", "replaced_by", "suggested_sec", "reviewer",
+             "wrong_reason", "recheck", "rechecked_by"]
 Q_LINK = "MATCH (:{label} {{{key}: $t}})-[m:MATCHED_TO]->(:VideoLink {{video_id: $v}}) RETURN properties(m) AS m"
 
 
