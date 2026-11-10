@@ -29,6 +29,15 @@ def pid(name, role=None):
     return d["candidates"][0]["player_id"]
 
 
+def up() -> bool:
+    """켜져 있는 API에 챗봇 라우터가 있나 (CI에는 DB · API가 없어서 건너뛴다)"""
+    try:
+        return req("GET", "/chat/status")[0] == 200
+    except (OSError, ValueError):
+        return False
+
+
+@unittest.skipUnless(up(), f"챗봇 API가 꺼져 있다 ({BASE})")
 class ChatSearch(unittest.TestCase):
     def test_players_many(self):  # 성 없이 → 여러 명
         s, d = req("GET", "/chat/players", query={"name": "민혁"})
