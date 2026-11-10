@@ -169,7 +169,7 @@ function Answer({ r, onPlay }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title:
         </ul>
       )}
       {r.menu === "stats" && <Stats r={r} />}
-      {r.menu === "other" && !!r.table?.length && (
+      {!!r.table?.length && ( /* 순위(rank) · 로컬 other */
         <div className="overflow-x-auto rounded-xl bg-surface">
           <table className="w-full text-xs">
             <thead><tr>{r.columns?.map((c) => <th key={c} className="px-2 py-1 text-left text-muted">{c}</th>)}</tr></thead>

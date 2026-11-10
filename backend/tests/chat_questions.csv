@@ -13,7 +13,7 @@ KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,,,
 김도영 2025 타율 몇이야,stats,season=2025; metrics=타율,,,batting.avg=0.3091; text~타율 .309; text~규정 타석 미달,,
 2025 오스틴 포심 쳐서 홈런,pa,results=홈런; season=2025; pitch_names=포심,,,,,
 2025년 기아 타자들 만루에서 장타,pa,bat_team=KIA; bases=만루; results=장타; season=2025,,,,,
-2025년 홈런 제일 많이 친 타자 5명,other,,,,,,메뉴 밖 → 서버는 「아직 못 답함」 (CHAT_OTHER=on이면 로컬에서 조회)
+2025년 홈런 제일 많이 친 타자 5명,rank,rank_metric=홈런; season=2025,,,rank.rows.0.name=디아즈; rank.rows.0.value=50; text~디아즈(삼성) 50개,,순위 = 사이트 /batters (qualified=false)
 안녕,chat,,,,,,
 레이예스 2025 2아웃 득점권 타석,pa,bases=득점권; outs=2; season=2025,,78,,,on_2b IS NOT NULL로 세면 236 (조용히 틀리는 함정)
 원태인 2025 삼진 몇 개야,stats,season=2025; metrics=삼진,,,pitching.so=108; text~삼진 108개,,
@@ -26,3 +26,9 @@ LG 2025 홈에서 두산 상대 승률,games,team=LG; opponent=두산; home_away
 한화 올해 성적,games,team=한화; season=2026,,92,record.win=44; record.loss=45; record.draw=3,,올해 = 2026 (7.26까지)
 2024년 삼성 끝내기 장면,pa,bat_team=삼성; situations=끝내기; season=2024,,2,,,
 오늘 날씨 어때,chat,,,,,,야구 밖 질문
+2024년 김도영 홈런 순위 몇 등이었어,rank,rank_metric=홈런; season=2024,,,rank.me.rank=2; rank.me.value=38,,동률은 같은 순위 (사이트 /batters로 확인)
+작년 기아 타율 1위 누구야,rank,rank_metric=타율; season=2025; team=KIA,,,rank.rows.0.name=김선빈,,타율은 규정타석 50% 이상만
+2025 탈삼진 순위,rank,rank_metric=삼진; rank_side=pitcher; season=2025,,,rank.rows.0.name=폰세; rank.rows.0.value=251,,
+2025 WHIP 제일 낮은 투수,rank,rank_metric=WHIP; season=2025,,,rank.rows.0.name=폰세,,투수 비율 지표는 선발 비교 대상만 (불펜을 섞으면 마무리가 1위)
+올해 삼진 제일 많이 잡은 투수,rank,rank_metric=삼진; rank_side=pitcher; season=2026,,,rank.rows.0.name=곽빈,,2026 = 7.26까지
+김도영이랑 최정 2025 홈런 누가 더 많아,other,,,,reason=other_off,,두 선수 비교 → 아직 메뉴 없음

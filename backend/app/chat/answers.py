@@ -137,5 +137,32 @@ def stats_text(result: dict, metrics: list[str] | None, as_of: str | None) -> st
     return "\n".join(lines)
 
 
+def ranked(rows: list[dict], key: str, low_better: bool) -> list[tuple[int, dict]]:
+    """값으로 줄 세우고 같은 값은 같은 순위 (1, 2, 2, 4). 값이 없는 선수는 뺀다"""
+    has = sorted((r for r in rows if r.get(key) is not None), key=lambda r: (r[key] if low_better else -r[key], r.get("name") or ""))
+    out, prev, rank = [], None, 0
+    for i, r in enumerate(has, 1):
+        if r[key] != prev:
+            rank, prev = i, r[key]
+        out.append((rank, r))
+    return out
+
+
+def rank_text(result: dict, cond: dict, as_of: str | None) -> str:
+    rk = result.get("rank") or {}
+    rows, metric, key = rk.get("rows") or [], rk.get("metric", ""), rk.get("key", "")
+    if not rows:
+        return "조건에 맞는 선수가 없어요."
+    firsts = [r for r in rows if r["rank"] == 1]
+    who = " · ".join(f"{r['name']}({r['team']})" for r in firsts)
+    lines = [f"{metric} {'공동 ' if len(firsts) > 1 else ''}1위는 {who} {josa(fmt(key, firsts[0]['value']), '이에요', '예요')}."]
+    me = rk.get("me")
+    if me:
+        lines.append(f"{josa(me['name'], '은', '는')} {me['rank']}위 ({fmt(key, me['value'])})")
+    elif rk.get("me_missing"):
+        lines.append(f"{josa(rk['me_missing'], '은', '는')} 이 순위에 없어요 (비교 대상이 아니거나 기록 없음).")
+    return "\n".join(lines)
+
+
 def other_text(result: dict) -> str:
     return f"자동 조회 {result.get('total', 0)}줄 (참고용 · 로컬 전용)"

@@ -54,6 +54,24 @@ class Answers(unittest.TestCase):
         self.assertFalse(answers.after_as_of({"season": 2026}, AS_OF))
 
 
+class Rank(unittest.TestCase):
+    def test_ties_share_rank(self):
+        rows = [{"name": "가", "hr": 30}, {"name": "나", "hr": 36}, {"name": "다", "hr": 30}, {"name": "라", "hr": None}]
+        self.assertEqual([(k, r["name"]) for k, r in answers.ranked(rows, "hr", False)], [(1, "나"), (2, "가"), (2, "다")])
+
+    def test_low_is_better(self):
+        rows = [{"name": "가", "whip": 1.2}, {"name": "나", "whip": 0.94}]
+        self.assertEqual(answers.ranked(rows, "whip", True)[0][1]["name"], "나")
+
+    def test_rank_text(self):
+        r = {"rank": {"metric": "홈런", "key": "hr", "rows": [{"rank": 1, "name": "디아즈", "team": "삼성", "value": 50}],
+                      "me": {"rank": 2, "name": "김도영", "team": "KIA", "value": 38}}}
+        self.assertEqual(answers.rank_text(r, {}, AS_OF), "홈런 1위는 디아즈(삼성) 50개예요.\n김도영은 2위 (38개)")
+        tie = {"rank": {"metric": "타율", "key": "avg", "rows": [{"rank": 1, "name": "가", "team": "KIA", "value": 0.321},
+                                                               {"rank": 1, "name": "나", "team": "LG", "value": 0.321}]}}
+        self.assertEqual(answers.rank_text(tie, {}, AS_OF), "타율 공동 1위는 가(KIA) · 나(LG) .321이에요.")
+
+
 class Limits(unittest.TestCase):
     def test_per_minute_then_recovers(self):
         now = [1_800_000_000.0]

@@ -14,7 +14,7 @@ from typing import Callable
 
 from .. import db
 from ..errors import ApiError
-from . import answers
+from . import answers, terms
 
 
 @dataclass(frozen=True)
@@ -76,6 +76,51 @@ def run_stats(ids: dict, cond: dict) -> dict:
     return api.season_stats(player_id=ids["player"], season=int(cond["season"]))
 
 
+# ------------------------------------------------------------------ rank: 시즌 순위 (사이트 순위 API 그대로 — 숫자 · 비교 대상이 사이트와 같다)
+def rank_side(metric: str, side: str | None) -> str:
+    """타자 · 투수 둘 다 있는 지표(삼진 · 볼넷)는 rank_side로, 없으면 타자"""
+    if metric in terms.RANK_BAT and metric in terms.RANK_PIT:
+        return "pitcher" if side == "pitcher" else "batter"
+    return "pitcher" if metric in terms.RANK_PIT else "batter"
+
+
+def run_rank(ids: dict, cond: dict) -> dict:
+    from ..routers.league import get_batters, get_pitchers
+    metric = cond.get("rank_metric")
+    if metric not in terms.RANK_METRICS:
+        raise ApiError(400, "BAD_CONDITION", f"순위로 볼 수 있는 기록: {', '.join(terms.RANK_METRICS)}")
+    side = rank_side(metric, cond.get("rank_side"))
+    key, rate, low = (terms.RANK_PIT if side == "pitcher" else terms.RANK_BAT)[metric]
+    try:
+        team = terms.team_of(cond.get("team"))
+    except ValueError as e:
+        raise ApiError(400, "BAD_CONDITION", str(e)) from None
+    season = int(cond["season"])
+    if side == "pitcher":  # 투수 비율 지표는 선발 비교 대상만 (비교 대상 = 이닝 ≥ 팀 경기 수 × 0.5, 불펜은 × 0.2라 섞으면 마무리가 1위가 된다)
+        rows = get_pitchers(season=season, team=team, role="starter" if rate else None, qualified=rate, sort="outs", limit=1000)["pitchers"]
+    else:
+        rows = get_batters(season=season, team=team, sort="pa", qualified=rate, limit=500)["batters"]
+    order = answers.ranked(rows, key, low)
+    n = max(1, min(int(cond.get("top") or 5), 10))
+    top = [(k, r) for k, r in order if k <= n][: n + 5]  # 경계의 공동 순위는 몇 명 더 보여 준다
+    pack = lambda k, r: {"rank": k, "player_id": r["player_id"], "name": r["name"], "team": r["team"], "value": r[key]}
+    rk = {"metric": metric, "key": key, "side": side, "rows": [pack(k, r) for k, r in top]}
+    me = ids.get("player")
+    if me:
+        hit = next(((k, r) for k, r in order if r["player_id"] == me), None)
+        if hit:
+            rk["me"] = pack(*hit)
+        else:
+            from ..routers.chat import names_of
+            rk["me_missing"] = names_of([me]).get(me, "그 선수")
+    said = [f"{season} 시즌", "정규시즌", *([team] if team else []), "투수" if side == "pitcher" else "타자"]
+    if rate:
+        said.append("선발 · 이닝이 팀 경기 수 절반 이상" if side == "pitcher" else "규정타석 50% 이상")  # 사이트 비교 대상과 같은 기준
+    return {"conditions": said, "total": len(order), "shown": len(top), "rank": rk,
+            "columns": ["순위", "선수", "팀", metric],
+            "table": [[k, r["name"], r["team"], answers.fmt(key, r[key])] for k, r in top]}
+
+
 MENUS: dict[str, Menu] = {m.id: m for m in [
     Menu(
         id="pa",
@@ -121,5 +166,21 @@ MENUS: dict[str, Menu] = {m.id: m for m in [
             ("원태인 2025 시즌 기록", {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": 2025}, "year_given": True}),
             ("원태인 작년 평균자책점이랑 삼진",
              {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": "{last_year}", "metrics": ["평균자책점", "삼진"]}, "year_given": True}),
+        ]),
+    Menu(
+        id="rank",
+        prompt="한 시즌 순위 (○○ 1위 · 상위 N명 · 팀 안 순위 · 한 선수가 몇 위인지). \"몇 위\" · \"1위\" · \"제일 많이\" · \"순위\"면 rank",
+        slots="season rank_metric(지표 하나) rank_side(batter|pitcher — 삼진 · 볼넷처럼 타자 · 투수 둘 다 있는 지표에서 투수 쪽이면 pitcher) "
+              "top(몇 명, 말 안 하면 넣지 않는다) team\n"
+              f"- rank_metric에 쓸 수 있는 말: {', '.join(terms.RANK_METRICS)}  (\"탈삼진\" = 삼진 + rank_side pitcher, \"홈런 맞은\" = 피홈런)",
+        run=run_rank, text=answers.rank_text, season="ask_one",
+        examples=[
+            ("2025년 홈런 제일 많이 친 타자 5명",
+             {"menu": "rank", "people": {}, "cond": {"season": 2025, "rank_metric": "홈런", "top": 5}, "year_given": True}),
+            ("작년 기아 타율 순위", {"menu": "rank", "people": {}, "cond": {"season": "{last_year}", "rank_metric": "타율", "team": "KIA"}, "year_given": True}),
+            ("올해 탈삼진 1위 누구야",
+             {"menu": "rank", "people": {}, "cond": {"season": "{this_year}", "rank_metric": "삼진", "rank_side": "pitcher"}, "year_given": True}),
+            ("김도영 2024 홈런 몇 위야",
+             {"menu": "rank", "people": {"player": "김도영"}, "cond": {"season": 2024, "rank_metric": "홈런"}, "year_given": True}),
         ]),
 ]}

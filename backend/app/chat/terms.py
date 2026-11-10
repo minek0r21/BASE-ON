@@ -132,3 +132,15 @@ PIT_METRICS = {
 # DB에 없는 지표 — 물으면 「없는 기록」이라고 답한다 (지어내지 않게 질문 해석에서 이름으로 받는다)
 MISSING_METRICS = ["평균자책점", "승", "패", "세이브", "홀드", "타점", "득점", "도루", "자책점", "WAR"]
 METRICS = list(dict.fromkeys([*BAT_METRICS, *PIT_METRICS, *MISSING_METRICS]))
+
+# 순위 메뉴 지표 → (저장 칸, 비율 지표인가, 낮을수록 좋은가). 비율 지표는 사이트와 같은 비교 대상(규정타석 50% · 규정이닝)만 줄 세운다
+RANK_BAT = {
+    "홈런": ("hr", False, False), "타율": ("avg", True, False), "OPS": ("ops", True, False), "안타": ("h", False, False),
+    "출루율": ("obp", True, False), "장타율": ("slg", True, False), "타석": ("pa", False, False), "2루타": ("b2", False, False),
+    "3루타": ("b3", False, False), "볼넷": ("bb", False, False), "삼진": ("so", False, False),
+}
+RANK_PIT = {
+    "삼진": ("so", False, False), "이닝": ("outs", False, False), "WHIP": ("whip", True, True), "피안타율": ("avg", True, True),
+    "경기": ("g", False, False), "선발": ("gs", False, False), "볼넷": ("bb", False, False), "피홈런": ("hr", False, False),
+}
+RANK_METRICS = list(dict.fromkeys([*RANK_BAT, *RANK_PIT]))
