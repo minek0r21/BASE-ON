@@ -45,6 +45,14 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 | `app/routers/report.py` | 12 재생 불가 신고, 재확인 |
 | `app/routers/postseason.py` | 25 포스트시즌 코너 |
 | `app/routers/meta.py` | 20 기록 기준일 |
+| `app/routers/chat.py` | 챗봇 조회 (선수 후보 · 타석 · 경기 · 시즌 기록) + `/chat` · `/chat/status` |
+| `app/chat/` | 챗봇 본체: 질문 이해(`prompts.py` · `llm.py`, AI 호출 질문당 1번) → 조회 → 답 문장(`answers.py`, 숫자는 조회 결과로 코드가 채움). 호출 제한 `limits.py`, 채점 `grade.py` |
+
+## 챗봇
+- `.env`의 `GEMINI_API_KEY`가 비어 있으면 `/chat/status`가 `enabled: false`를 돌려주고, 화면에 챗봇 버튼이 나오지 않는다.
+- 메뉴(타석 · 경기 · 시즌 기록) 밖 질문은 「아직 못 답함」으로 끝나고 `chat_logs/unanswered.jsonl`에 남는다. 로컬에서 `CHAT_OTHER=on`이면 AI가 쓴 Cypher를 읽기 전용으로 돌려 본다(참고용, 서버는 늘 꺼짐).
+- 호출 제한: IP별 `CHAT_PER_MIN`(8) · `CHAT_PER_DAY`(60), 서버 전체 `CHAT_DAILY_CAP`(200). 메모리에서 세므로 `--workers 1`일 때만 맞다.
+- 채점: `docker compose exec api python -m app.chat.grade` (질문 `tests/chat_questions.csv`, `GRADE_REPEAT=3`이면 세 번 모두 맞아야 맞음).
 
 ## API 목록
 모든 주소 앞에 `/api/v1`. 번호는 설계 문서의 API 번호.
