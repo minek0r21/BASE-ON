@@ -26,6 +26,11 @@ export const logoUrl = (name: string | null | undefined) => {
   const t = team(name);
   return t ? `/media/logos/${t.code}.png` : null;
 };
+/** 작게 쓰는 자리(32px 이하)용 — scripts/sync_media.py가 만든다. 원본은 장당 최대 140KB라 10개 구단이 나오는 화면에서 1MB 가까이 된다 */
+export const logoSmallUrl = (name: string | null | undefined) => {
+  const t = team(name);
+  return t ? `/media/logos/s/${t.code}.webp` : null;
+};
 export const photoUrl = (playerId: string) => `/media/photos/${playerId}.jpg`;
 
 /** 06 팀 화면 주소 */

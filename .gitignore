@@ -12,6 +12,7 @@ videos/links_*.csv
 videos/videos_*.csv
 videos/unmatched_*.csv
 videos/match_*.csv
+videos/gemini/
 
 # Python
 __pycache__/

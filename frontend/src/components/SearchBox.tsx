@@ -3,7 +3,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { normalizeQuery, qk, searchPlayers, type PlayerHit } from "@/lib/api";
 import { PlayerAvatar } from "@/components/ui/Media";
 import { teamColor } from "@/lib/constants";
@@ -41,12 +41,32 @@ function Marked({ name, q }: { name: string; q: string }) {
 export const playerHref = (id: string, extra: Record<string, string> = {}) =>
   `/players/?${new URLSearchParams({ id, ...extra })}`;
 
+/** M02 결과 한 줄 — 드롭다운보다 폭이 좁아 두 줄로 쌓는다. 팀 색 띠 대신 사진 (Figma 308:1702) */
+function ScreenHit({ p, q, id, selected, onPick }: { p: PlayerHit; q: string; id: string; selected: boolean; onPick: () => void }) {
+  const sub = [p.team, p.position, p.same_name && p.birth_year && `${p.birth_year}년생`, p.back_number && `${p.back_number}번`].filter(Boolean).join(" · ");
+  return (
+    <li id={id} role="option" aria-selected={selected} onClick={onPick} className="flex min-h-[60px] cursor-pointer items-center gap-3 px-4 py-2 active:bg-surface-2">
+      <PlayerAvatar id={p.player_id} name={p.name} team={p.team} />
+      <span className="min-w-0 flex-1">
+        <span className="flex items-center gap-1.5 text-base font-bold [&_b]:font-bold [&_b]:text-brand-text">
+          <span className="truncate"><Marked name={p.name} q={q} /></span>
+          {p.same_name && <span className="shrink-0 rounded-md bg-surface-2 px-1.5 py-0.5 text-xs font-semibold text-fg-2">동명이인</span>}
+        </span>
+        <span className="block truncate text-[13px] text-fg-2">{sub}</span>
+        {p.former_names.length > 0 && <span className="block truncate text-xs text-fg-2 [&_b]:text-brand-text">옛 이름 <Marked name={p.former_names.join(" · ")} q={q} /></span>}
+      </span>
+      <span className="shrink-0 text-xl text-fg-2" aria-hidden>›</span>
+    </li>
+  );
+}
+
 export default function SearchBox({
   autoFocus = false,
   large = false,
   onSelect,
   placeholder = "선수 이름이나 초성 (예: ㄱㄷㅇ)",
   disabled = false,
+  screen,
 }: {
   autoFocus?: boolean;
   large?: boolean;
@@ -54,14 +74,23 @@ export default function SearchBox({
   onSelect?: (p: PlayerHit) => void;
   placeholder?: string;
   disabled?: boolean;
+  /** M02 전체 화면 검색: 입력칸 왼쪽 뒤로 버튼 · 입력 전 내용을 받고, 결과는 드롭다운 대신 화면에 펼친다 */
+  screen?: { back: ReactNode; idle: ReactNode };
 }) {
   const router = useRouter();
   const recent = useRecentPlayers();
   const listId = useId();
   const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const isScreen = !!screen;
   const [text, setText] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(-1);
+
+  // 홈은 PC에서만 바로 입력하게 한다 — 휴대폰은 키보드가 화면을 가린다. 검색 화면(M02)은 그러려고 들어온 것이라 어디서나
+  useEffect(() => {
+    if (autoFocus && (isScreen || window.matchMedia("(min-width: 768px)").matches)) inputRef.current?.focus({ preventScroll: true });
+  }, [autoFocus, isScreen]);
 
   const q = useDebounced(normalizeQuery(text), DEBOUNCE_MS);
   const { data, isFetching, isError } = useQuery({
@@ -106,17 +135,17 @@ export default function SearchBox({
     }
   };
 
-  const showLayer = open && normalizeQuery(text).length > 0;
+  const showLayer = (open || !!screen) && normalizeQuery(text).length > 0;
 
-  return (
-    <div ref={boxRef} className="relative">
+  const field = (
+    <>
       <input
         type="search"
         role="combobox"
         aria-expanded={showLayer}
         aria-controls={listId}
         aria-activedescendant={active >= 0 ? `${listId}-${active}` : undefined}
-        autoFocus={autoFocus}
+        ref={inputRef}
         value={text}
         maxLength={30}
         placeholder={placeholder}
@@ -129,25 +158,41 @@ export default function SearchBox({
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         className={`w-full border outline-none focus:border-bar ${
-          large
-            ? "h-[60px] rounded-[18px] border-[#b4b5ba] bg-white pl-14 pr-4 text-[17px] shadow-[0_4px_16px_rgba(0,0,0,0.06)]"
+          screen
+            ? "h-11 rounded-[14px] border-line-strong bg-white pr-3 pl-10 text-base" // 16px 아래면 iOS가 입력할 때 화면을 키운다
+            : large
+            ? "h-[52px] rounded-2xl border-[#b4b5ba] bg-white pl-12 pr-4 text-base shadow-[0_4px_16px_rgba(0,0,0,0.06)] md:h-[60px] md:rounded-[18px] md:pl-14 md:text-[17px]"
             : "rounded-lg border-line bg-surface px-3 py-1.5 text-sm"
         }`}
       />
-      {large && (
-        <svg viewBox="0 0 24 24" className="pointer-events-none absolute top-[18px] left-5 h-6 w-6 text-fg-2" aria-hidden>
+      {(large || screen) && (
+        <svg viewBox="0 0 24 24" className={`pointer-events-none absolute text-fg-2 ${screen ? "top-3 left-3.5 h-5 w-5" : "top-3.5 left-4 h-6 w-6 md:top-[18px] md:left-5"}`} aria-hidden>
           <circle cx="10.5" cy="10.5" r="6.5" fill="none" stroke="currentColor" strokeWidth="2" />
           <path d="m15.5 15.5 4 4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
         </svg>
       )}
+    </>
+  );
 
+  return (
+    <div ref={boxRef} className="relative">
+      {screen ? (
+        <div className="sticky top-0 z-10 flex items-center gap-1 bg-bg py-1.5 pr-4 pl-1">
+          {screen.back}
+          <div className="relative min-w-0 flex-1">{field}</div>
+        </div>
+      ) : field}
+
+      {!showLayer && screen?.idle}
       {showLayer && (
         <ul
           id={listId}
           role="listbox"
-          className="absolute inset-x-0 top-full z-30 mt-1 max-h-96 animate-rise overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"
+          className={screen ? "pt-2" : "absolute top-full right-0 z-30 mt-1 max-h-96 w-[max(100%,24rem)] animate-rise overflow-y-auto rounded-lg border border-line bg-surface py-1 shadow-lg"}
         >
-          {hits.map((p, i) => (
+          {hits.map((p, i) => screen ? (
+            <ScreenHit key={p.player_id} p={p} q={q} id={`${listId}-${i}`} selected={i === active} onPick={() => go(p)} />
+          ) : (
             <li
               key={p.player_id}
               id={`${listId}-${i}`}
@@ -158,10 +203,20 @@ export default function SearchBox({
               className={`flex cursor-pointer items-center gap-3 px-3 py-2 text-sm ${i === active ? "bg-bg" : ""}`}
             >
               <span className="h-6 w-1 shrink-0 rounded-full" style={{ background: teamColor(p.team) }} />
-              <span className="font-medium"><Marked name={p.name} q={q} /></span>
-              <span className="text-muted">
+              <span className="shrink-0 font-medium whitespace-nowrap"><Marked name={p.name} q={q} /></span>
+              {p.former_names.length > 0 && (
+                <span className="shrink-0 text-xs whitespace-nowrap text-fg-2">옛 이름 <Marked name={p.former_names.join(" · ")} q={q} /></span>
+              )}
+              <span className="min-w-0 truncate text-muted">
                 {[p.team, p.position, p.bats_throws].filter(Boolean).join(" · ")}
               </span>
+              {/* 동명이인: 팀 · 포지션 · 투타까지 같은 경우가 있어 출생 연도 · 등번호도 (FR-01-04) */}
+              {p.same_name && (
+                <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs whitespace-nowrap text-fg-2">
+                  <span className="rounded-md bg-surface-2 px-1.5 py-0.5 font-semibold">동명이인</span>
+                  {[p.birth_year && `${p.birth_year}년생`, p.back_number && `${p.back_number}번`].filter(Boolean).join(" · ")}
+                </span>
+              )}
             </li>
           ))}
           {hits.length === 0 && (isError || pending ? (

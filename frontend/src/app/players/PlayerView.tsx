@@ -7,7 +7,8 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Wrap } from "@/components/home/common";
 import Abilities from "@/components/player/Abilities";
 import GamesTab from "@/components/player/GamesTab";
-import Hero, { teamCrumb, type Role } from "@/components/player/Hero";
+import Hero, { SceneBox, representative, teamCrumb, type Role } from "@/components/player/Hero";
+import Seg from "@/components/ui/Seg";
 import MatchupTab from "@/components/player/MatchupTab";
 import OutingsTab from "@/components/player/OutingsTab";
 import { BatterScenes, PitcherOutings } from "@/components/player/SceneList";
@@ -22,6 +23,7 @@ import {
 import { josa } from "@/lib/abilities";
 import { pushRecentPlayer } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
+import { useDocTitle, useNavCrumb } from "@/lib/title";
 
 const TABS = ["overview", "scenes", "games", "seasons", "matchup"] as const;
 type Tab = (typeof TABS)[number];
@@ -70,6 +72,8 @@ export default function PlayerView() {
   }
 
   const p = player.data;
+  useDocTitle(p?.name);
+  useNavCrumb(p ? `선수${teamOf(p.team) ? ` › ${teamOf(p.team)!.full}` : ""}` : null);
   // 그 시즌 기본 화면: 주소의 view가 우선, 없으면 primary_role (투수.md P7)
   const viewParam = params.get("view");
   const role: Role = viewParam === "pitcher" || viewParam === "batter" ? viewParam : p?.primaryRole === "pitcher" ? "pitcher" : "batter";
@@ -112,7 +116,9 @@ export default function PlayerView() {
   const asOf = p.season != null && meta.data?.season != null && p.season < meta.data.season ? null : meta.data?.data_as_of ?? null;
   const seasonList = seasons.data?.all ?? (p.season ? [p.season] : []);
   const goTab = (x: Tab) => setParams({ tab: x === "overview" ? null : x });
+  const scene = representative(p, role);
 
+  const compare = () => router.push(`/compare/?${new URLSearchParams({ ids: id, as: role })}`);
   const list = season != null && has && (role === "pitcher"
     ? <PitcherOutings id={id} name={p.name} season={season} all={tab === "scenes"} kind={kind as "all"} onKind={setKind} />
     : <BatterScenes id={id} name={p.name} season={season} all={tab === "scenes"} kind={kind as "all"} onKind={setKind} onGames={() => goTab("games")} />);
@@ -121,8 +127,14 @@ export default function PlayerView() {
   if (!has) body = <Notice inline>{p.season} 시즌 {role === "pitcher" ? "투구" : "타자"} 기록이 없어요.</Notice>;
   else if (tab === "overview") body = (
     <>
+      {/* 모바일 M03: 첫 화면은 이름 + 능력 5칸, 그 아래 대표 장면 · 시즌 기록 (데스크톱은 탭 위에 있다) */}
+      <div className="mb-7 space-y-7 md:hidden">
+        <Abilities p={p} role={role} asOf={asOf} onCompare={compare} />
+        {scene && <section><h2 className="mb-2 text-[17px] font-bold">대표 장면</h2><SceneBox name={p.name} scene={scene} /></section>}
+        <SeasonStrip p={p} role={role} seasons={seasons.data} asOf={asOf} />
+      </div>
       {list}
-      <div className="mt-14 grid gap-5 lg:grid-cols-2">
+      <div className="mt-7 grid gap-5 md:mt-14 lg:grid-cols-2">
         {season != null && <FormCard id={id} season={season} role={role} />}
         <SeasonsCard role={role} seasons={seasons.data} current={season} />
       </div>
@@ -154,21 +166,28 @@ export default function PlayerView() {
   return (
     <div style={colors} className="animate-appear">
       <div className="h-1 bg-(--team)" aria-hidden />
-      <Wrap className="pt-6 pb-8">
-        <nav className="flex items-center gap-1.5 text-[13px] text-muted" aria-label="위치">
+      {/* 모바일: 개요가 아닌 탭은 머리를 한 줄로 줄인다 (M03c) */}
+      {tab !== "overview" && (
+        <Wrap className="flex items-baseline gap-2 pt-2 pb-1 md:hidden">
+          <span className="text-lg font-black">{p.name}</span>
+          <span className="truncate text-xs text-fg-2">{[p.backNumber != null && `#${p.backNumber}`, p.team, role === "pitcher" ? "투수" : p.position].filter(Boolean).join(" · ")}</span>
+        </Wrap>
+      )}
+      <Wrap className={`pt-2 pb-3 md:block md:pt-6 md:pb-8 ${tab === "overview" ? "" : "hidden"}`}>
+        <nav className="hidden items-center gap-1.5 text-[13px] text-muted md:flex" aria-label="위치">
           <Link href="/rankings/" className="hover:underline">선수</Link> {t && <><span aria-hidden>›</span> {teamCrumb(p.team)}</>}
         </nav>
-        <div className="mt-5">
-          <Hero key={`${id}-${season}-${role}`} p={p} role={role} asOf={asOf} onCompare={() => router.push(`/compare/?${new URLSearchParams({ ids: id, as: role })}`)} />
+        <div className="md:mt-5">
+          <Hero key={`${id}-${season}-${role}`} p={p} role={role} asOf={asOf} onCompare={compare} />
         </div>
-        {has && <div className="mt-8"><SeasonStrip p={p} role={role} seasons={seasons.data} asOf={asOf} /></div>}
-        {has && <div className="mt-14"><Abilities p={p} role={role} asOf={asOf} /></div>}
+        {has && <div className="mt-8 hidden md:block"><SeasonStrip p={p} role={role} seasons={seasons.data} asOf={asOf} /></div>}
+        {has && <div className="mt-14 hidden md:block"><Abilities p={p} role={role} asOf={asOf} /></div>}
       </Wrap>
 
-      <div className="sticky top-16 z-10 border-b border-line bg-bg/95 backdrop-blur">
+      <div className="sticky top-[45px] z-10 border-b border-line bg-bg/95 backdrop-blur md:top-16">
         <Wrap className="flex flex-wrap items-center justify-between gap-3">
           <nav className="overflow-x-auto" aria-label="선수 화면">
-            <Slide line mark="bottom-0 h-0.5 bg-fg" className="flex gap-7">
+            <Slide line mark="bottom-0 h-0.5 bg-fg" className="flex gap-5 md:gap-7">
             {tabs.map((x) => (
               <button
                 key={x.key}
@@ -182,7 +201,7 @@ export default function PlayerView() {
             ))}
             </Slide>
           </nav>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 max-md:hidden">
             {p.isBatter && p.pitching && (
               <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-0.5" role="group" aria-label="타자 · 투수">
                 {(["batter", "pitcher"] as const).map((v) => (
@@ -206,7 +225,23 @@ export default function PlayerView() {
         </Wrap>
       </div>
 
-      <Wrap className="pt-10 pb-24">{body}</Wrap>
+      <Wrap className="pt-3 pb-6 md:pt-10 md:pb-24">
+        {/* 모바일: 고르는 칸은 붙어 다니는 탭 줄에서 빼서 본문 맨 위로 */}
+        {tab !== "seasons" && tab !== "matchup" && (seasonList.length > 1 || (p.isBatter && p.pitching)) && (
+          <div className="mb-3 flex items-center gap-2 md:hidden">
+            {p.isBatter && p.pitching && (
+              <Seg className="flex-1" label="타자 · 투수" value={role} onChange={(v) => setParams({ view: v })} items={[{ key: "batter", label: "타자" }, { key: "pitcher", label: "투수" }]} />
+            )}
+            <label className="flex-1">
+              <span className="sr-only">시즌</span>
+              <select value={p.season ?? ""} onChange={(e) => setParams({ season: e.target.value, month: null })} className="h-11 w-full rounded-xl border border-line bg-surface px-3 text-sm font-medium">
+                {seasonList.map((s) => <option key={s} value={s}>{s} 시즌</option>)}
+              </select>
+            </label>
+          </div>
+        )}
+        {body}
+      </Wrap>
     </div>
   );
 }

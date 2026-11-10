@@ -39,9 +39,12 @@ services:
       NEO4J_USER: neo4j
       NEO4J_PASSWORD: ${NEO4J_PASSWORD}
       CORS_ORIGINS: ${CORS_ORIGINS:-}              # 화면과 API가 같은 주소라 비워 둬도 된다
-      ADMIN_TOKENS: ${ADMIN_TOKENS:?deploy/.env에 ADMIN_TOKENS를 넣어야 한다 (서버 검수는 막지만 토큰도 건다)}
+      ADMIN_TOKENS: ${ADMIN_TOKENS:?deploy/.env에 ADMIN_TOKENS를 넣어야 한다 (검수자마다 이름:토큰)}
+      REVIEW_LEDGER: /srv/review/decisions.jsonl   # 서버에서 한 판정 — scripts/deploy.py reviews로 PC에 가져간다
       YOUTUBE_API_KEY: ${YOUTUBE_API_KEY:-}        # 재생 불가 신고(API-12)의 판정에만 쓴다. 비우면 신고만 받는다
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", "--proxy-headers"]
+    volumes:
+      - reviewdata:/srv/review                # 장부는 code(폴더 바꿔 끼우기) · db(DB 덮어쓰기)에도 남는다
     depends_on:
       neo4j:
         condition: service_healthy
@@ -68,5 +71,6 @@ services:
 
 volumes:
   neo4jdata:
+  reviewdata:
   caddydata:
   caddyconfig:

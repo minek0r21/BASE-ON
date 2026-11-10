@@ -51,6 +51,12 @@ type RawSearch = {
     team: string | null;
     position: string | null;
     bats_throws: string | null;
+    /** 옛 이름 (개명 · 등록명 변경, 지금 이름과 같은 것은 빠짐) — 옛 이름으로도 찾는다 */
+    former_names: string[];
+    /** 같은 이름 선수가 있다 → 출생 연도 · 등번호로 구분 (팀 · 포지션 · 투타까지 같은 경우가 있다) */
+    same_name: boolean;
+    birth_year: number | null;
+    back_number: string | null;
   }[];
 };
 
@@ -734,6 +740,31 @@ export type ReviewItem = {
   reasons: string | null;
   review_reason: string | null;
   tags: string[] | null;
+  /** 타석만: Gemini 확인 판독(etl/10_check_clips.py) — 제목 없이 화면 · 해설에서 읽은 것과 기록 대조 */
+  check?: ClipCheck | null;
+  /** 사람 판정: 보기 전 상태 · 마지막 판정한 사람 · NFR-07 표본(v2) · 틀림 이유 · 다시 보기 결과 */
+  reviewed_from?: string | null;
+  reviewer?: string | null;
+  nfr07?: string | null;
+  wrong_reason?: WrongReason | null;
+  recheck?: "mistake" | "retimed" | "confirmed" | null;
+  rechecked_by?: string | null;
+};
+/** 틀림 이유: 같은 영상의 다른 홈런(장면) · 15초 안에 안 나옴 · 영상에 없음 */
+export type WrongReason = "other_hr" | "late" | "absent";
+export type ClipVerdict = "match2" | "match1" | "name_only" | "conflict" | "other" | "none";
+export type ClipCheck = {
+  verdict: ClipVerdict; checks: string; conflicts: string;
+  read_batter: string | null; read_hr_no: number | null; read_inning: number | null; read_score: string | null;
+  evidence: string; model: string | null;
+};
+/** NFR-07 표본 v2 (API 7''): 화면에 나가는 홈런 자동 확정 연결 300개(etl 11 --sample로 고정), 아직 안 본 것만 표본 순서로.
+ *  upper95 = 틀림 비율 95% 상한 — 300개를 다 본 뒤에만 */
+export type Nfr07 = ReviewQueue & {
+  season: number; sample: number; target: number;
+  /** wrong = 틀림 + 다시 보기에서 시작 초를 고쳐 살린 것(자동 연결은 틀렸으므로), by_reason = 틀림 이유별(unknown = 이유 없이 누름) */
+  progress: { seen: number; wrong: number; by_reason: Partial<Record<WrongReason | "unknown", number>>; rechecked: number; upper95: number | null };
+  by_origin: Record<string, { n: number; seen: number; wrong: number }>;
 };
 export type ReviewQueue = {
   total: number; limit: number; offset: number;
@@ -744,6 +775,8 @@ export type ReviewStats = Partial<Record<TargetKind, {
   pending: number; auto_confirmed: number; approved: number; rejected: number; manual: number; accuracy: number | null;
   /** 자동 연결 중 검수에서 맞음(승인)·틀림(반려) — 표본 확인(NFR-07) */
   auto_reviewed_ok: number; auto_reviewed_ng: number;
+  /** 타석만: Gemini 제안을 보고 표시한 수 · 사람이 옮긴 시작 시각 평균(초) · 5초 안 */
+  gemini?: { marked: number; avg_shift: number; within5: number };
 }>>;
 
 /** 관리자 토큰은 sessionStorage에만 (탭을 닫으면 사라진다, 설계 6-4) */
@@ -753,13 +786,13 @@ export const adminToken = {
   set: (t: string) => { try { if (t) sessionStorage.setItem(TOKEN_KEY, t); else sessionStorage.removeItem(TOKEN_KEY); } catch { /* 저장소 막힘 */ } },
 };
 
-async function admin<T>(method: "GET" | "PATCH", path: string, query: Query = {}, body?: unknown): Promise<T> {
+async function admin<T>(method: "GET" | "PATCH" | "POST", path: string, query: Query = {}, body?: unknown): Promise<T> {
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(query)) if (v != null) qs.set(k, String(v));
   const token = adminToken.get();
   const res = await fetch(`${API_BASE}${path}${qs.size ? `?${qs}` : ""}`, {
     method,
-    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: { "Content-Type": "application/json", ...(token ? { "X-Admin-Token": token } : {}) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {
@@ -776,17 +809,58 @@ export const getReviewQueue = (f: { mode: ReviewMode; targetKind: TargetKind | n
 
 export const getReviewStats = () => admin<ReviewStats>("GET", "/admin/review/stats");
 
+/** 토큰 확인. reviewer = 토큰의 이름, 토큰 설정이 없는 로컬 개발은 null */
+export const getAdminMe = () => admin<{ reviewer: string | null }>("GET", "/admin/me");
+
+export const getNfr07 = (season: number, offset: number, part = 1, parts = 1) =>
+  admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset, part, parts });
+
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
+/** 틀림 다시 보기: 자동 확정에 「틀림」을 누른 연결 중 아직 아무도 다시 안 본 것. mine = 내가 처음 누른 것(빼고 보여 줌) */
+export type RecheckQueue = ReviewQueue & { mine: number };
+export const getRecheck = (offset: number, reviewer: string) =>
+  admin<RecheckQueue>("GET", "/admin/review/recheck", { limit: 20, offset, reviewer: reviewer || null });
+/** 같은 경기 홈런 + 이 영상에 붙은 시작 초 */
+export type GameHr = { pa_id: string; batter: string; inning: number; half: string; hr_seq: number | null; this: boolean; start_sec: number | null; status: string | null };
+export const getGameHrs = (it: ReviewItem) =>
+  admin<{ hrs: GameHr[] }>("GET", `/admin/review/pa/${encodeURIComponent(it.target_id)}/videos/${encodeURIComponent(it.video.video_id)}/game-hrs`).then((r) => r.hrs);
+/** 다시 보기 결과: mistake 맞음(잘못 누름) · other_hr / late 시작 초 고쳐 살림 · absent 영상에 없음 */
+export type RecheckResult = "mistake" | "other_hr" | "late" | "absent";
 const reviewPath = (it: ReviewItem) =>
   `/admin/review/${it.target_kind}/${encodeURIComponent(it.target_id)}/videos/${encodeURIComponent(it.video.video_id)}`;
 
-export const saveReview = (it: ReviewItem, body: { action: ReviewActionKind; reviewer: string; start_sec?: number; end_sec?: number; to_target_id?: string }) =>
+export const saveReview = (it: ReviewItem, body: { action: ReviewActionKind; reviewer: string; start_sec?: number; end_sec?: number; to_target_id?: string; wrong_reason?: WrongReason }) =>
   admin<unknown>("PATCH", reviewPath(it), {}, body);
+export const saveRecheck = (it: ReviewItem, body: { result: RecheckResult; reviewer: string; start_sec?: number }) =>
+  admin<unknown>("POST", reviewPath(it) + "/recheck", {}, body);
 
 /** 옮김 후보: 타석 = 같은 경기 그 타자 다른 타석 + 영상 매칭 후보, 등판 = 같은 투수 앞뒤 7일 + 같은 경기 다른 투수, 경기 = 같은 날 다른 경기 */
 export type MoveCandidate = { target_id: string; date: string; why: string; summary: string };
 export const getMoveCandidates = (it: ReviewItem) =>
   admin<{ candidates: MoveCandidate[] }>("GET", reviewPath(it) + "/move-candidates").then((r) => r.candidates);
+
+/** 수동 표시 큐 (API 11-2): 장면 없는 정규시즌 홈런 + 홈런 장면 목표(NFR-06, 70%) */
+export type MissingHr = {
+  pa_id: string; date: string; game_pk: string; game: string; batter: string; pitcher: string;
+  inning: number; half: "초" | "말"; hr_seq: number | null; runs: number;
+  on_1b: boolean; on_2b: boolean; on_3b: boolean; outs: number | null; balls: number | null; strikes: number | null;
+  /** 이 타석에 검수 대기 연결이 있다 → 검수 대기에서 먼저 본다 */
+  has_pending: boolean;
+  highlight: { video_id: string; title: string; channel: string | null; duration_sec: number | null; start_sec: number; end_sec: number | null } | null;
+  /** Gemini 제안 시각 (etl/09_suggest_times.py). found=false = 하이라이트를 다 봤는데 못 찾음 → 「영상에 없음」 후보 */
+  suggestion: {
+    video_id: string; title: string; channel: string | null; duration_sec: number | null;
+    found: boolean; t_sec: number | null; start_sec: number | null; end_sec: number | null;
+    strength: "strong" | "weak" | null; checks: string; evidence: string; model: string | null;
+  } | null;
+};
+export type MissingHrList = { season: number; goal: { total: number; done: number; target: number; rate: number }; total: number; items: MissingHr[] };
+export const getMissingHr = (season: number) => admin<MissingHrList>("GET", "/admin/review/missing-hr", { season, limit: 500 });
+/** API 12-2: 재생 시각으로 장면 표시 (end_sec 생략 = 시작 + 20초) */
+export const markManual = (b: { pa_id: string; video_id: string; start_sec: number; end_sec?: number; reviewer: string; suggested_sec?: number }) =>
+  admin<unknown>("POST", "/admin/review/manual", {}, b);
+/** API 12-3: 이 홈런은 영상에 없음 (큐에서 빠진다) */
+export const markNoVideo = (b: { pa_id: string; reviewer: string }) => admin<unknown>("POST", "/admin/review/no-video", {}, b);
 
 // ------------------------------------------------------------------ TanStack Query 키
 
@@ -805,6 +879,11 @@ export const qk = {
   searchRole: (q: string, role: "batter" | "pitcher") => ["search", normalizeQuery(q), role] as const,
   reviewQueue: (m: string, k: string | null, r: string | null, s: number | null, o: number) => ["reviewQueue", m, k, r, s, o] as const,
   reviewStats: () => ["reviewStats"] as const,
+  adminMe: (token: string) => ["adminMe", token] as const,
+  nfr07: (season: number, o: number, part: string) => ["reviewQueue", "nfr07", season, o, part] as const,
+  recheck: (o: number, reviewer: string) => ["reviewQueue", "recheck", o, reviewer] as const,
+  gameHrs: (paId: string, videoId: string) => ["gameHrs", paId, videoId] as const,
+  missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,
   recentHrs: (limit: number) => ["recentHrs", limit] as const,
   meta: () => ["meta"] as const,

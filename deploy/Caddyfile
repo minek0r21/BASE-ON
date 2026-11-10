@@ -21,20 +21,18 @@
 
 	import auth_{$ACCESS}
 
-	# 검수 · 적재는 PC에서만 한다. 서버 DB는 매주 PC 덤프로 덮어쓰므로 여기서 한 검수는 사라진다.
-	# respond만 쓰면 handle보다 늦게 돌아서 막히지 않는다 → handle로 (경로가 긴 것부터 고른다)
-	handle /api/v1/admin* {
-		respond "Not found" 404
-	}
-	handle /admin* {
-		respond "Not found" 404
-	}
+	# 검수 화면(/admin)은 서버에서도 연다 (11-07, 팀이 같이 검수). 검수자 토큰(ADMIN_TOKENS)으로 막고(ACCESS=private면 사이트 비밀번호도),
+	# 판정은 서버 장부에 남는다 → scripts/deploy.py reviews로 PC에 가져간다 (안 가져가면 db가 서버 DB를 바꾸지 않는다)
 	handle /api/* {
 		reverse_proxy api:8000
 	}
 	handle {
 		root * /srv/www
 		header /_next/static/* Cache-Control "public, max-age=31536000, immutable"
+		# 화면 미리 받기: 브라우저는 /search/__next.search.__PAGE__.txt를 찾는데 빌드는 /search/__next.search/__PAGE__.txt에 둔다.
+		# 맞춰 주지 않으면 링크가 보일 때마다 404 페이지를 받는다 (휴대폰에서 특히 낭비)
+		@segment path_regexp segment ^(.*)/__next\.([^/]+)\.__PAGE__\.txt$
+		rewrite @segment {re.segment.1}/__next.{re.segment.2}/__PAGE__.txt
 		try_files {path} {path}/index.html
 		file_server
 	}

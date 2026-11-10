@@ -63,7 +63,10 @@ WITH p, head(collect(t.name)) AS team, max(f.season) AS last_season
 // 많이 뛴 선수 먼저: 타석 + 상대한 타자 수 (「ㄱㄷㅇ」 → 김도영이 김대우보다 앞)
 WITH p, team, last_season, COUNT { (p)-[:BATTED_IN]->() } + COUNT { (p)-[:PITCHED_IN]->() } AS played
 RETURN p.player_id AS player_id, p.name AS name, team, p.position AS position, p.bats_throws AS bats_throws,   // 공식 투타 (예: 우투좌타)
-       last_season, coalesce(p.former_names, []) AS former_names
+       last_season, [x IN coalesce(p.former_names, []) WHERE x <> p.name] AS former_names,   // 지금 이름과 같은 옛 이름(김민수)은 뺀다
+       // 동명이인 구분 (FR-01-04): 팀 · 포지션 · 투타까지 같은 경우가 있어(한화 박준영 투수 둘) 출생 연도 · 등번호도 준다
+       EXISTS { MATCH (o:Player {name: p.name}) WHERE o <> p } AS same_name,
+       p.birth_date.year AS birth_year, p.back_number AS back_number
 ORDER BY replace(name, ' ', '') <> $q, NOT replace(name, ' ', '') =~ ($pattern + '.*'), played DESC, name    // 이름이 같은 선수 → 앞부분이 맞는 선수 → 많이 뛴 순
 """  # 상한 없음 (FR-01-02): 「ㅇㅈㅎ」처럼 겹치는 초성도 덜 뛴 선수까지 모두         # 선수ID/이름/가장최근소속팀/타격방향/던지는 손 리턴
 

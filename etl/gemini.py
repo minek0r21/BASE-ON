@@ -1,13 +1,16 @@
 """
-Gemini에 YouTube 영상을 보내 JSON으로 판독 받는 공통 호출기 (docs/장면.md 11장)
+Gemini에 YouTube 영상을 보내 JSON으로 판독 받는 공통 호출기 (docs/장면.md 11장). 09_suggest_times.py · research/video_judge가 쓴다
 - 모델: flash 계열만, 최신부터 (lite는 오독이 잦아 뺀다). GEMINI_MODEL="a,b"로 정할 수 있다
 - 구간: start_sec·end_sec를 주면 그 구간만 보낸다 (챕터 줄 — 토큰을 아낀다)
 - 응답은 out_dir/<key>.json에 저장하고, 있으면 다시 부르지 않는다 → 멈췄다 다시 돌려도 이어서 한다
 - 한도 (무료 등급):
     분당 한도(429 + RetryInfo) → 알려 준 시간만큼 기다렸다 같은 모델로
     하루 한도(429, quotaId에 PerDay) → 다음 모델로. 모든 모델이 다 차면 다음 초기화(미국 태평양 자정)까지 기다렸다 처음부터
-    과부하(500·503) → 30초부터 두 배씩 기다리며 5번, 그래도면 그 모델을 뒤로
+    과부하(500·503, 「high demand」) → 10초 뒤 한 번 더, 그래도면 그 모델을 뒤로(다음 모델로). 모든 모델이 연달아 과부하면 5분 쉼
+      (11-03: 무료 등급에서 최신 flash 둘이 계속 503 · 다음 버전은 바로 응답 → 오래 기다리지 않고 넘긴다)
     결제 잔액 없음(402) → 멈춘다 (모델을 바꿔도 같다)
+- 비용 (11-04부터 유료 · 선불): 응답의 토큰 수로 달러를 계산해 videos/gemini/spend.jsonl에 한 줄씩 남긴다.
+  Judge(usd=...)를 주면 이번 실행에서 그만큼 쓰면 더 부르지 않고 OverBudget을 낸다 (예산은 장면.md 11-6)
 """
 import json
 import os
@@ -20,7 +23,29 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 GEM = "https://generativelanguage.googleapis.com/v1beta/"
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).resolve().parents[1]
+SPEND = ROOT / "videos" / "gemini" / "spend.jsonl"
+# 100만 토큰당 달러 (입력, 출력 — 생각 토큰 포함). 2026-12-31까지 값이고 2027-01-01부터 두 배 (AI Studio 요금표)
+# 11-06 실측: 이 표로 어림한 값이 실제 청구(콘솔 28.2천 원)의 2배 남짓 — 상한은 넉넉한 쪽으로 걸린다. 실제 잔액은 콘솔로 본다
+PRICE = {"gemini-3.8-flash": (0.75, 3.75), "gemini-3.7-flash": (0.75, 3.75), "gemini-3.6-flash": (0.75, 3.75)}
+PRICE_DEFAULT = (1.5, 7.5)  # 모르는 모델은 비싸게 잡는다
+
+
+class OverBudget(Exception):
+    pass
+
+
+def cost(model: str, usage: dict) -> float:
+    pin, pout = PRICE.get(model, PRICE_DEFAULT)
+    out = usage.get("candidatesTokenCount", 0) + usage.get("thoughtsTokenCount", 0)
+    return usage.get("promptTokenCount", 0) / 1e6 * pin + out / 1e6 * pout
+
+
+def spent_total() -> float:
+    """지금까지 쓴 돈 (spend.jsonl 합계 — 11-04 유료 전환 뒤부터)"""
+    if not SPEND.exists():
+        return 0.0
+    return sum(json.loads(line)["usd"] for line in open(SPEND, encoding="utf-8") if line.strip())
 
 
 def api_key() -> str:
@@ -85,8 +110,9 @@ def _quota(body: dict) -> tuple[bool, float]:
 
 
 class Judge:
-    def __init__(self, out_dir: Path, sleep: float = 6.0, log=print):
+    def __init__(self, out_dir: Path, sleep: float = 6.0, log=print, usd: float | None = None):
         self.key = api_key()
+        self.usd, self.spent = usd, 0.0
         self.models = flash_models(self.key)
         self.exhausted: set[str] = set()
         self.out = Path(out_dir)
@@ -95,7 +121,7 @@ class Judge:
         log("모델 순서:", self.models)
 
     def ask(self, key: str, video_id: str, prompt: str, schema: dict, start_sec: float | None = None,
-            end_sec: float | None = None) -> dict:
+            end_sec: float | None = None, max_tokens: int | None = None) -> dict:
         p = self.out / f"{key}.json"
         if p.exists():
             return json.load(open(p, encoding="utf-8"))
@@ -105,6 +131,10 @@ class Judge:
         body = {"contents": [{"parts": [part, {"text": prompt}]}],
                 "generationConfig": {"responseMimeType": "application/json", "responseSchema": schema, "temperature": 0,
                                      "mediaResolution": os.environ.get("GEMINI_MEDIA_RES", "MEDIA_RESOLUTION_LOW")}}
+        if max_tokens:  # 응답이 끝없이 길어지는 것 막기 (생각 토큰 포함 — 11-05 하나가 6.5만 토큰 $0.32)
+            body["generationConfig"]["maxOutputTokens"] = max_tokens
+        if self.usd is not None and self.spent >= self.usd:
+            raise OverBudget(f"이번 실행 상한 ${self.usd:.2f}에 닿음 (쓴 돈 ${self.spent:.2f})")
         busy = 0
         while True:
             live = [m for m in self.models if m not in self.exhausted]
@@ -119,10 +149,16 @@ class Judge:
             if st == 200:
                 res = {"status": 200, "model": model, "sec": round(time.time() - t0, 1), "body": d}
                 json.dump(res, open(p, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+                usd = cost(model, d.get("usageMetadata") or {})
+                self.spent += usd
+                SPEND.parent.mkdir(parents=True, exist_ok=True)
+                with open(SPEND, "a", encoding="utf-8") as f:
+                    f.write(json.dumps({"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "key": key,
+                                        "model": model, "usd": round(usd, 5), "usage": d.get("usageMetadata")}) + "\n")
                 time.sleep(self.sleep)
                 return res
             if st == 402:
-                raise SystemExit("402 결제 잔액 부족: 결제가 연결되지 않은 프로젝트의 키(무료 등급)로 바꿔 주세요")
+                raise SystemExit("402 선불 잔액 없음: AI Studio → Billing에서 충전한 뒤 다시 돌리면 이어서 한다")
             if st == 404:
                 self.log("  ", model, "404 → 뺌"); self.models.remove(model); continue
             if st == 429:
@@ -134,10 +170,12 @@ class Judge:
                 continue
             if st in (500, 503):
                 busy += 1
-                if busy > 5:
-                    self.log("  ", model, st, "→ 뒤로"); self.models.append(self.models.pop(self.models.index(model))); busy = 0
+                if busy % 2:
+                    time.sleep(10)
                 else:
-                    time.sleep(30 * 2 ** (busy - 1))
+                    self.log("  ", model, st, "→ 뒤로"); self.models.append(self.models.pop(self.models.index(model)))
+                if busy >= 2 * len(live) + 1:
+                    self.log("   모든 모델 과부하 → 5분 쉼"); time.sleep(300); busy = 0
                 continue
             # 400 등 요청 자체 문제: 저장하지 않고 돌려준다 (예: 비공개·지역 제한 영상)
             return {"status": st, "model": model, "body": d}

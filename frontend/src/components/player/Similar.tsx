@@ -22,14 +22,14 @@ export default function Similar({ id, season, role, asOf }: { id: string; season
   if (!d || !d.players.length) return null;
   const copy = axisCopy(d.axis);
   return (
-    <section className="mt-14">
+    <section className="mt-7 md:mt-14">
       <SectionHead
         title={`${josa(d.label, "이", "가")} 비슷한 ${role === "pitcher" ? "투수" : "타자"}`}
         sub={[copy && `${copy.metric} 상위`, `${season} 정규시즌${role === "pitcher" ? " 선발" : ""}`, asOf && `${md(asOf)} 기준`].filter(Boolean).join(" · ")}
       />
-      <ul className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <ul className="grid gap-2 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
         {d.players.map((x) => (
-          <li key={x.player_id} className="flex items-center gap-3 rounded-3xl border border-line bg-surface p-4">
+          <li key={x.player_id} className="flex items-center gap-3 rounded-2xl border border-line bg-surface p-3 md:rounded-3xl md:p-4">
             <Link href={playerHref(x.player_id)} className="group flex min-w-0 flex-1 items-center gap-3">
               <PlayerAvatar id={x.player_id} name={x.name} team={x.team} size={56} />
               <span className="min-w-0">
@@ -47,7 +47,7 @@ export default function Similar({ id, season, role, asOf }: { id: string; season
                 onClick={() => setPlaying(playing?.id === x.player_id ? null : { id: x.player_id, clip: x.clip!, title: x.sceneTitle ?? x.name })}
                 aria-expanded={playing?.id === x.player_id}
                 aria-label={`${x.sceneTitle ?? x.name} 재생`}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 hover:bg-accent hover:text-white aria-expanded:bg-accent aria-expanded:text-white"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface-2 md:h-10 md:w-10 hover:bg-accent hover:text-white aria-expanded:bg-accent aria-expanded:text-white"
               >
                 <PlayGlyph size={11} />
               </button>

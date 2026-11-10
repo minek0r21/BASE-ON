@@ -16,6 +16,7 @@ import { useRosterTeam } from "@/lib/local";
 import { team as teamOf } from "@/lib/teams";
 import { barOpacity, isTop20, josa } from "@/lib/abilities";
 import Help from "@/components/ui/Help";
+import Seg from "@/components/ui/Seg";
 import Slide from "@/components/ui/Slide";
 import { GROUP_HELP } from "@/lib/constants";
 import PlayersHead from "./PlayersHead";
@@ -59,10 +60,16 @@ export default function RankingsView() {
   const maxGap = data ? Math.max(0, ...data.rows.map((r) => Math.abs(axisGap(axis.copy, r.value, data.leagueAvg) ?? 0))) : 0;
 
   return (
-    <Wrap className="pt-10 pb-24">
+    <Wrap className="pt-3 pb-6 md:pt-10 md:pb-24">
       <PlayersHead tab="rank" sub={[data?.season && `${data.season} 정규시즌`, asOf && `${md(asOf)} 기준`].filter(Boolean).join(" · ")} />
 
-      <div className="mt-7 flex flex-wrap items-center gap-3">
+      <div className="mt-3 space-y-2 md:hidden">
+        <Seg label="타자 · 투수" value={role} onChange={(r) => { setMore(false); setPlaying(null); go(r); }}
+             items={[{ key: "batter", label: "타자" }, { key: "pitcher", label: "투수" }]} />
+        <Seg small label="지표" value={axis.key} onChange={(k) => { setMore(false); setPlaying(null); go(role, k); }}
+             items={axes.map((a) => ({ key: a.key, label: a.copy.chip }))} />
+      </div>
+      <div className="mt-7 hidden flex-wrap items-center gap-3 md:flex">
         <Slide mark="rounded-full bg-surface-3" className="flex rounded-full border border-line bg-surface p-1" role="group" aria-label="타자 · 투수">
           {(["batter", "pitcher"] as const).map((r) => (
             <button
@@ -89,7 +96,7 @@ export default function RankingsView() {
         </div>
       </div>
 
-      <div className="mt-4"><TeamPicker value={teamF} onPick={pickTeam} withAll /></div>
+      <div className="mt-2 md:mt-4"><TeamPicker value={teamF} onPick={pickTeam} withAll /></div>
 
       <Summary copy={axis.copy} role={role} data={data} shown={rows} team={teamF} />
 
@@ -101,7 +108,56 @@ export default function RankingsView() {
       ) : !data ? (
         <div className="mt-5 h-[640px] animate-pulse rounded-3xl bg-surface-2" />
       ) : (
-        <div className="animate-appear mt-5 overflow-x-auto rounded-3xl border border-line bg-surface">
+        <>
+        {/* 모바일: 표 대신 줄 (M05b). 옆으로 밀지 않는다 */}
+        <ol className="animate-appear mt-2 divide-y divide-line overflow-hidden rounded-2xl border border-line bg-surface md:hidden">
+          {teamF && rows.length === 0 && (
+            <li className="px-4 py-8 text-center text-sm text-fg-2">{teamF} 선수 중 {josa(GROUP_RULE[role], "이", "가")} 없어요</li>
+          )}
+          {rows.map((r, i) => (
+            <Fragment key={r.player_id}>
+              <li className="flex items-center gap-2.5 px-3.5 py-2.5">
+                <span className="w-6 shrink-0 text-center font-display text-[22px] leading-none font-extrabold">{r.rank}</span>
+                <Link href={playerHref(r.player_id)} className="flex min-w-0 flex-1 items-center gap-2.5">
+                  <PlayerAvatar id={r.player_id} name={r.name} team={r.team} size={40} />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5 text-[15px] font-bold"><span className="truncate">{r.name}</span> <TeamLogo team={r.team} height={14} /></span>
+                    <span className="block truncate text-xs text-fg-2">{r.meta}</span>
+                  </span>
+                </Link>
+                <span className="flex shrink-0 flex-col items-end gap-0.5">
+                  <span className="font-num text-base font-semibold">{axis.copy.fmt(r.value)}</span>
+                  {r.scene ? (
+                    <button onClick={() => setPlaying(playing === r.player_id ? null : r.player_id)} aria-expanded={playing === r.player_id}
+                            className="-my-2 flex items-center gap-1 py-2 text-xs font-medium text-fg-2 aria-expanded:text-brand-text">
+                      <PlayGlyph size={7} /> {playing === r.player_id ? "재생 중" : "장면"}
+                    </button>
+                  ) : (
+                    <span className="text-xs text-muted">장면 준비 중</span>
+                  )}
+                </span>
+              </li>
+              {isTop20(r.percentile) && rows[i + 1] && !isTop20(rows[i + 1].percentile) && (
+                <li className="bg-surface-2 px-3.5 py-1.5 text-xs font-bold text-brand-text">여기까지 상위 20% <span className="font-medium text-fg-2">{data.groupSize}명 중 {r.rank}위까지</span></li>
+              )}
+              {playing === r.player_id && r.scene && (
+                <li className="bg-night p-3 text-white">
+                  <div className="aspect-video w-full overflow-hidden rounded-xl"><ScenePlayer bare clip={r.scene.clip} label={r.scene.title} /></div>
+                  <div className="mt-2 flex items-center justify-between gap-3">
+                    <p className="min-w-0 truncate text-sm font-bold">{r.scene.title} <span className="font-normal text-[#a1a1a8]">{md(r.scene.date)}</span></p>
+                    <button onClick={() => setPlaying(null)} className="h-11 shrink-0 px-2 text-[13px] font-bold text-[#d3d4d8]">닫기</button>
+                  </div>
+                </li>
+              )}
+            </Fragment>
+          ))}
+        </ol>
+        {!teamF && !more && data.rows.length > FIRST && (
+          <button onClick={() => setMore(true)} className="mt-2 flex h-11 w-full items-center justify-center rounded-xl bg-surface-2 text-[13px] font-bold md:hidden">
+            {FIRST + 1} ~ {data.rows.length}위 더 보기
+          </button>
+        )}
+        <div className="animate-appear mt-5 hidden overflow-x-auto rounded-3xl border border-line bg-surface md:block">
           <div className="min-w-[960px]">
             <div className={`grid ${COLS} items-center gap-4 border-b border-line px-6 py-3 text-xs font-medium text-muted`}>
               <span>순위</span>
@@ -152,6 +208,7 @@ export default function RankingsView() {
             )}
           </div>
         </div>
+        </>
       )}
     </Wrap>
   );
@@ -161,12 +218,11 @@ function Summary({ copy, role, data, shown, team }: {
   copy: AxisCopy; role: Role; data?: { groupSize: number; leagueAvg: number | null; rows: RankRow[] }; shown: RankRow[]; team: string | null;
 }) {
   const first = team ? shown[0] : data?.rows[0];
-  const withScene = shown.filter((r) => r.scene).length;
   return (
-    <div className="mt-6 flex flex-wrap items-center justify-between gap-6 rounded-3xl border border-line bg-surface px-7 py-6">
+    <div className="mt-2 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-3.5 md:mt-6 md:gap-6 md:rounded-3xl md:px-7 md:py-6">
       <div>
-        <h2 className="text-xl font-bold">
-          {copy.chip} · {copy.title}
+        <h2 className="text-[17px] font-bold md:text-xl">
+          <span className="hidden md:inline">{copy.chip} · </span>{copy.title}
         </h2>
         <p className="mt-1.5 text-[13px] text-fg-2">
           {copy.sub}
@@ -175,10 +231,9 @@ function Summary({ copy, role, data, shown, team }: {
         </p>
       </div>
       {data && (
-        <dl className="flex gap-9">
+        <dl className="grid w-full grid-cols-2 gap-2 md:flex md:w-auto md:gap-9">
           <Stat label="리그 평균" value={copy.fmt(data.leagueAvg)} />
           <Stat label={team ? `${team} 최고 (리그 ${first?.rank ?? "–"}위)` : "1위"} value={first ? copy.fmt(first.value) : "–"} />
-          <Stat label={`장면 볼 수 있는 선수 (${shown.length}명 중)`} value={`${withScene}명`} />
         </dl>
       )}
     </div>
@@ -188,8 +243,8 @@ function Summary({ copy, role, data, shown, team }: {
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <dt className="text-xs text-muted">{label}</dt>
-      <dd className="mt-1 font-display text-[28px] leading-none font-extrabold">{value}</dd>
+      <dt className="text-xs text-fg-2 md:text-muted">{label}</dt>
+      <dd className="mt-1 font-display text-2xl leading-none font-extrabold md:text-[28px]">{value}</dd>
     </div>
   );
 }
