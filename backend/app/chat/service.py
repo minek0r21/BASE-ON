@@ -8,6 +8,7 @@ POST /chat 의 본체 — 질문 하나를 받아 답 하나를 돌려준다. AI
   ④ DB : 메뉴별 미리 써 둔 Cypher로 조회              (routers.chat.search_pa / search_games / season_stats)
      메뉴에 없는 질문(other)은 서버에서 「아직 못 답함」. 로컬에서 CHAT_OTHER=on일 때만 LLM이 쓴 Cypher를 읽기 전용으로 실행
   ⑤ 답 문장: 조회 결과 숫자로 코드가 채운다           (answers.py — AI가 숫자를 옮겨 적지 않는다)
+  기록이 아닌 야구 질문(talk)만 AI가 일반 설명으로 답한다 (talk.py, 「BASE:ON 기록 아님」 꼬리표). 못 답한 질문은 가까운 메뉴 버튼 · 화면 링크
 """
 import difflib
 import json
@@ -22,7 +23,7 @@ from pydantic import BaseModel
 
 from .. import db
 from ..errors import ApiError
-from . import answers, limits, llm, prompts
+from . import answers, limits, llm, prompts, talk
 from .registry import MENUS
 
 LOG = Path(__file__).resolve().parents[2] / "chat_logs" / "unanswered.jsonl"  # backend/chat_logs (git 제외)
@@ -196,8 +197,33 @@ def run_other(message: str, ids: dict) -> dict:
             "total": len(rows), "shown": len(rows), "note": "메뉴에 없는 질문이라 자동으로 조회했어요. 참고용 (로컬 전용)"}
 
 
+# ------------------------------------------------------------------ 못 답한 질문의 기본 답 — 숫자는 지어내지 않고, 이미 답할 수 있는 가까운 질문 · 사이트 화면으로 잇는다
+NOT_YET = "이 질문은 아직 답할 수 없어요."
+NOT_YET_NONE = "이 질문은 아직 답할 수 없어요. 한 선수의 타석 · 시즌 기록, 한 팀의 경기 결과, 시즌 순위로 물어봐 주세요."
+
+
+def alternatives(people: dict, cond: dict) -> tuple[list[dict], list[dict]]:
+    """(질문 버튼, 화면 링크). 이름이 한 명으로 딱 찾아지는 선수 · 팀만 쓴다 (되묻지 않는다)"""
+    season = cond.get("season") if isinstance(cond.get("season"), int) else SEASONS[0]
+    asks, links = [], []
+    names = [n for v in people.values() for n in (v if isinstance(v, list) else [v]) if isinstance(n, str) and n]
+    for name in list(dict.fromkeys(names))[:2]:
+        cands = find_player(name, None)
+        if len(cands) != 1:
+            continue
+        nm, pid = cands[0]["name"], cands[0]["player_id"]
+        res = (cond.get("results") or [None])[0]
+        asks.append({"label": f"{nm} {season} {res} 목록" if res else f"{nm} {season} 시즌 기록",
+                     "ask": f"{nm} {season} {res} 목록" if res else f"{nm} {season} 시즌 기록"})
+        links.append({"label": f"{nm} 선수 화면", "href": f"/players/?id={pid}"})
+    team = cond.get("team") or cond.get("bat_team")
+    if team and len(asks) < 2:
+        asks.append({"label": f"{team} {season} 경기 결과", "ask": f"{team} {season} 시즌 경기"})
+        links.append({"label": f"{team} 팀 화면", "href": f"/teams/?team={team}"})
+    return asks[:2], links[:2]
+
+
 # ------------------------------------------------------------------ 전체
-NOT_YET = "아직 답할 수 없는 질문이에요. 한 선수의 타석 · 시즌 기록이나 한 팀의 경기 결과로 물어봐 주세요."
 
 
 def chat(req: ChatRequest, ip: str = "-") -> dict:
@@ -226,11 +252,22 @@ def answer(req: ChatRequest, message: str) -> dict:
     people = parsed.get("people") or {}
     cond = {k: v for k, v in (parsed.get("cond") or {}).items() if v not in (None, "", [])}
     ctx = {"parsed": {"menu": menu, "people": people, "cond": cond, "year_given": True}}  # 이어 묻기 · 채점용
+    if menu == "talk":  # 기록 숫자가 아닌 야구 질문 → AI 일반 설명 (talk.py, 꼬리표 · 숫자 거르기)
+        try:
+            text, safe = talk.answer(message)
+        except llm.LLMError as e:
+            log_unanswered(message, "llm_error", {"error": str(e)[:200]})
+            return say("지금 질문을 처리하는 데 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.", error=True)
+        if not safe:
+            log_unanswered(message, "talk_record_like", {"parsed": parsed})
+        return say(text, menu="talk", tag="일반 설명 · BASE:ON 기록 아님", context=ctx)
     if menu == "chat" or (menu not in MENUS and menu != "other"):
         return say(parsed.get("reply") or "선수 · 타석 · 경기 기록을 물어봐 주세요. 예: 김도영 2024 홈런 영상")
     if menu == "other" and not OTHER_ON:
         log_unanswered(message, "other_off", {"parsed": parsed})  # 자주 나오는 질문 → 메뉴 · 조건 칸 후보
-        return say(NOT_YET, menu="other", reason="other_off", as_of=day, context=ctx)  # 채점이 menu를 본다
+        asks, links = alternatives(people, cond)
+        return say(NOT_YET if asks or links else NOT_YET_NONE, menu="other", reason="other_off", as_of=day, context=ctx,
+                   suggestions=asks, links=links)  # 채점이 menu를 본다
     # ③ 기준일 뒤만 묻는 질문 — 조회해도 0건이니 바로 안내한다 (「없어요」로 오해하지 않게. 이름 되묻기보다 먼저)
     if answers.after_as_of(cond, day):
         log_unanswered(message, "after_as_of", {"parsed": parsed})

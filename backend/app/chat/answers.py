@@ -155,13 +155,14 @@ def rank_text(result: dict, cond: dict, as_of: str | None) -> str:
         return "조건에 맞는 선수가 없어요."
     firsts = [r for r in rows if r["rank"] == 1]
     who = " · ".join(f"{r['name']}({r['team']})" for r in firsts)
-    lines = [f"{metric} {'공동 ' if len(firsts) > 1 else ''}1위는 {who} {josa(fmt(key, firsts[0]['value']), '이에요', '예요')}."]
+    top = f"{metric} {'공동 ' if len(firsts) > 1 else ''}1위는 {who} {josa(fmt(key, firsts[0]['value']), '이에요', '예요')}."
     me = rk.get("me")
-    if me:
-        lines.append(f"{josa(me['name'], '은', '는')} {me['rank']}위 ({fmt(key, me['value'])})")
-    elif rk.get("me_missing"):
-        lines.append(f"{josa(rk['me_missing'], '은', '는')} 이 순위에 없어요 (비교 대상이 아니거나 기록 없음).")
-    return "\n".join(lines)
+    if me:  # 한 선수가 몇 위인지 물었으면 그 답을 먼저
+        return f"{josa(me['name'], '은', '는')} {metric} {me['rank']}위 ({fmt(key, me['value'])})예요.\n{top}" if me["rank"] != 1 \
+            else f"{josa(me['name'], '은', '는')} {metric} 1위 ({fmt(key, me['value'])})예요."
+    if rk.get("me_missing"):
+        return f"{josa(rk['me_missing'], '은', '는')} 이 순위에 없어요 (비교 대상이 아니거나 기록 없음).\n{top}"
+    return top
 
 
 def other_text(result: dict) -> str:

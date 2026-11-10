@@ -31,11 +31,14 @@ def last_date() -> str:
 # 엉뚱한 값으로 채웠다(result=승 · balls=0). 고정 없이는 25~26개. 그래서 값 목록은 아래 규칙 글로만 주고, 모르는 값은 조회 쪽(terms.py)이 거른다
 
 META_MENUS = [
-    ("other", "위 메뉴로 안 되는 기록 질문 (여러 선수 비교 · 합계 · 이닝별 · 월별 · 상대 팀별 집계 등)"),
-    ("chat", "인사 · 서비스 사용법 · 야구 기록과 관계없는 말 → reply에 짧게 답한다"),
+    ("other", "위 메뉴로 안 되는 기록 질문 (여러 선수 비교 · 합계 · 이닝별 · 월별 · 상대 팀별 집계 등). people · cond는 아는 만큼 채운다"),
+    ("talk", "기록 숫자가 아닌 야구 질문 (용어 · 규칙 · 관람 · 응원 · 입문). 예: OPS가 뭐야, 인필드 플라이가 뭐야, 직관 처음인데 뭘 알아야 해"),
+    ("chat", "인사 · 서비스 사용법 · 야구와 관계없는 말 → reply에 짧게 답한다"),
 ]
 META_EXAMPLES = [
-    ("김도영이랑 최정 2025 홈런 누가 더 많아", {"menu": "other", "people": {}, "cond": {}, "year_given": True}),
+    ("김도영이랑 최정 2025 홈런 누가 더 많아",
+     {"menu": "other", "people": {"players": ["김도영", "최정"]}, "cond": {"season": 2025, "results": ["홈런"]}, "year_given": True}),
+    ("희생플라이가 뭐야", {"menu": "talk", "people": {}, "cond": {}, "year_given": False}),
     ("안녕", {"menu": "chat", "people": {}, "cond": {}, "year_given": False, "reply": "안녕하세요! 선수 기록이나 장면을 물어보세요. 예: 김도영 2024 홈런 영상"}),
 ]
 

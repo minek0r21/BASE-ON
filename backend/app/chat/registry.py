@@ -104,7 +104,8 @@ def run_rank(ids: dict, cond: dict) -> dict:
     n = max(1, min(int(cond.get("top") or 5), 10))
     top = [(k, r) for k, r in order if k <= n][: n + 5]  # 경계의 공동 순위는 몇 명 더 보여 준다
     pack = lambda k, r: {"rank": k, "player_id": r["player_id"], "name": r["name"], "team": r["team"], "value": r[key]}
-    rk = {"metric": metric, "key": key, "side": side, "rows": [pack(k, r) for k, r in top]}
+    label = {"삼진": "탈삼진", "볼넷": "볼넷 허용"}.get(metric, metric) if side == "pitcher" else metric
+    rk = {"metric": label, "key": key, "side": side, "rows": [pack(k, r) for k, r in top]}
     me = ids.get("player")
     if me:
         hit = next(((k, r) for k, r in order if r["player_id"] == me), None)
@@ -117,7 +118,7 @@ def run_rank(ids: dict, cond: dict) -> dict:
     if rate:
         said.append("선발 · 이닝이 팀 경기 수 절반 이상" if side == "pitcher" else "규정타석 50% 이상")  # 사이트 비교 대상과 같은 기준
     return {"conditions": said, "total": len(order), "shown": len(top), "rank": rk,
-            "columns": ["순위", "선수", "팀", metric],
+            "columns": ["순위", "선수", "팀", label],
             "table": [[k, r["name"], r["team"], answers.fmt(key, r[key])] for k, r in top]}
 
 

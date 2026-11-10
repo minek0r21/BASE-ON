@@ -7,6 +7,7 @@
  * 대화는 창을 닫아도 남고(레이아웃이 화면을 바꿔도 유지된다) 새로고침하면 사라진다.
  * 흐름: 질문 → POST /chat → 답(문장 · 조건 · 목록 · ▶) 또는 되묻기(버튼) → 고르면 같은 질문을 고른 값과 함께 다시 보낸다.
  */
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import ScenePlayer from "@/components/ScenePlayer";
@@ -89,7 +90,7 @@ export default function ChatWidget() {
             {msgs.map((m) => m.role === "user" ? (
               <p key={m.id} className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand px-3 py-2 text-sm text-white">{m.text}</p>
             ) : (
-              <BotBubble key={m.id} m={m} onPlay={setPlaying}
+              <BotBubble key={m.id} m={m} onPlay={setPlaying} onAsk={(q) => send(q)}
                 onPick={(o) => m.ask && send(m.ask.message, { ...m.ask.resolved, [(m.reply as { slot: string }).slot]: o.value }, o.label)} />
             ))}
             {busy && <p className="w-fit rounded-2xl bg-surface-2 px-3 py-2 text-sm text-muted">찾는 중…</p>}
@@ -119,7 +120,9 @@ export default function ChatWidget() {
   );
 }
 
-function BotBubble({ m, onPlay, onPick }: { m: Msg; onPlay: (p: { clip: Clip; title: string }) => void; onPick: (o: { value: string | number; label: string }) => void }) {
+function BotBubble({ m, onPlay, onPick, onAsk }: {
+  m: Msg; onPlay: (p: { clip: Clip; title: string }) => void; onPick: (o: { value: string | number; label: string }) => void; onAsk: (q: string) => void;
+}) {
   const r = m.reply;
   return (
     <div className="max-w-[92%] space-y-2 rounded-2xl rounded-bl-md bg-surface-2 px-3 py-2 text-sm">
@@ -131,15 +134,26 @@ function BotBubble({ m, onPlay, onPick }: { m: Msg; onPlay: (p: { clip: Clip; ti
           ))}
         </div>
       )}
-      {r?.type === "answer" && <Answer r={r} onPlay={onPlay} />}
+      {r?.type === "answer" && <Answer r={r} onPlay={onPlay} onAsk={onAsk} />}
     </div>
   );
 }
 
-function Answer({ r, onPlay }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title: string }) => void }) {
+function Answer({ r, onPlay, onAsk }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title: string }) => void; onAsk: (q: string) => void }) {
   return (
     <>
+      {r.tag && <p className="w-fit rounded-md bg-surface-3 px-1.5 py-0.5 text-[11px] font-bold text-fg-2">{r.tag}</p>}
       {!!r.conditions?.length && <p className="text-xs text-muted">🔍 {r.conditions.join(" · ")}</p>}
+      {(!!r.suggestions?.length || !!r.links?.length) && ( /* 못 답한 질문: 가까운 질문 버튼 · 사이트 화면 */
+        <div className="flex flex-wrap gap-2">
+          {r.suggestions?.map((s) => (
+            <button key={s.ask} onClick={() => onAsk(s.ask)} className="rounded-full border border-line-strong bg-surface px-3 py-1 text-xs font-bold hover:border-brand">{s.label}</button>
+          ))}
+          {r.links?.map((l) => (
+            <Link key={l.href} href={l.href} className="rounded-full px-2 py-1 text-xs font-bold text-brand-text underline-offset-2 hover:underline">{l.label} →</Link>
+          ))}
+        </div>
+      )}
       {r.note && <p className="text-xs text-[#a05a00]">※ {r.note}</p>}
       {r.record && !r.text.includes("승률") && ( /* 답 문장에 이미 있으면 다시 쓰지 않는다 (승 · 패만 거른 질문일 때 전체 성적) */
         <p className="text-xs font-bold">{r.record.win}승 {r.record.loss}패{r.record.draw ? ` ${r.record.draw}무` : ""}

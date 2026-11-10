@@ -66,10 +66,21 @@ class Rank(unittest.TestCase):
     def test_rank_text(self):
         r = {"rank": {"metric": "홈런", "key": "hr", "rows": [{"rank": 1, "name": "디아즈", "team": "삼성", "value": 50}],
                       "me": {"rank": 2, "name": "김도영", "team": "KIA", "value": 38}}}
-        self.assertEqual(answers.rank_text(r, {}, AS_OF), "홈런 1위는 디아즈(삼성) 50개예요.\n김도영은 2위 (38개)")
+        self.assertEqual(answers.rank_text(r, {}, AS_OF), "김도영은 홈런 2위 (38개)예요.\n홈런 1위는 디아즈(삼성) 50개예요.")
+        del r["rank"]["me"]
+        self.assertEqual(answers.rank_text(r, {}, AS_OF), "홈런 1위는 디아즈(삼성) 50개예요.")
         tie = {"rank": {"metric": "타율", "key": "avg", "rows": [{"rank": 1, "name": "가", "team": "KIA", "value": 0.321},
                                                                {"rank": 1, "name": "나", "team": "LG", "value": 0.321}]}}
         self.assertEqual(answers.rank_text(tie, {}, AS_OF), "타율 공동 1위는 가(KIA) · 나(LG) .321이에요.")
+
+
+class Talk(unittest.TestCase):
+    def test_record_like_numbers_are_caught(self):
+        from app.chat.talk import RECORD_LIKE
+        for bad in ["김도영은 38홈런을 쳤어요", "타율 .347로", "15승을 거뒀어요", "작년 3위였어요"]:
+            self.assertTrue(RECORD_LIKE.search(bad), bad)
+        for ok in ["볼 4개면 볼넷이에요", "3아웃이면 공수가 바뀌어요", "9이닝 경기", "한국시리즈는 7전 4승제예요", "OPS가 1.000을 넘으면"]:
+            self.assertFalse(RECORD_LIKE.search(ok), ok)
 
 
 class Limits(unittest.TestCase):
