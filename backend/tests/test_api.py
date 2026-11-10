@@ -256,8 +256,9 @@ class RecheckTest(unittest.TestCase):
             return {"m": {"reviewed_from": "auto_confirmed", "moved_to": None, "recheck": None, "reviewer": reviewer, **m}}
         rows = [row("성준"), row("세라"), row("세라", recheck="retimed"), row("세라", moved_to="x"), row("세라", reviewed_from="pending")]
         todo, mine = self.to_recheck(rows, "성준")
-        self.assertEqual((len(todo), mine), (1, 1))  # 세라의 틀림 하나만 — 다시 본 것 · 옮김 · 검수 대기 반려는 빠진다
+        self.assertEqual((len(todo), len(mine)), (1, 1))  # 세라의 틀림 하나만 — 다시 본 것 · 옮김 · 검수 대기 반려는 빠진다
         self.assertEqual(todo[0]["m"]["reviewer"], "세라")
+        self.assertEqual(mine[0]["m"]["reviewer"], "성준")  # 「내 틀림 다시 보기」(mine=true)는 이것만
 
 
 if __name__ == "__main__":
