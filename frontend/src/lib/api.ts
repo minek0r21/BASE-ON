@@ -816,10 +816,11 @@ export const getNfr07 = (season: number, offset: number, part = 1, parts = 1) =>
   admin<Nfr07>("GET", "/admin/review/nfr07", { season, limit: 20, offset, part, parts });
 
 export type ReviewActionKind = "approve" | "reject" | "retime" | "move";
-/** 틀림 다시 보기: 자동 확정에 「틀림」을 누른 연결 중 아직 아무도 다시 안 본 것. mine = 내가 처음 누른 것(빼고 보여 줌) */
-export type RecheckQueue = ReviewQueue & { mine: number };
-export const getRecheck = (offset: number, reviewer: string) =>
-  admin<RecheckQueue>("GET", "/admin/review/recheck", { limit: 20, offset, reviewer: reviewer || null });
+/** 틀림 다시 보기: 자동 확정에 「틀림」을 누른 연결 중 아직 아무도 다시 안 본 것.
+ *  기본은 다른 사람이 누른 것(others), own이면 내가 처음 누른 것(mine)만 */
+export type RecheckQueue = ReviewQueue & { mine: number; others: number };
+export const getRecheck = (offset: number, reviewer: string, own = false) =>
+  admin<RecheckQueue>("GET", "/admin/review/recheck", { limit: 20, offset, reviewer: reviewer || null, mine: own || null });
 /** 같은 경기 홈런 + 이 영상에 붙은 시작 초 */
 export type GameHr = { pa_id: string; batter: string; inning: number; half: string; hr_seq: number | null; this: boolean; start_sec: number | null; status: string | null };
 export const getGameHrs = (it: ReviewItem) =>
@@ -831,7 +832,7 @@ const reviewPath = (it: ReviewItem) =>
 
 export const saveReview = (it: ReviewItem, body: { action: ReviewActionKind; reviewer: string; start_sec?: number; end_sec?: number; to_target_id?: string; wrong_reason?: WrongReason }) =>
   admin<unknown>("PATCH", reviewPath(it), {}, body);
-export const saveRecheck = (it: ReviewItem, body: { result: RecheckResult; reviewer: string; start_sec?: number }) =>
+export const saveRecheck = (it: ReviewItem, body: { result: RecheckResult; reviewer: string; start_sec?: number; own?: boolean }) =>
   admin<unknown>("POST", reviewPath(it) + "/recheck", {}, body);
 
 /** 옮김 후보: 타석 = 같은 경기 그 타자 다른 타석 + 영상 매칭 후보, 등판 = 같은 투수 앞뒤 7일 + 같은 경기 다른 투수, 경기 = 같은 날 다른 경기 */
@@ -881,7 +882,7 @@ export const qk = {
   reviewStats: () => ["reviewStats"] as const,
   adminMe: (token: string) => ["adminMe", token] as const,
   nfr07: (season: number, o: number, part: string) => ["reviewQueue", "nfr07", season, o, part] as const,
-  recheck: (o: number, reviewer: string) => ["reviewQueue", "recheck", o, reviewer] as const,
+  recheck: (o: number, reviewer: string, own: boolean) => ["reviewQueue", "recheck", o, reviewer, own] as const,
   gameHrs: (paId: string, videoId: string) => ["gameHrs", paId, videoId] as const,
   missingHr: (season: number) => ["missingHr", season] as const,
   postseason: () => ["postseason"] as const,

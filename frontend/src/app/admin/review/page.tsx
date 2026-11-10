@@ -44,6 +44,7 @@ export default function ReviewPage() {
   const [targetKind, setTargetKind] = useState<TargetKind | null>(null);
   const [reason, setReason] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
+  const [own, setOwn] = useState(false);  // 틀림 다시 보기: false 다른 사람이 누른 것 / true 내가 누른 것
   // 검수자 이름은 이 브라우저에 기억, 토큰은 sessionStorage에만 (설계 6-4). 정적 빌드 때(window 없음)는 빈 값
   const [name, setName] = useState(() => {
     if (typeof window === "undefined") return "";
@@ -66,9 +67,9 @@ export default function ReviewPage() {
   const stats = useQuery({ queryKey: qk.reviewStats(), queryFn: getReviewStats, enabled: authed });
   const queue = useQuery({
     queryKey: view === "nfr07" ? qk.nfr07(NFR07_SEASON, offset, part)
-      : view === "recheck" ? qk.recheck(offset, reviewer) : qk.reviewQueue(mode, targetKind, reason, null, offset),
+      : view === "recheck" ? qk.recheck(offset, reviewer, own) : qk.reviewQueue(mode, targetKind, reason, null, offset),
     queryFn: () => (view === "nfr07" ? getNfr07(NFR07_SEASON, offset, mine, of)
-      : view === "recheck" ? getRecheck(offset, reviewer) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
+      : view === "recheck" ? getRecheck(offset, reviewer, own) : getReviewQueue({ mode, targetKind, reason, season: null, offset })),
     placeholderData: keepPreviousData,
     enabled: authed && view !== "manual",
   });
@@ -83,7 +84,7 @@ export default function ReviewPage() {
   });
   const recheck = useMutation({
     mutationFn: (v: { it: ReviewItem; result: RecheckResult; start?: number }) =>
-      saveRecheck(v.it, { result: v.result, reviewer, start_sec: v.start }),
+      saveRecheck(v.it, { result: v.result, reviewer, start_sec: v.start, own }),
     onSuccess: after,
   });
 
@@ -193,9 +194,23 @@ export default function ReviewPage() {
             {{ pending: "검수 대기", auto_confirmed: "자동 확정 표본", nfr07: `NFR-07 표본 (${NFR07_SEASON} 홈런 300)`, recheck: "틀림 다시 보기", manual: "수동 표시 (장면 없는 홈런)" }[m]}
           </button>
         ))}
+        {view === "recheck" && queue.data && "mine" in queue.data && (
+          <span className="flex gap-1 text-xs" role="group" aria-label="누가 누른 틀림">
+            {([false, true] as const).map((o) => (
+              <button
+                key={String(o)}
+                onClick={() => { setOwn(o); setOffset(0); }}
+                aria-pressed={own === o}
+                className={`rounded-full border px-2 py-0.5 tabular-nums ${own === o ? "border-fg font-semibold" : "border-line text-muted hover:text-fg"}`}
+              >
+                {o ? "내가 누른 틀림" : "다른 사람이 누른 틀림"} {o ? (queue.data as RecheckQueue).mine : (queue.data as RecheckQueue).others}
+              </button>
+            ))}
+          </span>
+        )}
         {view === "recheck" && (
           <span className="text-xs text-muted">
-            다른 사람이 「틀림」을 누른 장면을 한 번 더 봅니다. 그 홈런이 영상 안에 있으면 투구 직전에서 멈추고 「여기부터」를 누르세요 — 시작 초만 고쳐 화면에 다시 나갑니다. NFR-07에는 틀림으로 그대로 남습니다.
+            {own ? "내가 「틀림」을 누른 장면을 한 번 더 봅니다." : "다른 사람이 「틀림」을 누른 장면을 한 번 더 봅니다."} 그 홈런이 영상 안에 있으면 투구 직전에서 멈추고 「여기부터」를 누르세요 — 시작 초만 고쳐 화면에 다시 나갑니다. NFR-07에는 틀림으로 그대로 남습니다.
           </span>
         )}
         {view === "auto_confirmed" && (
@@ -260,7 +275,6 @@ export default function ReviewPage() {
           ) : (
             <p className="rounded-xl border border-line bg-surface p-6 text-center text-muted">다시 볼 틀림이 없습니다.</p>
           )}
-          {d.mine > 0 && <p className="text-xs text-muted">내가 「틀림」을 누른 {d.mine}개는 다른 검수자가 봅니다.</p>}
         </>);
       })()}
 

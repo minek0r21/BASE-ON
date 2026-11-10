@@ -338,27 +338,29 @@ RecheckResult = Literal["mistake", "other_hr", "late", "absent"]
 RECHECK_LEN = 20  # 고친 장면 길이(초) — 수동 표시(API 12-2) 기본값과 같다
 
 
-def _to_recheck(rows: list[dict], me: str | None) -> tuple[list[dict], int]:
-    """다시 볼 틀림 (아직 아무도 다시 안 봄) · 그중 내가 처음 누른 것의 수"""
+def _to_recheck(rows: list[dict], me: str | None) -> tuple[list[dict], list[dict]]:
+    """다시 볼 틀림 (아직 아무도 다시 안 봄)을 다른 사람이 누른 것 · 내가 처음 누른 것으로 나눈다"""
     todo = [r for r in rows if r["m"]["reviewed_from"] == "auto_confirmed" and not r["m"]["moved_to"] and not r["m"]["recheck"]]
     mine = [r for r in todo if me and r["m"]["reviewer"] == me]
-    return [r for r in todo if r not in mine], len(mine)
+    return [r for r in todo if r not in mine], mine
 
 
-@router.get("/admin/review/recheck", summary="7''''. 틀림 다시 보기 — 자동 확정에 「틀림」을 누른 연결 (처음 누른 사람 것은 빼고)")
+@router.get("/admin/review/recheck", summary="7''''. 틀림 다시 보기 — 자동 확정에 「틀림」을 누른 연결 (기본은 다른 사람이 누른 것, mine=true면 내가 누른 것)")
 def recheck_queue(limit: int = Query(20, ge=1, le=200), offset: int = Query(0, ge=0),
                   reviewer: str | None = Query(None, description="로컬 개발(토큰 없음)일 때 내 이름 — 내가 누른 틀림을 뺀다"),
+                  mine: bool = Query(False, description="true면 내가 처음 「틀림」을 누른 것만 (내 판정을 스스로 다시 볼 때)"),
                   token_reviewer: str | None = Depends(require_admin)):
     me = token_reviewer or reviewer
     rows = []
     for kind in TARGETS:
         rows += run(Q_QUEUE[kind], season=None, reason=None, status="rejected")
-    todo, mine = _to_recheck(rows, me)
+    others, own = _to_recheck(rows, me)
+    todo = own if mine else others
     # NFR-07 표본 먼저(측정에 들어가는 것), 그 안에서는 최근 경기부터
     todo.sort(key=lambda r: (r["date"] or "", r["target_id"]), reverse=True)
     todo.sort(key=lambda r: r["m"]["nfr07"] != "v2")
     return {
-        "total": len(todo), "mine": mine, "limit": limit, "offset": offset, "counts": [],
+        "total": len(todo), "mine": len(own), "others": len(others), "limit": limit, "offset": offset, "counts": [],
         "items": [{"target_kind": r["target_kind"], "target_id": r["target_id"], "date": r["date"], "summary": r["summary"],
                    "video": r["v"], "alt": r["alt"], "check": r.get("check"), **r["m"]} for r in todo[offset:offset + limit]],
     }
@@ -384,6 +386,7 @@ class Recheck(BaseModel):
     result: RecheckResult = Field(description="mistake 처음 판정이 잘못(맞음) / other_hr · late 시작 초를 고쳐 살림 / absent 영상에 없음(틀림 그대로)")
     start_sec: int | None = Field(None, ge=0, description="other_hr · late: 새 시작 초 (끝은 시작 + 20초)")
     reviewer: str | None = Field(None, description="검수자 이름 (토큰 인증을 쓰면 무시하고 토큰의 이름)")
+    own: bool = Field(False, description="true면 처음 「틀림」을 누른 사람이 스스로 다시 본다 (화면 「내가 누른 틀림」)")
 
 
 @router.post("/admin/review/{target_kind}/{target_id}/videos/{video_id}/recheck", summary="8'''. 틀림 다시 보기 저장")
@@ -401,8 +404,9 @@ def recheck_save(target_kind: TargetKind, target_id: str, video_id: str, body: R
     m = found[0]["m"]
     if m["status"] != "rejected" or m["reviewed_from"] != "auto_confirmed" or m["moved_to"] or m["recheck"]:
         raise ApiError(409, "NOT_RECHECKABLE", "다시 볼 틀림이 아닙니다 (이미 다시 봤거나 틀림이 아님)")
-    if m["reviewer"] == reviewer:
-        raise ApiError(409, "SAME_REVIEWER", "처음 틀림을 누른 사람은 다시 볼 수 없습니다 — 다른 검수자가 봐 주세요")
+    if m["reviewer"] == reviewer and not body.own:
+        # 기본은 다른 사람이 본다. 「내가 누른 틀림」(own)에서만 스스로 고친다 — rechecked_by = reviewer로 남아 구분된다
+        raise ApiError(409, "SAME_REVIEWER", "처음 틀림을 누른 사람은 「내가 누른 틀림」에서 다시 봅니다")
     params = {"t": target_id, "v": video_id, "by": reviewer}
     set_by = "m.rechecked_by = $by, m.rechecked_at = datetime()"
     if body.result == "mistake":
