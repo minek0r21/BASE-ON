@@ -1,22 +1,29 @@
 "use client";
 
 /**
- * 챗봇 창 — 모든 화면 오른쪽 아래 💬 버튼 (layout.tsx에 한 번 넣는다).
+ * 챗봇 창 — 모든 화면 오른쪽 아래 챗봇 버튼 (layout.tsx에 한 번 넣는다).
+ * 서버에 AI 키가 없으면(GET /chat/status의 enabled = false) 버튼을 그리지 않는다.
+ * 버튼은 맨 위로(ToTop) 자리에 놓고, 맨 위로는 --chat-fab만큼 위로 올린다 (휴대폰은 아래 탭 위, 경기 상세는 안전 영역 위).
  * 대화는 창을 닫아도 남고(레이아웃이 화면을 바꿔도 유지된다) 새로고침하면 사라진다.
- * 흐름: 질문 → POST /chat → 답(요약 · 조건 · 목록 · ▶) 또는 되묻기(버튼) → 고르면 같은 질문을 고른 값과 함께 다시 보낸다.
+ * 흐름: 질문 → POST /chat → 답(문장 · 조건 · 목록 · ▶) 또는 되묻기(버튼) → 고르면 같은 질문을 고른 값과 함께 다시 보낸다.
  */
+import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import ScenePlayer from "@/components/ScenePlayer";
 import type { Clip } from "@/lib/api";
-import { postChat, toClip, type ChatAnswer, type ChatReply, type GameRow, type PaRow } from "@/lib/chat";
+import { getChatStatus, postChat, toClip, type ChatAnswer, type ChatReply, type GameRow, type PaRow } from "@/lib/chat";
+import { innings, md, rate3 } from "@/lib/format";
 
 type Msg = { id: number; role: "user" | "bot"; text: string; reply?: ChatReply; ask?: { message: string; resolved: Record<string, unknown> } };
 
 const EXAMPLES = ["김도영 2024 홈런 영상 보여줘", "2024년 김도영이 잠실에서 3루타 친 날", "KIA가 올러 선발일 때 LG 상대로 승률은?", "원태인 2025 시즌 기록"];
-const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`;
+const FAB_SPACE = "60px"; // 버튼 48px + 간격 12px — 맨 위로가 이만큼 올라간다
 let seq = 0;
 
 export default function ChatWidget() {
+  const path = usePathname();
+  const noTab = path.startsWith("/games"); // 경기 상세는 아래 탭이 없다 (TabBar · ToTop과 같은 기준)
+  const [status, setStatus] = useState<{ enabled: boolean; as_of: string | null } | null>(null);
   const [open, setOpen] = useState(false);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
@@ -26,6 +33,14 @@ export default function ChatWidget() {
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
+  useEffect(() => { getChatStatus().then(setStatus); }, []);
+  useEffect(() => { // 버튼이 있을 때만 맨 위로를 올린다
+    if (!status?.enabled) return;
+    document.documentElement.style.setProperty("--chat-fab", FAB_SPACE);
+    return () => { document.documentElement.style.removeProperty("--chat-fab"); };
+  }, [status?.enabled]);
+
+  if (!status?.enabled) return null;
 
   async function send(message: string, resolved: Record<string, unknown> = {}, shown?: string) {
     if (!message.trim() || busy) return;
@@ -41,9 +56,9 @@ export default function ChatWidget() {
     <>
       {open && (
         <section aria-label="BASE:ON 챗봇"
-          className="fixed inset-x-0 bottom-0 z-50 flex h-[85vh] flex-col overflow-hidden rounded-t-3xl border border-line bg-surface shadow-2xl sm:inset-x-auto sm:bottom-24 sm:right-6 sm:h-[620px] sm:w-[400px] sm:rounded-3xl">
+          className="fixed inset-x-0 bottom-0 z-50 flex h-[85dvh] flex-col overflow-hidden rounded-t-3xl border border-line bg-surface pb-[env(safe-area-inset-bottom)] shadow-2xl md:inset-x-auto md:bottom-8 md:right-8 md:h-[min(620px,calc(100dvh-4rem))] md:w-[400px] md:rounded-3xl md:pb-0">
           <header className="flex items-center justify-between border-b border-line px-5 py-3">
-            <p className="font-bold">BASE:ON 챗봇 <span className="ml-1 text-xs font-medium text-muted">기록 · 장면 질문</span></p>
+            <p className="font-bold">BASE:ON 챗봇 {status.as_of && <span className="ml-1 text-xs font-medium text-muted">{md(status.as_of)} 기준</span>}</p>
             <div className="flex gap-3 text-xs font-bold text-fg-2">
               {msgs.length > 0 && <button onClick={() => { setMsgs([]); setContext(null); setPlaying(null); }} className="hover:underline">새 대화</button>}
               <button onClick={() => setOpen(false)} aria-label="챗봇 닫기" className="text-base">✕</button>
@@ -89,10 +104,17 @@ export default function ChatWidget() {
         </section>
       )}
 
-      <button onClick={() => setOpen((o) => !o)} aria-label={open ? "챗봇 닫기" : "챗봇 열기"}
-        className="fixed bottom-6 right-6 z-50 flex h-14 w-14 items-center justify-center rounded-full bg-brand text-2xl text-white shadow-lg hover:scale-105">
-        {open ? "✕" : "💬"}
-      </button>
+      {!open && (
+        <button onClick={() => setOpen(true)} aria-label="챗봇 열기"
+          className={`fixed right-4 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-brand text-white shadow-md hover:brightness-110 md:right-8 md:bottom-8 ${
+            noTab ? "bottom-[calc(16px+env(safe-area-inset-bottom))]" : "bottom-[calc(3.5rem+1px+12px+env(safe-area-inset-bottom))]"
+          }`}>
+          <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+            <path d="M5 18.5V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v6a3 3 0 0 1-3 3H8.5z" />
+            <path d="M9 10h6M9 13h3.5" />
+          </svg>
+        </button>
+      )}
     </>
   );
 }
@@ -119,9 +141,9 @@ function Answer({ r, onPlay }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title:
     <>
       {!!r.conditions?.length && <p className="text-xs text-muted">🔍 {r.conditions.join(" · ")}</p>}
       {r.note && <p className="text-xs text-[#a05a00]">※ {r.note}</p>}
-      {r.record && (
+      {r.record && !r.text.includes("승률") && ( /* 답 문장에 이미 있으면 다시 쓰지 않는다 (승 · 패만 거른 질문일 때 전체 성적) */
         <p className="text-xs font-bold">{r.record.win}승 {r.record.loss}패{r.record.draw ? ` ${r.record.draw}무` : ""}
-          {r.record.win_pct != null && ` · 승률 ${r.record.win_pct.toFixed(3).replace(/^0/, "")}`}</p>
+          {r.record.win_pct != null && ` · 승률 ${rate3(r.record.win_pct)}`}</p>
       )}
       {r.menu === "pa" && !!r.rows?.length && (
         <ul className="divide-y divide-line rounded-xl bg-surface">
@@ -155,18 +177,18 @@ function Answer({ r, onPlay }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title:
           </table>
         </div>
       )}
-      {r.total != null && r.shown != null && r.total > r.shown && <p className="text-xs text-muted">총 {r.total}개 중 최근 {r.shown}개</p>}
+      {r.menu === "games" && r.total != null && r.shown != null && r.total > r.shown && <p className="text-xs text-muted">총 {r.total}개 중 최근 {r.shown}개</p>}
     </>
   );
 }
 
 const BAT: [string, string, (v: number) => string][] = [
-  ["avg", "타율", (v) => v.toFixed(3).replace(/^0/, "")], ["hr", "홈런", String], ["h", "안타", String], ["ops", "OPS", (v) => v.toFixed(3)],
-  ["obp", "출루율", (v) => v.toFixed(3).replace(/^0/, "")], ["slg", "장타율", (v) => v.toFixed(3).replace(/^0/, "")], ["pa", "타석", String], ["so", "삼진", String],
+  ["avg", "타율", rate3], ["hr", "홈런", String], ["h", "안타", String], ["ops", "OPS", rate3],
+  ["obp", "출루율", rate3], ["slg", "장타율", rate3], ["pa", "타석", String], ["so", "삼진", String],
 ];
 const PIT: [string, string, (v: number) => string][] = [
-  ["g", "경기", String], ["gs", "선발", String], ["outs", "이닝", (v) => `${Math.floor(v / 3)}${v % 3 ? ` ${v % 3}/3` : ""}`], ["whip", "WHIP", (v) => v.toFixed(2)],
-  ["so", "삼진", String], ["bb", "볼넷", String], ["hr", "피홈런", String], ["avg", "피안타율", (v) => v.toFixed(3).replace(/^0/, "")],
+  ["g", "경기", String], ["gs", "선발", String], ["outs", "이닝", innings], ["whip", "WHIP", (v) => v.toFixed(2)],
+  ["so", "삼진", String], ["bb", "볼넷", String], ["hr", "피홈런", String], ["avg", "피안타율", rate3],
 ];
 
 function Stats({ r }: { r: ChatAnswer }) {

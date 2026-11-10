@@ -29,9 +29,23 @@ export type ChatAnswer = {
   table?: unknown[][];
   note?: string;
   context?: Record<string, unknown>;
+  /** DB의 마지막 경기일 (답이 이 날까지의 기록이라는 뜻) */
+  as_of?: string;
+  /** 조회하지 않고 끝난 답의 까닭: other_off(메뉴 밖) · after_as_of(기준일 뒤) · limited(호출 제한) · off(꺼짐) */
+  reason?: "other_off" | "after_as_of" | "limited" | "off";
 };
 export type ChatClarify = { type: "clarify"; slot: string; text: string; options: { value: string | number; label: string }[] };
 export type ChatReply = ChatAnswer | ChatClarify;
+
+/** 챗봇을 켤지 (서버에 AI 키가 있나) + 기록 기준일. 못 받으면 끈 것으로 본다 */
+export async function getChatStatus(): Promise<{ enabled: boolean; as_of: string | null }> {
+  try {
+    const res = await fetch(`${API_BASE}/chat/status`);
+    return res.ok ? await res.json() : { enabled: false, as_of: null };
+  } catch {
+    return { enabled: false, as_of: null };
+  }
+}
 
 export async function postChat(body: { message: string; context?: Record<string, unknown> | null; resolved?: Record<string, unknown> | null }): Promise<ChatReply> {
   const res = await fetch(`${API_BASE}/chat`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
