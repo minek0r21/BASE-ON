@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from .. import db
 from ..errors import ApiError
 from . import answers, limits, llm, prompts
+from .registry import MENUS
 
 LOG = Path(__file__).resolve().parents[2] / "chat_logs" / "unanswered.jsonl"  # backend/chat_logs (git 제외)
 SEASONS = [2026, 2025, 2024]
@@ -117,44 +118,12 @@ def resolve_people(people: dict, resolved: dict, message: str) -> tuple[dict | N
     return ids, None
 
 
-# ------------------------------------------------------------------ ④ 메뉴별 조회
-PA_KEYS = ["results", "season", "date_from", "date_to", "stadium", "bat_team", "pit_team", "home_away", "inning_from", "inning_to",
-           "inning_half", "situations", "bases", "outs", "balls", "strikes", "pitch_names", "speed_min", "speed_max", "video_only"]
-GAME_KEYS = ["team", "opponent", "season", "date_from", "date_to", "home_away", "result"]
-
-
-def pick(cond: dict, keys: list[str]) -> dict:
-    return {k: cond[k] for k in keys if cond.get(k) not in (None, "", [])}
-
-
-def latest_team(player_id: str, season: int | None = None) -> str | None:
-    r = db.run("""MATCH (:Player {player_id: $id})-[f:PLAYS_FOR]->(t:Team) WHERE $season IS NULL OR f.season = $season
-                  RETURN t.name AS team ORDER BY f.season DESC, f.last_date DESC LIMIT 1""", id=player_id, season=season)
-    return r[0]["team"] if r else None
-
-
+# ------------------------------------------------------------------ ④ 메뉴별 조회 — 실행 방법은 등록부(registry.MENUS)에
 def run_menu(menu: str, ids: dict, cond: dict) -> dict:
-    from ..routers import chat as api
-    if menu == "pa":
-        body = pick(cond, PA_KEYS)
-        body.update({k: v for k, v in (("batter_id", ids.get("batter")), ("pitcher_id", ids.get("pitcher"))) if v})
-        return {"menu": "pa", **api.search_pa(api.PASearch(**body))}
-    if menu == "games":
-        body = pick(cond, GAME_KEYS)
-        if not body.get("team"):  # 팀을 말하지 않았으면 선발 · 같이 뛴 선수의 그 시즌(없으면 최근) 팀으로
-            who = ids.get("starter") or (ids.get("players") or [None])[0]
-            if who:
-                body["team"] = latest_team(who, body.get("season"))
-        if not body.get("team"):
-            raise ApiError(400, "NEED_TEAM", "어느 팀 기준인지 함께 말씀해 주세요. 예: KIA가 …")
-        body.update({k: v for k, v in (("starter_id", ids.get("starter")), ("opp_starter_id", ids.get("opp_starter")),
-                                       ("player_ids", ids.get("players"))) if v})
-        return {"menu": "games", **api.search_games(api.GameSearch(**body))}
-    if menu == "stats":
-        if not ids.get("player"):
-            raise ApiError(400, "NEED_PLAYER", "어느 선수의 기록인지 말씀해 주세요.")
-        return {"menu": "stats", **api.season_stats(player_id=ids["player"], season=int(cond["season"]))}
-    raise ApiError(400, "BAD_MENU", menu)
+    m = MENUS.get(menu)
+    if not m:
+        raise ApiError(400, "BAD_MENU", menu)
+    return {"menu": menu, **m.run(ids, cond)}
 
 
 # ------------------------------------------------------------------ ④' 메뉴에 없는 질문 → LLM이 쓴 Cypher
@@ -257,7 +226,7 @@ def answer(req: ChatRequest, message: str) -> dict:
     people = parsed.get("people") or {}
     cond = {k: v for k, v in (parsed.get("cond") or {}).items() if v not in (None, "", [])}
     ctx = {"parsed": {"menu": menu, "people": people, "cond": cond, "year_given": True}}  # 이어 묻기 · 채점용
-    if menu == "chat" or menu not in ("pa", "games", "stats", "other"):
+    if menu == "chat" or (menu not in MENUS and menu != "other"):
         return say(parsed.get("reply") or "선수 · 타석 · 경기 기록을 물어봐 주세요. 예: 김도영 2024 홈런 영상")
     if menu == "other" and not OTHER_ON:
         log_unanswered(message, "other_off", {"parsed": parsed})  # 자주 나오는 질문 → 메뉴 · 조건 칸 후보
@@ -275,11 +244,12 @@ def answer(req: ChatRequest, message: str) -> dict:
         cond["season"] = resolved["season"] or None   # 0 = 전체 시즌
     # ③ 연도 되묻기 — 연도도 날짜도 없으면 (stats는 시즌이 꼭 필요)
     no_when = not cond.get("season") and not cond.get("date_from") and not cond.get("date_to")
-    if menu in ("pa", "games", "stats") and no_when and not parsed.get("year_given") and "season" not in resolved:
+    need = MENUS[menu].season if menu in MENUS else None  # 메뉴마다 등록부에 적어 둔다
+    if need and no_when and not parsed.get("year_given") and "season" not in resolved:
         opts = [{"value": s, "label": answers.season_label(s, day)} for s in SEASONS] \
-            + ([] if menu == "stats" else [{"value": 0, "label": "전체 (2024~)"}])
+            + ([{"value": 0, "label": "전체 (2024~)"}] if need == "ask" else [])
         return {"type": "clarify", "slot": "season", "text": "어느 시즌을 말씀하시는 건가요?", "options": opts}
-    if menu == "stats" and not cond.get("season"):
+    if need == "ask_one" and not cond.get("season"):
         cond["season"] = SEASONS[0]
     # 연도 없이 "7월 이후"였던 질문: 시즌을 고르면 그 해 날짜로 다시 해석하도록 질문에 연도를 붙여 다시 돈다 (호출 제한은 이미 셌다)
     if "season" in resolved and resolved["season"] and parsed.get("year_given") is False and re.search(r"\d+\s*월", message):
@@ -305,7 +275,7 @@ def answer(req: ChatRequest, message: str) -> dict:
     elif day:  # 현재 시즌은 「2026 시즌(7월 26일까지)」로
         cur = f"{day[:4]} 시즌"
         result["conditions"] = [answers.season_label(int(day[:4]), day) if c == cur else c for c in result.get("conditions") or []]
-    result["text"] = answers.text_for(menu, result, cond, day)
+    result["text"] = MENUS[menu].text(result, cond, day) if menu in MENUS else answers.other_text(result)
     result["type"] = "answer"
     result["as_of"] = day
     result["context"] = {"parsed": {"menu": menu, "people": people, "cond": cond, "year_given": True}}

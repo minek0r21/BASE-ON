@@ -139,13 +139,3 @@ def stats_text(result: dict, metrics: list[str] | None, as_of: str | None) -> st
 
 def other_text(result: dict) -> str:
     return f"자동 조회 {result.get('total', 0)}줄 (참고용 · 로컬 전용)"
-
-
-def text_for(menu: str, result: dict, cond: dict, as_of: str | None) -> str:
-    if menu == "pa":
-        return pa_text(result, cond)
-    if menu == "games":
-        return games_text(result, cond)
-    if menu == "stats":
-        return stats_text(result, cond.get("metrics"), as_of)
-    return other_text(result)

@@ -2,6 +2,7 @@
 챗봇 자동 채점 — tests/chat_questions.csv의 질문을 전부 챗봇에 넣고 맞음/틀림 표를 만든다.
     docker compose exec api python -m app.chat.grade              (한 번씩)
     docker compose exec -e GRADE_REPEAT=3 api python -m app.chat.grade   (세 번 모두 맞아야 맞음 — AI 답은 매번 다를 수 있다)
+    docker compose exec api python -m app.chat.grade --gate      (관문: 하나라도 틀리면 실패로 끝난다. 메뉴 · 프롬프트를 바꾼 뒤 · 승격 전에)
 질문을 추가할 때는 CSV에 한 줄 더 적기만 하면 된다.
   기대메뉴  pa · games · stats · other · chat · 되묻기
   기대조건  "칸=값; 칸=값" (목록은 값 하나만 적어도 포함되면 맞음). 칸 이름은 prompts.PARSE_SCHEMA의 cond 칸
@@ -15,6 +16,7 @@
 import csv
 import json
 import os
+import sys
 import time
 from collections import Counter
 from datetime import datetime
@@ -128,6 +130,8 @@ def main():
         w = csv.DictWriter(fp, fieldnames=list(out[0]))
         w.writeheader(); w.writerows(out)
     print(f"저장: {f}")
+    if "--gate" in sys.argv and passed < len(rows):
+        sys.exit(f"관문 실패: {len(rows) - passed}개 틀림")
 
 
 if __name__ == "__main__":
