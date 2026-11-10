@@ -126,13 +126,19 @@ def cypher_system(ids: dict[str, str]) -> str:
 - Team.name: {', '.join(sorted(set(terms.TEAMS.values())))} / Team.team_id: {', '.join(vals.get('teams', {}))}
 - 날짜 속성(date)은 Date 타입: pa.date >= date('2025-07-01'). season은 정수.
 - 공격 팀 = 초면 원정(AWAY) 팀, 말이면 홈(HOME) 팀. 경기 점수: Game.home_final · away_final.
-- 타자 시즌 기록: (Player)-[:HAS_STAT]->(BatterSeasonStat), 투수: (Player)-[:HAS_PITCHING_STAT]->(PitcherSeasonStat). qualified = 규정 타석·이닝.
+- 타자 시즌 기록: (Player)-[:HAS_STAT]->(BatterSeasonStat), 투수: (Player)-[:HAS_PITCHING_STAT]->(PitcherSeasonStat).
+  qualified = 사이트 비교 대상 (타자: 타석 ≥ 팀 경기 수 × 3.1 × 0.5, 투수: 이닝 ≥ 팀 경기 수 × 선발 0.5 · 구원 0.2). 투수 role = starter | reliever.
+  타율 · OPS 같은 비율 순위는 qualified인 선수만, 홈런 · 삼진 같은 개수 순위는 전체. 투수 비율(WHIP · 피안타율) 순위는 선발(role = starter) 비교 대상만.
+  이닝은 outs(아웃 수) ÷ 3. 주자 칸(on_1b · on_2b · on_3b)은 true/false라 = true로 비교한다 (IS NOT NULL 금지).
+  소속 팀 (Player)-[:PLAYS_FOR {{season}}]->(Team)은 시즌마다 있다 — 꼭 f.season = 그 시즌으로 거른다 (안 거르면 같은 선수가 여러 줄).
+- 오늘: {datetime.now(timezone(timedelta(hours=9))).date().isoformat()} · \"올해\" = {datetime.now(timezone(timedelta(hours=9))).year}, \"작년\" = 그 전 해
 - 데이터: 2024-03 ~ {last_date()} 정규시즌
 [선수 ID] 질문 속 선수는 이 ID로만 찾는다 (이름으로 찾지 않는다): {json.dumps(ids, ensure_ascii=False)}
 
 [규칙]
 - MATCH / OPTIONAL MATCH / WITH / WHERE / RETURN / ORDER BY / LIMIT 만 쓴다. CREATE · MERGE · SET · DELETE · REMOVE · CALL · LOAD 금지.
-- RETURN 열 이름은 한국어로 짧게 (예: 선수, 홈런, 타율). 날짜는 toString(...)으로.
+- RETURN 열 이름은 한국어로 짧게 (예: 선수, 홈런, 타율). 숫자로 시작하는 이름은 백틱으로 감싼다 (AS `3루타`). 날짜는 toString(...)으로.
+- 이닝은 소수 나눗셈으로 (s.outs / 3.0). 정수끼리 나누면 115⅔이 115가 된다.
 - 마지막에 LIMIT 20 이하.
 - 답할 수 없는 질문이면 cypher를 null로.
 

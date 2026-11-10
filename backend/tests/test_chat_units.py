@@ -83,6 +83,27 @@ class Talk(unittest.TestCase):
             self.assertFalse(RECORD_LIKE.search(ok), ok)
 
 
+class LearnCheck(unittest.TestCase):
+    def test_plays_for_without_season(self):
+        from app.chat.learn.steps import plays_for_without_season as bad
+        self.assertTrue(bad("MATCH (p:Player)-[:PLAYS_FOR]->(t:Team {name: '롯데'}), (p)-[:HAS_STAT]->(s {season: 2024}) RETURN p"))
+        self.assertTrue(bad("MATCH (p)-[f:PLAYS_FOR]->(t) WHERE s.season = 2024 RETURN p"))
+        self.assertFalse(bad("MATCH (p)-[f:PLAYS_FOR]->(t) WHERE f.season = 2024 RETURN p"))
+        self.assertFalse(bad("MATCH (p)-[:PLAYS_FOR {season: 2024}]->(t) RETURN p"))
+
+    def test_integer_division_innings(self):
+        from app.chat.learn.steps import RED_RULES
+        hit = lambda cy: [m for f, m in RED_RULES if f(cy)]
+        self.assertTrue(hit("RETURN p.name, s.outs / 3 AS 이닝"))
+        self.assertFalse(hit("RETURN p.name, s.outs / 3.0 AS 이닝"))
+
+    def test_oracle_compare_uses_site_rounding(self):
+        from app.chat.learn.steps import oracle_ok
+        ora = {"rows": [{"rank": 1, "name": "폰세", "team": "한화", "value": 0.94}]}
+        self.assertTrue(oracle_ok({"rows": [["폰세", 0.9381]]}, ora, 1)[0])   # 사이트는 WHIP 두 자리
+        self.assertFalse(oracle_ok({"rows": [["폰세", 0.96]]}, ora, 1)[0])
+
+
 class Limits(unittest.TestCase):
     def test_per_minute_then_recovers(self):
         now = [1_800_000_000.0]

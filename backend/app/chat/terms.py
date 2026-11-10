@@ -141,6 +141,6 @@ RANK_BAT = {
 }
 RANK_PIT = {
     "삼진": ("so", False, False), "이닝": ("outs", False, False), "WHIP": ("whip", True, True), "피안타율": ("avg", True, True),
-    "경기": ("g", False, False), "선발": ("gs", False, False), "볼넷": ("bb", False, False), "피홈런": ("hr", False, False),
-}
+    "등판 경기": ("g", False, False), "선발 등판": ("gs", False, False), "볼넷": ("bb", False, False), "피홈런": ("hr", False, False),
+}  # 「선발」 · 「경기」만 쓰면 「선발 투수 순위」로 읽혀서(학습 순환 11-10) 「선발 등판」 · 「등판 경기」로 쓴다
 RANK_METRICS = list(dict.fromkeys([*RANK_BAT, *RANK_PIT]))
