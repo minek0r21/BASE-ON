@@ -1,6 +1,7 @@
 """
-챗봇 조회 API (1단계: LLM 없이 조건표만으로 조회). 질문 해석(/chat)은 다음 단계에 붙인다.
+챗봇 조회 API. 조회 4개는 LLM 없이 조건표만으로 돈다. 질문 해석은 /chat (app/chat/service.py)
 
+  GET  /chat/status            챗봇을 켤지 (서버에 AI 키가 있나) + 기록 기준일 — 화면이 💬 버튼을 그릴지 정한다
   GET  /chat/players?name=     이름 → 선수 후보 (여러 명이면 되묻기에 쓴다)
   POST /chat/search/pa         타석 검색 (조건표 → 총 개수 + 최근 10개 + 확정 영상)
   POST /chat/search/games      경기 검색 (팀 기준 → 경기 목록 + 승 · 패 · 무 · 승률)
@@ -11,7 +12,7 @@ Cypher는 미리 써 둔 조건 조각만 골라 붙인다. 값은 항상 파라
 """
 from typing import Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Query, Request
 from pydantic import BaseModel, Field
 
 from ..chat import terms
@@ -144,8 +145,7 @@ def pa_where(c: PASearch) -> tuple[str, dict, list[str]]:
         w.append("pa.last_pitch_speed <= $smax"); p["smax"] = c.speed_max; said.append(f"{c.speed_max:g}km 이하")
     if c.game_type != "all":
         w.append("coalesce(pa.game_type, 'regular') = $gt"); p["gt"] = c.game_type
-        if c.game_type == "postseason":
-            said.append("포스트시즌")
+        said.append("포스트시즌" if c.game_type == "postseason" else "정규시즌")  # 기본값도 화면에 밝힌다
     if c.video_only:
         w.append("EXISTS { (pa)-[x:MATCHED_TO]->(:VideoLink) WHERE x.status IN $confirmed AND coalesce(x.precision, 'scene') <> 'game' }")
         said.append("영상 있는 것만")
@@ -261,7 +261,8 @@ def search_games(c: GameSearch):
         said.append(" · ".join(nm.get(i, i) for i in c.player_ids) + " 출전")
     if c.game_type != "all":
         w.append("coalesce(g.game_type, 'regular') = $gt"); p["gt"] = c.game_type
-    where = (" WHERE " + " AND ".join(w)) if w else ""
+        said.append("포스트시즌" if c.game_type == "postseason" else "정규시즌")
+    where =(" WHERE " + " AND ".join(w)) if w else ""
     rec = run(GAME_MATCH + where + " RETURN res, count(*) AS n", **p)
     n = {r["res"]: r["n"] for r in rec}
     wins, loss, draw = n.get("승", 0), n.get("패", 0), n.get("무", 0)
@@ -292,10 +293,18 @@ def season_stats(player_id: str = Query(...), season: int = Query(...)):
 
 
 # ------------------------------------------------------------------ 챗봇 본체
-@router.post("", summary="챗봇: 질문 하나 → 답 (질문 이해 → 되묻기 → 조회 → 요약)")
-def chat(req: "ChatRequest"):
+@router.get("/status", summary="챗봇: 켜졌나 + 기록 기준일")
+def status():
+    from ..chat import llm
+    from ..chat.service import as_of
+    return {"enabled": llm.ready(), "as_of": as_of()}
+
+
+@router.post("", summary="챗봇: 질문 하나 → 답 (호출 제한 → 질문 이해 → 되묻기 → 조회 → 답 문장)")
+def chat(req: "ChatRequest", request: Request):
     from ..chat.service import chat as run_chat
-    return run_chat(req)
+    # 서버에서는 Caddy가 넘긴 X-Forwarded-For가 client.host가 된다 (uvicorn --proxy-headers --forwarded-allow-ips)
+    return run_chat(req, ip=request.client.host if request.client else "-")
 
 
 from ..chat.service import ChatRequest  # noqa: E402  (위 함수의 입력 모양. service가 이 파일을 늦게 불러서 순환이 없다)

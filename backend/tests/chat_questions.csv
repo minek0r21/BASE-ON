@@ -1,17 +1,28 @@
-질문,기대메뉴,기대조건,시즌선택,기대개수,메모
-김도영 2024 홈런 영상 보여줘,pa,results=홈런; season=2024,,38,
-2024년 김도영이 잠실에서 3루타 친 날 언제야,pa,results=3루타; stadium=잠실; season=2024,,1,
-도영이 재작년 잠실 3루타,pa,results=3루타; stadium=잠실; season=2024,,1,재작년 = 2024 (2026 기준)
-김도영 홈런,되묻기,,,,연도 없음 → 시즌 되묻기
-김도영 홈런,pa,results=홈런,2024,38,되묻기에서 2024 선택
-KIA가 올러 선발일 때 LG 상대로 승률은?,되묻기,,,,연도 없음
-KIA가 올러 선발일 때 LG 상대로 승률은?,games,team=KIA; opponent=LG,0,7,전체 시즌 선택
-기아 엘지전 올러 선발 몇승 몇패야 전체 시즌으로,games,team=KIA; opponent=LG,,7,
-2025년 김도영이랑 나성범이 같이 뛴 경기,games,team=KIA; season=2025,,6,
-KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,
-원태인 2025 시즌 기록,stats,season=2025,,,
-김도영 2025 타율 몇이야,stats,season=2025,,,
-2025 오스틴 포심 쳐서 홈런,pa,results=홈런; season=2025; pitch_names=포심,,,
-2025년 기아 타자들 만루에서 장타,pa,bat_team=KIA; bases=만루; results=장타; season=2025,,,
-2025년 홈런 제일 많이 친 타자 5명,other,,,,메뉴 밖 → Cypher 직접
-안녕,chat,,,,
+질문,기대메뉴,기대조건,시즌선택,기대개수,기대값,앞질문,메모
+김도영 2024 홈런 영상 보여줘,pa,results=홈런; season=2024,,38,text~홈런 38개,,
+2024년 김도영이 잠실에서 3루타 친 날 언제야,pa,results=3루타; stadium=잠실; season=2024,,1,,,
+도영이 재작년 잠실 3루타,pa,results=3루타; stadium=잠실; season=2024,,1,,,재작년 = 2024 (2026 기준)
+김도영 홈런,되묻기,,,,,,연도 없음 → 시즌 되묻기
+김도영 홈런,pa,results=홈런,2024,38,,,되묻기에서 2024 선택
+KIA가 올러 선발일 때 LG 상대로 승률은?,되묻기,,,,,,연도 없음
+KIA가 올러 선발일 때 LG 상대로 승률은?,games,team=KIA; opponent=LG,0,7,,,전체 시즌 선택
+기아 엘지전 올러 선발 몇승 몇패야 전체 시즌으로,games,team=KIA; opponent=LG,,7,,,
+2025년 김도영이랑 나성범이 같이 뛴 경기,games,team=KIA; season=2025,,6,,,
+KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,,,
+원태인 2025 시즌 기록,stats,season=2025,,,pitching.so=108,,
+김도영 2025 타율 몇이야,stats,season=2025; metrics=타율,,,batting.avg=0.3091; text~타율 .309; text~규정 타석 미달,,
+2025 오스틴 포심 쳐서 홈런,pa,results=홈런; season=2025; pitch_names=포심,,,,,
+2025년 기아 타자들 만루에서 장타,pa,bat_team=KIA; bases=만루; results=장타; season=2025,,,,,
+2025년 홈런 제일 많이 친 타자 5명,other,,,,,,메뉴 밖 → 서버는 「아직 못 답함」 (CHAT_OTHER=on이면 로컬에서 조회)
+안녕,chat,,,,,,
+레이예스 2025 2아웃 득점권 타석,pa,bases=득점권; outs=2; season=2025,,78,,,on_2b IS NOT NULL로 세면 236 (조용히 틀리는 함정)
+원태인 2025 삼진 몇 개야,stats,season=2025; metrics=삼진,,,pitching.so=108; text~삼진 108개,,
+원태인 2025 평균자책점,stats,season=2025; metrics=평균자책점,,,text~없는 기록,,평균자책점은 DB에 없음 → 「없다」가 정답
+LG 2025 홈에서 두산 상대 승률,games,team=LG; opponent=두산; home_away=home; season=2025,,9,record.win=5; record.loss=4,,
+2025년 5월 4일 LG 경기 몇 대 몇이었어,games,team=LG; date_from=2025-05-04,,1,rows.0.team_score=12; rows.0.opp_score=4,,
+그럼 2025년은?,pa,results=홈런; season=2025,,7,,김도영 2024 홈런 영상 보여줘,이어 묻기
+홈런 말고 2루타는?,pa,results=2루타; season=2024,,30,,김도영 2024 홈런 영상 보여줘,이어 묻기
+2026년 8월 한화 경기 결과,games,team=한화,,,reason=after_as_of,,기준일(7.26) 뒤 → 조회 없이 안내
+한화 올해 성적,games,team=한화; season=2026,,92,record.win=44; record.loss=45; record.draw=3,,올해 = 2026 (7.26까지)
+2024년 삼성 끝내기 장면,pa,bat_team=삼성; situations=끝내기; season=2024,,2,,,
+오늘 날씨 어때,chat,,,,,,야구 밖 질문

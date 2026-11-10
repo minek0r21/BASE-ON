@@ -91,6 +91,18 @@ class ChatSearch(unittest.TestCase):
         self.assertTrue(all(r["pitch"] == "직구" for r in d["rows"]))
         print("\n 김도영 2024 직구 홈런:", d["total"])
 
+    def test_status(self):  # 화면이 💬 버튼을 그릴지 · 기준일
+        s, d = req("GET", "/chat/status")
+        self.assertEqual(s, 200, d)
+        self.assertIsInstance(d["enabled"], bool)
+        self.assertRegex(d["as_of"], r"^\d{4}-\d{2}-\d{2}$")
+
+    def test_default_regular_season_is_shown(self):  # 기본값(정규시즌)도 🔍 줄에 나온다
+        s, d = req("POST", "/chat/search/pa", {"batter_id": pid("레이예스", "batter"), "bases": "득점권", "outs": 2, "season": 2025})
+        self.assertEqual(s, 200, d)
+        self.assertIn("정규시즌", d["conditions"])
+        self.assertEqual(d["total"], 78)  # pa.on_2b IS NOT NULL로 세면 236 — 주자 칸은 true/false라 값으로 비교해야 한다
+
     def test_stats(self):
         s, d = req("GET", "/chat/stats", query={"player_id": pid("김도영", "batter"), "season": 2025})
         self.assertEqual(s, 200, d)

@@ -1,16 +1,17 @@
 """
-POST /chat 의 본체 — 질문 하나를 받아 답 하나를 돌려준다.
+POST /chat 의 본체 — 질문 하나를 받아 답 하나를 돌려준다. AI 호출은 질문당 1번(①)뿐이다.
 
+  ⓪ 호출 제한: IP별 1분 · 하루, 서버 하루 상한        (limits.py)
   ① LLM: 질문 → 메뉴 + 사람 이름 + 조건표          (prompts.parse_system)
   ② DB : 이름 → 선수 ID (여러 명이면 되묻기)          (routers.players.Q_SEARCH)
-  ③ 연도가 없으면 되묻기
+  ③ 기준일(7.26) 뒤만 묻는 질문은 조회 없이 안내, 연도가 없으면 되묻기
   ④ DB : 메뉴별 미리 써 둔 Cypher로 조회              (routers.chat.search_pa / search_games / season_stats)
-     메뉴에 없는 질문은 LLM이 쓴 Cypher를 검사한 뒤 읽기 전용으로 실행
-  ⑤ LLM: 조회 결과 → 한 줄 요약 (실패하면 정해진 문장)
-숫자 · 날짜는 항상 DB에서 나오고, LLM은 질문 이해와 문장만 맡는다.
+     메뉴에 없는 질문(other)은 서버에서 「아직 못 답함」. 로컬에서 CHAT_OTHER=on일 때만 LLM이 쓴 Cypher를 읽기 전용으로 실행
+  ⑤ 답 문장: 조회 결과 숫자로 코드가 채운다           (answers.py — AI가 숫자를 옮겨 적지 않는다)
 """
 import difflib
 import json
+import os
 import re
 import time
 from datetime import datetime
@@ -21,10 +22,26 @@ from pydantic import BaseModel
 
 from .. import db
 from ..errors import ApiError
-from . import llm, prompts
+from . import answers, limits, llm, prompts
 
 LOG = Path(__file__).resolve().parents[2] / "chat_logs" / "unanswered.jsonl"  # backend/chat_logs (git 제외)
 SEASONS = [2026, 2025, 2024]
+# other(LLM이 쓴 Cypher)는 검증 안 된 숫자라 서버에서는 끈다. 로컬에서 어떤 질문이 메뉴 밖으로 가는지 볼 때만 on
+OTHER_ON = os.getenv("CHAT_OTHER", "off").strip().lower() == "on"
+
+_as_of: tuple[float, str | None] = (0.0, None)
+
+
+def as_of() -> str | None:
+    """DB의 마지막 경기일 (meta API와 같은 값). 10분 동안 기억한다 — DB를 바꿔 끼워도 곧 따라간다"""
+    global _as_of
+    if time.time() - _as_of[0] > 600 or not _as_of[1]:
+        from ..routers.meta import Q_META
+        try:
+            _as_of = (time.time(), db.run(Q_META)[0]["data_as_of"])
+        except Exception:  # DB가 잠깐 안 될 때 챗봇 전체가 멈추지 않게 (이전 값 유지)
+            return _as_of[1]
+    return _as_of[1]
 
 
 class ChatRequest(BaseModel):
@@ -189,6 +206,8 @@ def run_read(cypher: str) -> tuple[list[str], list[list]]:
 
 
 def run_other(message: str, ids: dict) -> dict:
+    """로컬 전용 (CHAT_OTHER=on). 어떤 질문이 메뉴 밖으로 가는지, AI가 어떻게 풀려는지 보고 새 메뉴 · 조건 칸 후보를 찾는 데 쓴다.
+    숫자는 검증 전이라 채점 정답으로 옮기지 않는다"""
     flat = {}
     for slot, v in ids.items():
         for x in (v if isinstance(v, list) else [v]):
@@ -203,41 +222,32 @@ def run_other(message: str, ids: dict) -> dict:
     except (ValueError, neo4j.exceptions.Neo4jError) as e:
         log_unanswered(message, "other_cypher_error", {"cypher": cypher, "error": str(e)[:300]})
         return say("이 질문은 아직 정확히 찾지 못했어요. 조금 다르게 물어봐 주세요.")
+    log_unanswered(message, "other_ran", {"cypher": cypher, "rows": len(rows)})  # Cypher 원문은 기록에만 (응답에 싣지 않는다)
     return {"menu": "other", "conditions": [explain] if explain else [], "columns": cols, "table": rows,
-            "total": len(rows), "shown": len(rows), "note": "메뉴에 없는 질문이라 자동으로 조회했어요. 참고용으로 봐 주세요.",
-            "cypher": cypher}
-
-
-# ------------------------------------------------------------------ ⑤ 요약
-def summarize(message: str, result: dict) -> str:
-    slim = {k: result.get(k) for k in ("menu", "conditions", "total", "shown", "record", "name", "season", "columns") if k in result}
-    if result.get("rows"):
-        slim["rows"] = [{k: r.get(k) for k in ("date", "batter", "pitcher", "bat_team", "pit_team", "inning", "inning_half", "result",
-                                                "opponent", "team_score", "opp_score") if r.get(k) is not None} for r in result["rows"][:10]]
-    if result.get("table"):
-        slim["table"] = result["table"][:10]
-    for k in ("batting", "pitching"):
-        if result.get(k):  # 소수는 3자리로 (0.3091 → 0.309)
-            slim[k] = {x: (round(y, 3) if isinstance(y, float) else y) for x, y in result[k].items()
-                       if not x.startswith("pct_") and x not in ("stat_id",)}
-    try:
-        return llm.complete(prompts.SUMMARY_SYSTEM, json.dumps({"question": message, "result": slim}, ensure_ascii=False)).strip()
-    except llm.LLMError:
-        n = result.get("total")
-        return f"조건에 맞는 기록이 {n}개 있어요." if n else ("조건에 맞는 기록이 없어요." if n == 0 else "기록을 찾았어요.")
+            "total": len(rows), "shown": len(rows), "note": "메뉴에 없는 질문이라 자동으로 조회했어요. 참고용 (로컬 전용)"}
 
 
 # ------------------------------------------------------------------ 전체
-def chat(req: ChatRequest) -> dict:
-    t0 = time.time()
+NOT_YET = "아직 답할 수 없는 질문이에요. 한 선수의 타석 · 시즌 기록이나 한 팀의 경기 결과로 물어봐 주세요."
+
+
+def chat(req: ChatRequest, ip: str = "-") -> dict:
     message = req.message.strip()[:300]
-    resolved = req.resolved or {}
     if not message:
         return say("질문을 입력해 주세요.")
     if not llm.ready():
-        return say("챗봇의 LLM 키가 아직 설정되지 않았어요 (.env의 LLM_PROVIDER · 키).")
+        return say("챗봇이 지금 꺼져 있어요.", reason="off")
+    if blocked := limits.limiter.check(ip):
+        return say(limits.MESSAGE[blocked], reason="limited")
+    return answer(req, message)
+
+
+def answer(req: ChatRequest, message: str) -> dict:
+    t0 = time.time()
+    resolved = req.resolved or {}
+    day = as_of()
     try:
-        parsed = llm.complete_json(prompts.parse_system(),
+        parsed = llm.complete_json(prompts.parse_system(day),
                                    json.dumps({"question": message, "previous": (req.context or {}).get("parsed")}, ensure_ascii=False))
     except llm.LLMError as e:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
@@ -245,41 +255,43 @@ def chat(req: ChatRequest) -> dict:
 
     menu = parsed.get("menu")
     people = parsed.get("people") or {}
-    cond = parsed.get("cond") or {}
+    cond = {k: v for k, v in (parsed.get("cond") or {}).items() if v not in (None, "", [])}
+    ctx = {"parsed": {"menu": menu, "people": people, "cond": cond, "year_given": True}}  # 이어 묻기 · 채점용
     if menu == "chat" or menu not in ("pa", "games", "stats", "other"):
         return say(parsed.get("reply") or "선수 · 타석 · 경기 기록을 물어봐 주세요. 예: 김도영 2024 홈런 영상")
+    if menu == "other" and not OTHER_ON:
+        log_unanswered(message, "other_off", {"parsed": parsed})  # 자주 나오는 질문 → 메뉴 · 조건 칸 후보
+        return say(NOT_YET, menu="other", reason="other_off", as_of=day, context=ctx)  # 채점이 menu를 본다
+    # ③ 기준일 뒤만 묻는 질문 — 조회해도 0건이니 바로 안내한다 (「없어요」로 오해하지 않게. 이름 되묻기보다 먼저)
+    if answers.after_as_of(cond, day):
+        log_unanswered(message, "after_as_of", {"parsed": parsed})
+        return say(f"BASE:ON에는 {answers.as_of_ko(day)} 경기까지 기록이 있어요.", menu=menu, reason="after_as_of", as_of=day, context=ctx)
 
     ids, stop = resolve_people(people, resolved, message)
     if stop:
         return stop
 
-    # ③ 연도 되묻기 — 연도도 날짜도 없으면 (stats는 시즌이 꼭 필요)
     if "season" in resolved:
         cond["season"] = resolved["season"] or None   # 0 = 전체 시즌
+    # ③ 연도 되묻기 — 연도도 날짜도 없으면 (stats는 시즌이 꼭 필요)
     no_when = not cond.get("season") and not cond.get("date_from") and not cond.get("date_to")
     if menu in ("pa", "games", "stats") and no_when and not parsed.get("year_given") and "season" not in resolved:
-        opts = [{"value": s, "label": f"{s} 시즌"} for s in SEASONS] + ([] if menu == "stats" else [{"value": 0, "label": "전체 (2024~)"}])
+        opts = [{"value": s, "label": answers.season_label(s, day)} for s in SEASONS] \
+            + ([] if menu == "stats" else [{"value": 0, "label": "전체 (2024~)"}])
         return {"type": "clarify", "slot": "season", "text": "어느 시즌을 말씀하시는 건가요?", "options": opts}
     if menu == "stats" and not cond.get("season"):
         cond["season"] = SEASONS[0]
-    # 연도 없이 "7월 이후"였던 질문: 시즌을 고르면 그 해 날짜로 다시 해석하도록 질문에 연도를 붙여 다시 돈다
+    # 연도 없이 "7월 이후"였던 질문: 시즌을 고르면 그 해 날짜로 다시 해석하도록 질문에 연도를 붙여 다시 돈다 (호출 제한은 이미 셌다)
     if "season" in resolved and resolved["season"] and parsed.get("year_given") is False and re.search(r"\d+\s*월", message):
-        req2 = ChatRequest(message=f"{resolved['season']}년 {message}", context=req.context,
-                           resolved={k: v for k, v in resolved.items() if k != "season"} | {"season": resolved["season"]})
         if not message.startswith(f"{resolved['season']}년"):
-            return chat(req2)
+            req2 = ChatRequest(message=f"{resolved['season']}년 {message}", context=req.context, resolved=resolved)
+            return answer(req2, req2.message)
 
     try:
         result = run_menu(menu, ids, cond) if menu != "other" else run_other(message, ids)
-    except ApiError as e:
+    except ApiError as e:  # 조건을 못 알아들으면 그대로 알린다 (other로 넘겨 숫자를 지어내게 하지 않는다)
         log_unanswered(message, e.code, {"detail": e.message, "parsed": parsed})
-        if menu != "other" and e.code in ("BAD_CONDITION",):
-            try:
-                result = run_other(message, ids)
-            except llm.LLMError:
-                return say(e.message)
-        else:
-            return say(e.message)
+        return say(e.message, as_of=day)
     except llm.LLMError as e:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
         return say("지금 질문을 처리하는 데 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.", error=True)
@@ -288,8 +300,14 @@ def chat(req: ChatRequest) -> dict:
 
     if result.get("total") == 0:
         log_unanswered(message, "zero_rows", {"parsed": parsed})
-    result["text"] = summarize(message, result)
+    if menu == "stats":
+        result["conditions"] = [answers.season_label(result.get("season"), day), "정규시즌"]
+    elif day:  # 현재 시즌은 「2026 시즌(7월 26일까지)」로
+        cur = f"{day[:4]} 시즌"
+        result["conditions"] = [answers.season_label(int(day[:4]), day) if c == cur else c for c in result.get("conditions") or []]
+    result["text"] = answers.text_for(menu, result, cond, day)
     result["type"] = "answer"
+    result["as_of"] = day
     result["context"] = {"parsed": {"menu": menu, "people": people, "cond": cond, "year_given": True}}
     result["ms"] = int((time.time() - t0) * 1000)
     return result

@@ -117,3 +117,18 @@ def stadium_teams(name: str | None) -> list[str] | None:
     if key not in STADIUMS:
         raise ValueError(f"모르는 구장: {name}")
     return STADIUMS[key]
+
+
+# 시즌 기록에서 물을 수 있는 지표 → 저장 칸 (BatterSeasonStat · PitcherSeasonStat). 답 문장은 answers.py가 이 이름으로 쓴다
+BAT_METRICS = {
+    "타율": "avg", "홈런": "hr", "안타": "h", "OPS": "ops", "출루율": "obp", "장타율": "slg", "순수 장타력": "iso",
+    "타석": "pa", "타수": "ab", "삼진": "so", "볼넷": "bb", "2루타": "b2", "3루타": "b3", "몸에 맞는 공": "hbp",
+    "삼진 비율": "k_pct", "볼넷 비율": "bb_pct",
+}
+PIT_METRICS = {
+    "경기": "g", "선발": "gs", "이닝": "outs", "WHIP": "whip", "삼진": "so", "볼넷": "bb", "피홈런": "hr", "피안타": "h",
+    "피안타율": "avg", "실점": "r", "투구 수": "pitches", "평균 구속": "avg_velo", "삼진 비율": "k_pct",
+}
+# DB에 없는 지표 — 물으면 「없는 기록」이라고 답한다 (지어내지 않게 질문 해석에서 이름으로 받는다)
+MISSING_METRICS = ["평균자책점", "승", "패", "세이브", "홀드", "타점", "득점", "도루", "자책점", "WAR"]
+METRICS = list(dict.fromkeys([*BAT_METRICS, *PIT_METRICS, *MISSING_METRICS]))

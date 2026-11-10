@@ -3,7 +3,7 @@ LLM에 보내는 규칙(프롬프트). 용어 · 구장 · 팀 · 구종 목록�
 코드와 프롬프트가 항상 같은 값을 쓴다. 질문을 잘못 알아들으면 여기 예시(EXAMPLES)를 늘려서 고친다.
 """
 import json
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from . import terms
@@ -33,9 +33,12 @@ PARSE_FORMAT = """{
   "reply": 문자열|null
 }"""
 
+# 출력 모양을 Gemini responseJsonSchema로 고정해 봤더니(11-10, 채점 27개) 15개만 맞았다 — 작은 모델이 안 물은 칸을
+# 엉뚱한 값으로 채웠다(result=승 · balls=0). 고정 없이는 25~26개. 그래서 값 목록은 아래 규칙 글로만 주고, 모르는 값은 조회 쪽(terms.py)이 거른다
+
 EXAMPLES = [
     ("김도영이 7월 이후로 문동주 상대로 홈런친적있어? 영상볼수있어?",
-     {"menu": "pa", "people": {"batter": "김도영", "pitcher": "문동주"}, "cond": {"results": ["홈런"], "date_from": None}, "year_given": False}),
+     {"menu": "pa", "people": {"batter": "김도영", "pitcher": "문동주"}, "cond": {"results": ["홈런"]}, "year_given": False}),
     ("2024년에 김도영이 잠실에서 3루타 친게 언제언제야",
      {"menu": "pa", "people": {"batter": "김도영"}, "cond": {"results": ["3루타"], "stadium": "잠실", "season": 2024}, "year_given": True}),
     ("올해 기아 타자들 만루에서 장타 친 거",
@@ -48,20 +51,22 @@ EXAMPLES = [
      {"menu": "games", "people": {"starter": "올러"}, "cond": {"team": "KIA", "opponent": "LG"}, "year_given": False}),
     ("2025년에 김도영이랑 나성범이 같이 뛴 날 이긴 날 있어?",
      {"menu": "games", "people": {"players": ["김도영", "나성범"]}, "cond": {"team": "KIA", "season": 2025, "result": "승"}, "year_given": True}),
-    ("어제 한화 경기 몇 대 몇이었어",
-     {"menu": "games", "people": {}, "cond": {"team": "한화", "date_from": "{yesterday}", "date_to": "{yesterday}"}, "year_given": True}),
-    ("김도영 올해 타율 몇이야", {"menu": "stats", "people": {"player": "김도영"}, "cond": {"season": "{this_year}"}, "year_given": True}),
+    ("LG 작년 성적 어때", {"menu": "games", "people": {}, "cond": {"team": "LG", "season": "{last_year}"}, "year_given": True}),
+    ("2025년 7월 4일 한화 경기 몇 대 몇이었어",
+     {"menu": "games", "people": {}, "cond": {"team": "한화", "date_from": "2025-07-04", "date_to": "2025-07-04"}, "year_given": True}),
+    ("김도영 올해 타율 몇이야",
+     {"menu": "stats", "people": {"player": "김도영"}, "cond": {"season": "{this_year}", "metrics": ["타율"]}, "year_given": True}),
     ("원태인 2025 시즌 기록", {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": 2025}, "year_given": True}),
+    ("원태인 작년 평균자책점이랑 삼진",
+     {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": "{last_year}", "metrics": ["평균자책점", "삼진"]}, "year_given": True}),
     ("2025년 홈런 제일 많이 친 타자 5명", {"menu": "other", "people": {}, "cond": {}, "year_given": True}),
     ("안녕", {"menu": "chat", "people": {}, "cond": {}, "year_given": False, "reply": "안녕하세요! 선수 기록이나 장면을 물어보세요. 예: 김도영 2024 홈런 영상"}),
 ]
 
 
-def parse_system() -> str:
+def parse_system(as_of: str | None = None) -> str:
     today = datetime.now(timezone(timedelta(hours=9))).date()  # 한국 날짜 (서버는 UTC일 수 있다)
-    sv = schema()["values"]
-    fill = {"{this_year}": today.year, "{last_year}": today.year - 1,
-            "{yesterday}": date.fromordinal(today.toordinal() - 1).isoformat()}
+    fill = {"{this_year}": today.year, "{last_year}": today.year - 1}
     ex = []
     for q, a in EXAMPLES:
         s = json.dumps(a, ensure_ascii=False)
@@ -70,12 +75,13 @@ def parse_system() -> str:
         ex.append(f"질문: {q}\n답: {s}")
     return f"""너는 KBO 야구 기록 서비스 BASE:ON의 질문 해석기다. 사용자의 질문을 아래 JSON 하나로만 바꾼다. 답을 지어내지 않는다.
 
-오늘: {today.isoformat()} · 데이터: 2024-03 ~ {last_date()} 정규시즌 (그 뒤 기록은 없다)
+오늘: {today.isoformat()} · 데이터: 2024-03 ~ {as_of or last_date()} 정규시즌 (그 뒤 기록은 없다. 그 뒤 날짜를 물어도 날짜는 그대로 옮긴다 — 시스템이 안내한다)
 
 [메뉴]
 - pa: 타석 찾기 (누가 · 누구에게 · 언제 · 어디서 · 어떤 결과를 냈는지, 그 장면 영상)
 - games: 경기 찾기 (팀 기준 경기 목록 · 승패 · 승률, 선발 투수 · 같이 뛴 선수 조건)
 - stats: 한 선수의 한 시즌 기록 (타율 · 홈런 · OPS · 삼진 · WHIP …)
+  \"김도영 홈런\"처럼 결과 이름만 말하면 pa(장면 목록). \"홈런 몇 개야\" · \"타율 몇이야\" · \"시즌 기록\"처럼 시즌 숫자를 물을 때만 stats
 - other: 위 셋으로 안 되는 기록 질문 (순위 · 여러 선수 비교 · 합계 · 이닝별 집계 등)
 - chat: 인사 · 서비스 사용법 · 야구 기록과 관계없는 말 → reply에 짧게 답한다
 
@@ -89,7 +95,8 @@ def parse_system() -> str:
 [cond] pa 메뉴 칸: results(목록) season date_from date_to(YYYY-MM-DD) stadium bat_team pit_team home_away(home|away, 타자 팀 기준)
   inning_from inning_to inning_half(초|말) situations(목록) bases outs balls strikes pitch_names(목록) speed_min speed_max video_only
 games 메뉴 칸: team opponent season date_from date_to home_away result(승|패|무)
-stats 메뉴 칸: season
+stats 메뉴 칸: season metrics(물어본 지표 목록. \"시즌 기록\"처럼 지표를 안 말하면 넣지 않는다)
+- metrics에 쓸 수 있는 말: {', '.join(terms.METRICS)}  (\"방어율\" = 평균자책점, \"K\" = 삼진, \"홈런 맞은 거\" = 피홈런)
 - results에 쓸 수 있는 말: {', '.join(terms.EVENT_GROUPS)}  (\"안타\"는 홈런 포함, \"장타\" = 2·3루타+홈런)
 - 팀: {', '.join(sorted(set(terms.TEAMS.values())))} 중 하나로 (기아→KIA, 엘지→LG)
 - stadium: {', '.join(terms.STADIUMS)}
@@ -97,13 +104,13 @@ stats 메뉴 칸: season
 - pitch_names: {', '.join(terms.PITCHES)}
 - \"N회\" 하나면 inning_from = inning_to = N, \"N회 이후\"면 inning_from만
 - video_only는 \"영상 있는 것만\"처럼 영상 있는 것으로 거르라고 할 때만 true. \"영상 볼 수 있어?\"는 false (영상은 어차피 같이 보여 준다)
-- 질문에 없는 조건은 넣지 않는다
+- 질문에 없는 조건 · 값이 없는 칸은 넣지 않는다 (null로 쓰지 않는다)
 
 [연도] \"올해\" = {today.year}, \"작년\" = {today.year - 1}, \"재작년\" = {today.year - 2}
 - 연도나 시즌을 말하면 year_given = true 와 season(또는 date_from/date_to)을 채운다
-- 연도 없이 \"7월 이후\"처럼 날짜만 말하면 year_given = false, date_from/date_to는 null로 둔다 (시스템이 연도를 되묻는다)
-- \"어제\" · \"지난주\"처럼 날짜가 정해지는 말은 날짜로 바꾸고 year_given = true
-- \"전체 시즌\" · \"통산\" · \"지금까지\"처럼 모든 시즌을 말하면 year_given = true, season = null
+- 연도 없이 \"7월 이후\"처럼 날짜만 말하면 year_given = false, date_from/date_to는 넣지 않는다 (시스템이 연도를 되묻는다)
+- \"어제\" · \"지난주\"처럼 날짜가 정해지는 말은 오늘 기준 날짜로 바꾸고 year_given = true
+- \"전체 시즌\" · \"통산\" · \"지금까지\"처럼 모든 시즌을 말하면 year_given = true, season은 넣지 않는다
 
 [이어지는 질문] 사용자 메시지에 previous(앞 질문의 메뉴 · 사람 · 조건)가 있으면, 이번 질문이 그 뒤를 잇는 말인지 본다.
 \"그럼 2025년은?\" \"홈런 말고 2루타는?\"처럼 이어지면 previous에서 시작해 바뀐 것만 고친다. 새 질문이면 previous는 무시한다.
@@ -112,17 +119,10 @@ stats 메뉴 칸: season
 """ + "\n\n".join(ex)
 
 
-# ------------------------------------------------------------------ 2. 결과 → 한 줄 요약
-SUMMARY_SYSTEM = """너는 KBO 야구 기록 서비스 BASE:ON의 답변 작성자다.
-사용자 질문과 DB 조회 결과(JSON)를 보고 한국어로 1~2문장 요약을 쓴다.
-- 숫자 · 날짜 · 이름은 결과 JSON에 있는 것만 쓴다. 결과에 없는 사실은 절대 덧붙이지 않는다.
-- total이 shown보다 클 때만 \"총 N개 중 최근 M개를 보여 드려요\"처럼 알린다. 같으면 그 말은 하지 않는다.
-- 지표를 다른 지표 이름으로 풀어 설명하지 않는다 (예: WHIP을 평균자책점이라고 하지 않는다). 결과에 없는 지표(평균자책점 등)는 말하지 않는다.
-- total이 0이면 조건에 맞는 기록이 없다고 말한다 (조건은 다시 나열하지 않는다).
-- 해요체, 마크다운 · 이모지 없이 평문으로. 목록은 화면이 따로 보여 주니 다시 나열하지 않는다."""
+# 답 문장은 AI가 쓰지 않는다 — answers.py가 조회 결과 숫자로 채운다 (틀린 숫자가 나올 수 없게)
 
 
-# ------------------------------------------------------------------ 3. 메뉴에 없는 질문 → Cypher
+# ------------------------------------------------------------------ 2. 메뉴에 없는 질문 → Cypher (로컬 전용, CHAT_OTHER=on)
 def cypher_system(ids: dict[str, str]) -> str:
     sc = schema()
     vals = sc["values"]
