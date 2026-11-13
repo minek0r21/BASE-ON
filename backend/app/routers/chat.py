@@ -112,6 +112,10 @@ def pa_where(c: PASearch) -> tuple[str, dict, list[str]]:
         said.append(f"{a}회" if a == z else f"{a}회 이후" if z is None else f"{z}회까지" if a is None else f"{a}~{z}회")
     if c.inning_half:
         w.append("pa.inning_half = $half"); p["half"] = c.inning_half; said.append(f"{c.inning_half}")
+    # AI가 「득점권」 · 「만루」 같은 주자 말을 상황 칸에 넣는 일이 있다 → 주자 칸으로 옮긴다
+    if moved := [s for s in c.situations or [] if s == terms.RISP or s in terms.BASES]:
+        c.bases = c.bases or moved[0]
+        c.situations = [s for s in c.situations if s not in moved] or None
     if c.situations:
         if bad_s := [s for s in c.situations if s not in terms.SITUATIONS]:
             bad(f"모르는 상황: {bad_s}")

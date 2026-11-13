@@ -228,6 +228,15 @@ def run_other(message: str, ids: dict) -> dict:
 
 
 # ------------------------------------------------------------------ 전체
+def friendly(msg: str) -> str:
+    """조회 쪽 에러 문구(「모르는 구장: 고척돔」)를 사용자에게 보일 말로"""
+    m = re.match(r"모르는 ([^:]+):\s*(.+)", msg)
+    if not m:
+        return msg
+    kind, word = m.group(1).strip(), m.group(2).strip(" []'\"")
+    return f"「{word}」{'은' if answers.has_batchim(word) else '는'} 아직 알아듣지 못하는 {kind} 표현이에요. 다른 말로 물어봐 주세요."
+
+
 NOT_YET = "아직 답할 수 없는 질문이에요. 한 선수의 타석 · 시즌 기록이나 한 팀의 경기 결과로 물어봐 주세요."
 
 
@@ -291,7 +300,7 @@ def answer(req: ChatRequest, message: str) -> dict:
         result = run_menu(menu, ids, cond) if menu != "other" else run_other(message, ids)
     except ApiError as e:  # 조건을 못 알아들으면 그대로 알린다 (other로 넘겨 숫자를 지어내게 하지 않는다)
         log_unanswered(message, e.code, {"detail": e.message, "parsed": parsed})
-        return say(e.message, as_of=day)
+        return say(friendly(e.message), as_of=day)
     except llm.LLMError as e:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
         return say("지금 질문을 처리하는 데 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.", error=True)

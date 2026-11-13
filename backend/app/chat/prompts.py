@@ -59,6 +59,8 @@ EXAMPLES = [
     ("원태인 2025 시즌 기록", {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": 2025}, "year_given": True}),
     ("원태인 작년 평균자책점이랑 삼진",
      {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": "{last_year}", "metrics": ["평균자책점", "삼진"]}, "year_given": True}),
+    ("작년에 KIA 투수 상대로 3루타 친 타자 누구누구야",
+     {"menu": "pa", "people": {}, "cond": {"pit_team": "KIA", "results": ["3루타"], "season": "{last_year}"}, "year_given": True}),
     ("2025년 홈런 제일 많이 친 타자 5명", {"menu": "other", "people": {}, "cond": {}, "year_given": True}),
     ("안녕", {"menu": "chat", "people": {}, "cond": {}, "year_given": False, "reply": "안녕하세요! 선수 기록이나 장면을 물어보세요. 예: 김도영 2024 홈런 영상"}),
 ]
@@ -83,6 +85,7 @@ def parse_system(as_of: str | None = None) -> str:
 - stats: 한 선수의 한 시즌 기록 (타율 · 홈런 · OPS · 삼진 · WHIP …)
   \"김도영 홈런\"처럼 결과 이름만 말하면 pa(장면 목록). \"홈런 몇 개야\" · \"타율 몇이야\" · \"시즌 기록\"처럼 시즌 숫자를 물을 때만 stats
 - other: 위 셋으로 안 되는 기록 질문 (순위 · 여러 선수 비교 · 합계 · 이닝별 집계 등)
+  \"~친 타자 누구야\" · \"~맞은 투수 누구\"처럼 조건에 맞는 타석의 사람을 묻는 건 other가 아니라 pa (목록에 이름이 나온다)
 - chat: 인사 · 서비스 사용법 · 야구 기록과 관계없는 말 → reply에 짧게 답한다
 
 [출력 형식]
