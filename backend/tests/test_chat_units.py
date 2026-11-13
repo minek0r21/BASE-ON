@@ -27,6 +27,15 @@ class Answers(unittest.TestCase):
         self.assertEqual(answers.pa_text({"total": 0, "shown": 0}, {"results": ["2루타"]}), "조건에 맞는 2루타가 없어요.")
         self.assertEqual(answers.pa_text({"total": 0, "shown": 0}, {}), "조건에 맞는 타석이 없어요.")
 
+    def test_pa_matchup_summary(self):  # 결과를 안 정한 맞대결 → 타석 · 타수 · 안타 요약
+        r = {"total": 12, "shown": 10, "rows": [], "summary": {"pa": 12, "ab": 10, "h": 3, "hr": 1, "bb": 1, "so": 4}}
+        self.assertEqual(answers.pa_text(r, {}), "12타석 10타수 3안타 (타율 .300) · 홈런 1 · 삼진 4 · 볼넷 1\n최근 10개")
+
+    def test_pa_who(self):  # 타자를 안 정한 질문 → 많이 친 타자 이름
+        r = {"total": 12, "shown": 10, "rows": [],
+             "by_batter": {"top": [{"name": "오스틴", "n": 3}, {"name": "김도영", "n": 2}], "people": 9}}
+        self.assertEqual(answers.pa_text(r, {"results": ["홈런"]}), "홈런 12개예요.\n오스틴 3개 · 김도영 2개 등 9명\n최근 10개")
+
     def test_games_record(self):
         r = {"total": 9, "record": {"win": 5, "loss": 4, "draw": 0, "win_pct": 0.556}}
         self.assertEqual(answers.games_text(r, {}), "5승 4패 · 승률 .556")

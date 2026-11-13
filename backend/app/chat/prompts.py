@@ -61,6 +61,14 @@ EXAMPLES = [
      {"menu": "stats", "people": {"player": "원태인"}, "cond": {"season": "{last_year}", "metrics": ["평균자책점", "삼진"]}, "year_given": True}),
     ("작년에 KIA 투수 상대로 3루타 친 타자 누구누구야",
      {"menu": "pa", "people": {}, "cond": {"pit_team": "KIA", "results": ["3루타"], "season": "{last_year}"}, "year_given": True}),
+    ("김도영 문동주 상대 전적",
+     {"menu": "pa", "people": {"batter": "김도영", "pitcher": "문동주"}, "cond": {}, "year_given": True}),
+    ("작년에 양현종이 선발로 나온 경기에서 KIA가 친 홈런",
+     {"menu": "pa", "people": {"starter": "양현종"}, "cond": {"bat_team": "KIA", "results": ["홈런"], "season": "{last_year}"}, "year_given": True}),
+    ("올해 김도영이랑 나성범이 같이 뛴 날 나성범이 친 홈런",
+     {"menu": "pa", "people": {"batter": "나성범", "players": ["김도영", "나성범"]}, "cond": {"results": ["홈런"], "season": "{this_year}"}, "year_given": True}),
+    ("2024년 김도영이 홈런 친 날 KIA 승률",
+     {"menu": "games", "people": {"batter": "김도영"}, "cond": {"team": "KIA", "season": 2024, "batter_results": ["홈런"]}, "year_given": True}),
     ("2025년 홈런 제일 많이 친 타자 5명", {"menu": "other", "people": {}, "cond": {}, "year_given": True}),
     ("안녕", {"menu": "chat", "people": {}, "cond": {}, "year_given": False, "reply": "안녕하세요! 선수 기록이나 장면을 물어보세요. 예: 김도영 2024 홈런 영상"}),
 ]
@@ -86,6 +94,7 @@ def parse_system(as_of: str | None = None) -> str:
   \"김도영 홈런\"처럼 결과 이름만 말하면 pa(장면 목록). \"홈런 몇 개야\" · \"타율 몇이야\" · \"시즌 기록\"처럼 시즌 숫자를 물을 때만 stats
 - other: 위 셋으로 안 되는 기록 질문 (순위 · 여러 선수 비교 · 합계 · 이닝별 집계 등)
   \"~친 타자 누구야\" · \"~맞은 투수 누구\"처럼 조건에 맞는 타석의 사람을 묻는 건 other가 아니라 pa (목록에 이름이 나온다)
+  \"A랑 B 맞대결 · 상대 전적\"(타자와 투수)은 other가 아니라 pa (batter A · pitcher B). 연도를 안 말하면 전체 시즌으로 보고 year_given = true
 - chat: 인사 · 서비스 사용법 · 야구 기록과 관계없는 말 → reply에 짧게 답한다
 
 [출력 형식]
@@ -93,11 +102,13 @@ def parse_system(as_of: str | None = None) -> str:
 
 [people] 질문에 나온 사람 이름만, 질문에 쓴 그대로 (\"도영이\" → \"도영\", \"김도영 선수\" → \"김도영\"). 없는 칸은 null 또는 빈 목록.
 - batter: 친 사람 / pitcher: 던진 사람 (\"OO 상대로\", \"OO에게\", \"OO가 맞은\"의 OO가 투수인지 타자인지 문맥으로)
-- player: stats 메뉴의 선수 / starter: games의 그 팀 선발 / opp_starter: 상대 팀 선발 / players: games에서 그 팀으로 같이 뛴 선수들
+- player: stats 메뉴의 선수 / starter: games의 그 팀 선발 / opp_starter: 상대 팀 선발 / players: 같이 뛴 선수들
+- pa에서도 경기 조건을 쓸 수 있다: \"OO가 선발로 나온 경기에서\"의 OO는 starter, \"OO랑 OO가 같이 뛴 날\"은 players (그 경기의 타석 중에서 찾는다)
+- games에서 \"OO가 홈런 친 날\" · \"OO가 나온 날\"의 OO는 batter, 그 결과는 cond.batter_results (\"나온 날\"이면 넣지 않는다)
 
 [cond] pa 메뉴 칸: results(목록) season date_from date_to(YYYY-MM-DD) stadium bat_team pit_team home_away(home|away, 타자 팀 기준)
   inning_from inning_to inning_half(초|말) situations(목록) bases outs balls strikes pitch_names(목록) speed_min speed_max video_only
-games 메뉴 칸: team opponent season date_from date_to home_away result(승|패|무)
+games 메뉴 칸: team opponent season date_from date_to home_away result(승|패|무) batter_results(목록, people.batter가 낸 결과)
 stats 메뉴 칸: season metrics(물어본 지표 목록. \"시즌 기록\"처럼 지표를 안 말하면 넣지 않는다)
 - metrics에 쓸 수 있는 말: {', '.join(terms.METRICS)}  (\"방어율\" = 평균자책점, \"K\" = 삼진, \"홈런 맞은 거\" = 피홈런)
 - results에 쓸 수 있는 말: {', '.join(terms.EVENT_GROUPS)}  (\"안타\"는 홈런 포함, \"장타\" = 2·3루타+홈런)
@@ -106,6 +117,7 @@ stats 메뉴 칸: season metrics(물어본 지표 목록. \"시즌 기록\"처�
 - situations: {', '.join(terms.SITUATIONS)} / bases: {', '.join(terms.BASES)}, {terms.RISP}
 - pitch_names: {', '.join(terms.PITCHES)}
 - \"N회\" 하나면 inning_from = inning_to = N, \"N회 이후\"면 inning_from만
+- 구속은 \"N km 넘는\" · \"N km 이상\" 모두 speed_min = N (정수 그대로, 155.1처럼 바꾸지 않는다). \"N km 이하 · 안 되는\"은 speed_max = N
 - video_only는 \"영상 있는 것만\"처럼 영상 있는 것으로 거르라고 할 때만 true. \"영상 볼 수 있어?\"는 false (영상은 어차피 같이 보여 준다)
 - 질문에 없는 조건 · 값이 없는 칸은 넣지 않는다 (null로 쓰지 않는다)
 

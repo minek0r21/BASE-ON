@@ -18,7 +18,7 @@ from pydantic import BaseModel, Field
 from ..chat import terms
 from ..db import run
 from ..errors import ApiError
-from ..events import events_ko
+from ..events import batting_line, events_ko
 from ..scenes import CONFIRMED
 from .players import Q_SEARCH, name_pattern
 
@@ -50,6 +50,8 @@ def find_players(
 class PASearch(BaseModel):
     batter_id: str | None = None
     pitcher_id: str | None = None
+    game_starter_ids: list[str] | None = Field(None, description="이 선수(들)가 선발로 나온 경기의 타석만")
+    game_player_ids: list[str] | None = Field(None, description="이 선수들이 모두 출전한 경기의 타석만")
     results: list[str] | None = Field(None, description="안타 · 장타 · 출루 · 홈런 · 2루타 … 또는 events 값")
     season: int | None = None
     date_from: str | None = Field(None, description="YYYY-MM-DD")
@@ -147,6 +149,15 @@ def pa_where(c: PASearch) -> tuple[str, dict, list[str]]:
         w.append("pa.last_pitch_speed >= $smin"); p["smin"] = c.speed_min; said.append(f"{c.speed_min:g}km 이상")
     if c.speed_max is not None:
         w.append("pa.last_pitch_speed <= $smax"); p["smax"] = c.speed_max; said.append(f"{c.speed_max:g}km 이하")
+    # 경기 조건 — 타석에서 경기(g)로 건너가 그 경기의 선발 · 출전 선수를 본다 (games 메뉴와 같은 관계)
+    if c.game_starter_ids:
+        w.append("ALL(sid IN $g_starters WHERE " + GAME_STARTED + ")"); p["g_starters"] = c.game_starter_ids
+        nm = names_of(c.game_starter_ids)
+        said.append(" · ".join(nm.get(i, i) for i in c.game_starter_ids) + " 선발 경기")
+    if c.game_player_ids:
+        w.append("ALL(gid IN $g_players WHERE " + GAME_PLAYED + ")"); p["g_players"] = c.game_player_ids
+        nm = names_of(c.game_player_ids)
+        said.append(" · ".join(nm.get(i, i) for i in c.game_player_ids) + " 출전 경기")
     if c.game_type != "all":
         w.append("coalesce(pa.game_type, 'regular') = $gt"); p["gt"] = c.game_type
         said.append("포스트시즌" if c.game_type == "postseason" else "정규시즌")  # 기본값도 화면에 밝힌다
@@ -156,6 +167,10 @@ def pa_where(c: PASearch) -> tuple[str, dict, list[str]]:
     p["confirmed"] = CONFIRMED
     return (" WHERE " + " AND ".join(w)) if w else "", p, said
 
+
+GAME_STARTED = "EXISTS { MATCH (:Player {player_id: sid})-[:PITCHED_GAME]->(:Outing {starter: true})-[:PART_OF]->(g) }"
+GAME_PLAYED = ("(EXISTS { MATCH (:Player {player_id: gid})-[:BATTED_IN]->(:PlateAppearance)-[:PART_OF]->(g) }"
+               " OR EXISTS { MATCH (:Player {player_id: gid})-[:PITCHED_GAME]->(:Outing)-[:PART_OF]->(g) })")
 
 PA_MATCH = """
 MATCH (b:Player)-[:BATTED_IN]->(pa:PlateAppearance)<-[:PITCHED_IN]-(pit:Player)
@@ -191,7 +206,7 @@ def names_of(ids: list[str]) -> dict[str, str]:
 
 @router.post("/search/pa", summary="챗봇: 타석 검색")
 def search_pa(c: PASearch):
-    if not (c.batter_id or c.pitcher_id or c.bat_team or c.pit_team):
+    if not (c.batter_id or c.pitcher_id or c.bat_team or c.pit_team or c.game_starter_ids or c.game_player_ids):
         bad("타자 · 투수 · 팀 중 하나는 있어야 해요")
     where, p, said = pa_where(c)
     nm = names_of([c.batter_id, c.pitcher_id])
@@ -205,7 +220,15 @@ def search_pa(c: PASearch):
             "start_sec": r["start_sec"] or 0, "end_sec": r["end_sec"], "precision": r["precision"] or "scene"}
         for k in ("video_id", "video_title", "duration_sec", "start_sec", "end_sec", "precision"):
             r.pop(k)
-    return {"conditions": head + said, "total": total, "shown": len(rows), "offset": c.offset, "rows": rows}
+    out = {"conditions": head + said, "total": total, "shown": len(rows), "offset": c.offset, "rows": rows}
+    if total and not c.results and (c.batter_id or c.pitcher_id):  # 결과를 안 정했으면 타석 · 타수 · 안타 요약 (맞대결 전적)
+        ev = [r["e"] for r in run(PA_MATCH + where + " RETURN pa.events AS e, count(*) AS n", **p) for _ in range(r["n"])]
+        out["summary"] = batting_line(ev)
+    if total and not c.batter_id:  # 타자를 안 정했으면 많이 나온 타자 (「~친 타자 누구야」)
+        top = run(PA_MATCH + where + """ WITH b, count(*) AS n ORDER BY n DESC, b.name
+                  RETURN collect({name: b.name, n: n})[..5] AS top, count(*) AS people""", **p)[0]
+        out["by_batter"] = {"top": top["top"], "people": top["people"]}
+    return out
 
 
 # ------------------------------------------------------------------ 경기 검색
@@ -220,6 +243,8 @@ class GameSearch(BaseModel):
     opp_starter_id: str | None = Field(None, description="상대 팀 선발 투수")
     player_ids: list[str] | None = Field(None, description="이 팀으로 모두 출전한 선수")
     result: Literal["승", "패", "무"] | None = None
+    pa_batter_id: str | None = Field(None, description="이 타자가 (pa_results를) 친 경기만 — 「김도영이 홈런 친 날」")
+    pa_results: list[str] | None = None
     game_type: Literal["regular", "postseason", "all"] = "regular"
     offset: int = 0
 
@@ -255,7 +280,7 @@ def search_games(c: GameSearch):
         w.append("g.date <= date($date_to)"); p["date_to"] = c.date_to; said.append(f"{c.date_to}까지")
     if c.home_away:
         w.append("is_home = $is_home"); p["is_home"] = c.home_away == "home"; said.append("홈" if c.home_away == "home" else "원정")
-    nm = names_of([c.starter_id, c.opp_starter_id, *(c.player_ids or [])])
+    nm = names_of([c.starter_id, c.opp_starter_id, c.pa_batter_id, *(c.player_ids or [])])
     if c.starter_id:
         w.append(STARTER % ("starter", "my")); p["starter"] = c.starter_id; said.append(f"선발 {nm.get(c.starter_id)}")
     if c.opp_starter_id:
@@ -263,6 +288,17 @@ def search_games(c: GameSearch):
     if c.player_ids:
         w.append(f"ALL(pid IN $players WHERE {APPEARED})"); p["players"] = c.player_ids
         said.append(" · ".join(nm.get(i, i) for i in c.player_ids) + " 출전")
+    if c.pa_batter_id:  # 경기 → 타석으로 건너가 그 타자가 그 결과를 낸 경기만
+        try:
+            ev = terms.events_of(c.pa_results)
+        except ValueError as e:
+            bad(str(e))
+        w.append("EXISTS { MATCH (:Player {player_id: $pab})-[:BATTED_IN]->(x:PlateAppearance)-[:PART_OF]->(g)"
+                 + (" WHERE x.events IN $pa_ev" if ev else "") + " }")
+        p["pab"] = c.pa_batter_id
+        if ev:
+            p["pa_ev"] = ev
+        said.append(f"{nm.get(c.pa_batter_id)} " + (" · ".join(c.pa_results) + " 친 경기" if ev else "출전 경기"))
     if c.game_type != "all":
         w.append("coalesce(g.game_type, 'regular') = $gt"); p["gt"] = c.game_type
         said.append("포스트시즌" if c.game_type == "postseason" else "정규시즌")

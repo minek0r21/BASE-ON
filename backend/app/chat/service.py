@@ -133,16 +133,33 @@ def latest_team(player_id: str, season: int | None = None) -> str | None:
     return r[0]["team"] if r else None
 
 
+# 메뉴마다 쓸 수 있는 사람 칸. 여기 없는 칸에 사람이 오면 조용히 버리지 않고 알린다 (버리면 조건이 빠진 채 틀린 숫자가 나온다)
+USABLE = {"pa": {"batter", "pitcher", "player", "starter", "opp_starter", "players"},
+          "games": {"starter", "opp_starter", "players", "batter"},
+          "stats": {"player", "batter", "pitcher"}}
+
+
 def run_menu(menu: str, ids: dict, cond: dict) -> dict:
     from ..routers import chat as api
+    if extra := [s for s in ids if s not in USABLE.get(menu, set())]:
+        raise ApiError(400, "UNUSED_PERSON", f"{' · '.join(SLOT_KO[s] for s in extra)} 조건은 이 질문에서 아직 걸 수 없어요. 조건을 나눠서 물어봐 주세요.")
     if menu == "pa":
         body = pick(cond, PA_KEYS)
-        body.update({k: v for k, v in (("batter_id", ids.get("batter")), ("pitcher_id", ids.get("pitcher"))) if v})
+        batter = ids.get("batter") or (None if ids.get("pitcher") else ids.get("player"))  # pa에 player로 오면 타자로
+        body.update({k: v for k, v in (("batter_id", batter), ("pitcher_id", ids.get("pitcher"))) if v})
+        if starters := [i for i in (ids.get("starter"), ids.get("opp_starter")) if i]:  # 「양현종이 선발로 나온 경기에서」
+            body["game_starter_ids"] = starters
+        if ids.get("players"):  # 「김도영이랑 나성범이 같이 뛴 날」
+            body["game_player_ids"] = ids["players"]
         return {"menu": "pa", **api.search_pa(api.PASearch(**body))}
     if menu == "games":
         body = pick(cond, GAME_KEYS)
-        if not body.get("team"):  # 팀을 말하지 않았으면 선발 · 같이 뛴 선수의 그 시즌(없으면 최근) 팀으로
-            who = ids.get("starter") or (ids.get("players") or [None])[0]
+        if ids.get("batter"):  # 「김도영이 홈런 친 날」
+            body["pa_batter_id"] = ids["batter"]
+            if cond.get("batter_results"):
+                body["pa_results"] = cond["batter_results"]
+        if not body.get("team"):  # 팀을 말하지 않았으면 선발 · 같이 뛴 선수 · 그 타자의 그 시즌(없으면 최근) 팀으로
+            who = ids.get("starter") or (ids.get("players") or [None])[0] or ids.get("batter")
             if who:
                 body["team"] = latest_team(who, body.get("season"))
         if not body.get("team"):
@@ -151,6 +168,8 @@ def run_menu(menu: str, ids: dict, cond: dict) -> dict:
                                        ("player_ids", ids.get("players"))) if v})
         return {"menu": "games", **api.search_games(api.GameSearch(**body))}
     if menu == "stats":
+        if not ids.get("player") and (ids.get("batter") or ids.get("pitcher")):
+            ids = {**ids, "player": ids.get("batter") or ids.get("pitcher")}
         if not ids.get("player"):
             raise ApiError(400, "NEED_PLAYER", "어느 선수의 기록인지 말씀해 주세요.")
         return {"menu": "stats", **api.season_stats(player_id=ids["player"], season=int(cond["season"]))}
@@ -276,7 +295,11 @@ def answer(req: ChatRequest, message: str) -> dict:
         log_unanswered(message, "after_as_of", {"parsed": parsed})
         return say(f"BASE:ON에는 {answers.as_of_ko(day)} 경기까지 기록이 있어요.", menu=menu, reason="after_as_of", as_of=day, context=ctx)
 
-    ids, stop = resolve_people(people, resolved, message)
+    prev = ((req.context or {}).get("parsed") or {}).get("people") or {}  # 이어 묻기: 앞 질문의 사람 이름도 이름 바로잡기 후보로
+    hint = message + " " + " ".join(str(n) for v in prev.values() for n in (v if isinstance(v, list) else [v]) if n)
+    for k, v in list(people.items()):  # 바로잡은 이름을 조건표에 다시 적는다 (이어 묻기가 깨진 이름을 물려받지 않게)
+        people[k] = [fix_name(n, hint) for n in v if n] if isinstance(v, list) else (fix_name(v, hint) if v else v)
+    ids, stop = resolve_people(people, resolved, hint)
     if stop:
         return stop
 

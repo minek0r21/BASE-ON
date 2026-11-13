@@ -78,6 +78,11 @@ def pa_text(result: dict, cond: dict) -> str:
     if total == 0:
         return f"조건에 맞는 {josa(noun, '이', '가')} 없어요."
     lines = [f"{noun} {total}개예요."]
+    if (s := result.get("summary")) and not res:  # 결과를 안 정한 타자 · 투수 질문 (맞대결 전적)
+        lines = [batting_summary(s)]
+    if (by := result.get("by_batter")) and by.get("top"):  # 타자를 안 정한 질문 (「~친 타자 누구야」)
+        names = " · ".join(f"{t['name']} {t['n']}개" for t in by["top"])
+        lines.append(names + (f" 등 {by['people']}명" if by.get("people", 0) > len(by["top"]) else ""))
     videos = sum(1 for r in result.get("rows") or [] if r.get("video"))
     tail = [f"최근 {shown}개"] if total > shown else []
     if videos:
@@ -85,6 +90,14 @@ def pa_text(result: dict, cond: dict) -> str:
     if tail:
         lines.append(" · ".join(tail))
     return "\n".join(lines)
+
+
+def batting_summary(s: dict) -> str:
+    """{"pa": 12, "ab": 10, "h": 3, "hr": 1, "bb": 1, "so": 4} → 12타석 10타수 3안타 (타율 .300) · 홈런 1 · 삼진 4 · 볼넷 1"""
+    line = f"{s['pa']}타석 {s['ab']}타수 {s['h']}안타" + (f" (타율 {rate3(s['h'] / s['ab'])})" if s.get("ab") else "")
+    extra = [f"홈런 {s['hr']}"] if s.get("hr") else []
+    extra += [f"삼진 {s.get('so', 0)}", f"볼넷 {s.get('bb', 0)}"]
+    return line + " · " + " · ".join(extra)
 
 
 def games_text(result: dict, cond: dict) -> str:
