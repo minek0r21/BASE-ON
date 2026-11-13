@@ -104,6 +104,14 @@ class LearnCheck(unittest.TestCase):
         self.assertFalse(oracle_ok({"rows": [["폰세", 0.96]]}, ora, 1)[0])
 
 
+class PaCond(unittest.TestCase):
+    def test_base_words_move_out_of_situations(self):  # 채점 11-13: AI가 득점권을 situations에 넣음
+        from app.chat.registry import fix_pa_cond
+        self.assertEqual(fix_pa_cond({"situations": ["득점권"], "outs": 2}), {"situations": [], "outs": 2, "bases": "득점권"})
+        self.assertEqual(fix_pa_cond({"situations": ["끝내기", "만루"]}), {"situations": ["끝내기"], "bases": "만루"})
+        self.assertEqual(fix_pa_cond({"situations": ["역전"]}), {"situations": ["역전"]})
+
+
 class Limits(unittest.TestCase):
     def test_per_minute_then_recovers(self):
         now = [1_800_000_000.0]

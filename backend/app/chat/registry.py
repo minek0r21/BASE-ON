@@ -43,9 +43,20 @@ PA_KEYS = ["results", "season", "date_from", "date_to", "stadium", "bat_team", "
            "inning_half", "situations", "bases", "outs", "balls", "strikes", "pitch_names", "speed_min", "speed_max", "video_only"]
 
 
+def fix_pa_cond(cond: dict) -> dict:
+    """AI가 주자 말(득점권 · 만루 · 1루 …)을 상황(situations)에 넣는 일이 있다 (채점 11-13, 2번 연속) → 주자 칸(bases)으로 옮긴다"""
+    sits = cond.get("situations") or []
+    base = [s for s in sits if s in terms.BASES or s == terms.RISP]
+    if not base:
+        return cond
+    out = {**cond, "situations": [s for s in sits if s not in base]}
+    out.setdefault("bases", base[0])
+    return out
+
+
 def run_pa(ids: dict, cond: dict) -> dict:
     from ..routers import chat as api
-    body = pick(cond, PA_KEYS)
+    body = pick(fix_pa_cond(cond), PA_KEYS)
     body.update({k: v for k, v in (("batter_id", ids.get("batter")), ("pitcher_id", ids.get("pitcher"))) if v})
     return api.search_pa(api.PASearch(**body))
 

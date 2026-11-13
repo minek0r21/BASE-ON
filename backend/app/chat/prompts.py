@@ -89,7 +89,7 @@ def parse_system(as_of: str | None = None) -> str:
 - results에 쓸 수 있는 말: {', '.join(terms.EVENT_GROUPS)}  (\"안타\"는 홈런 포함, \"장타\" = 2·3루타+홈런)
 - 팀: {', '.join(sorted(set(terms.TEAMS.values())))} 중 하나로 (기아→KIA, 엘지→LG)
 - stadium: {', '.join(terms.STADIUMS)}
-- situations: {', '.join(terms.SITUATIONS)} / bases: {', '.join(terms.BASES)}, {terms.RISP}
+- situations(점수 상황): {', '.join(terms.SITUATIONS)} / bases(주자): {', '.join(terms.BASES)}, {terms.RISP} — 득점권 · 만루는 situations가 아니라 bases
 - pitch_names: {', '.join(terms.PITCHES)}
 - \"N회\" 하나면 inning_from = inning_to = N, \"N회 이후\"면 inning_from만
 - video_only는 \"영상 있는 것만\"처럼 영상 있는 것으로 거르라고 할 때만 true. \"영상 볼 수 있어?\"는 false (영상은 어차피 같이 보여 준다)

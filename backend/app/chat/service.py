@@ -298,7 +298,8 @@ def answer(req: ChatRequest, message: str) -> dict:
         result = run_menu(menu, ids, cond) if menu != "other" else run_other(message, ids)
     except ApiError as e:  # 조건을 못 알아들으면 그대로 알린다 (other로 넘겨 숫자를 지어내게 하지 않는다)
         log_unanswered(message, e.code, {"detail": e.message, "parsed": parsed})
-        return say(e.message, as_of=day)
+        text = f"「{e.message.split(': ', 1)[-1]}」 조건은 아직 알아듣지 못해요. 다르게 물어봐 주세요." if e.code == "BAD_CONDITION" and e.message.startswith("모르는") else e.message
+        return say(text, menu=menu, reason=e.code, as_of=day, context=ctx)  # 메뉴는 남긴다 (채점이 어느 단계에서 틀렸는지 본다)
     except llm.LLMError as e:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
         return say("지금 질문을 처리하는 데 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.", error=True)
