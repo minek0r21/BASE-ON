@@ -97,7 +97,7 @@ def ask(row: dict) -> dict:
 def main():
     os.environ.setdefault("LLM_RETRIES", "2")  # 채점은 429면 기다렸다 다시 (웹 요청은 0)
     repeat = max(1, int(os.getenv("GRADE_REPEAT", "1")))
-    gap = float(os.getenv("GRADE_GAP", "1"))  # 질문 사이 쉬는 초 (1분당 요청 수 때문에)
+    gap = float(os.getenv("GRADE_GAP", "4"))  # 질문 사이 쉬는 초 (1분당 요청 수 때문에)
     db.connect()
     rows = list(csv.DictReader(CSV.open(encoding="utf-8-sig")))
     out, passed, stages = [], 0, Counter()

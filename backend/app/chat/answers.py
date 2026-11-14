@@ -3,6 +3,8 @@
 틀린 숫자가 나올 수 없고, AI 호출이 질문당 1번(질문 이해)으로 끝난다.
 문구 기준: 사실 · 기준만 짧게, 줄임말 풀기 (OPS · WHIP은 그대로). DB · AI를 부르지 않는 순수 함수만 둔다.
 """
+import re
+
 from . import terms
 
 COUNT_UNIT = {"hr": "개", "h": "개", "so": "개", "bb": "개", "b2": "개", "b3": "개", "hbp": "개", "pitches": "개",
@@ -10,6 +12,8 @@ COUNT_UNIT = {"hr": "개", "h": "개", "so": "개", "bb": "개", "b2": "개", "b
 RATE3 = {"avg", "obp", "slg", "ops", "iso"}
 PCT1 = {"k_pct", "bb_pct"}
 WIN_WORD = {"승": "이긴", "패": "진", "무": "비긴"}
+FEW = 3
+WHO = re.compile(r"누구|누가|누군|타자들|선수들|명단")
 
 
 def has_batchim(word: str) -> bool:
@@ -61,6 +65,19 @@ def as_of_ko(as_of: str) -> str:
     return f"{int(as_of[:4])}년 {int(as_of[5:7])}월 {int(as_of[8:10])}일"
 
 
+def asks_who(message: str) -> bool:
+    return bool(WHO.search(message or ""))
+
+
+def pa_line(r: dict) -> str:
+    return " · ".join(x for x in (f"{as_of_ko(r['date'])} {r.get('inning')}회{r.get('inning_half') or ''}",
+                                  r.get("batter"), r.get("pitcher") and f"투수 {r['pitcher']}", r.get("result")) if x)
+
+
+def game_line(r: dict) -> str:
+    return f"{as_of_ko(r['date'])} {r.get('team')} {r.get('team_score')}:{r.get('opp_score')} {r.get('opponent')} · {r.get('result')}"
+
+
 def after_as_of(cond: dict, as_of: str | None) -> bool:
     """기준일 뒤만 묻는 질문 (조회하지 않고 바로 답한다)"""
     if not as_of:
@@ -78,7 +95,15 @@ def pa_text(result: dict, cond: dict) -> str:
     if total == 0:
         return f"조건에 맞는 {josa(noun, '이', '가')} 없어요."
     lines = [f"{noun} {total}개예요."]
-    videos = sum(1 for r in result.get("rows") or [] if r.get("video"))
+    if (s := result.get("summary")) and not res:  # 결과를 안 정한 타자 · 투수 질문 (맞대결 전적)
+        lines = [batting_summary(s)]
+    if (by := result.get("by_batter")) and by.get("top"):  # 타자를 안 정한 질문 (「~친 타자 누구야」)
+        names = " · ".join(f"{t['name']} {t['n']}개" for t in by["top"])
+        lines.append(names + (f" 등 {by['people']}명" if by.get("people", 0) > len(by["top"]) else ""))
+    rows = result.get("rows") or []
+    if total <= FEW:
+        lines += [pa_line(r) for r in rows if r.get("date")]
+    videos = sum(1 for r in rows if r.get("video"))
     tail = [f"최근 {shown}개"] if total > shown else []
     if videos:
         tail.append(f"영상 {videos}개")
@@ -87,18 +112,29 @@ def pa_text(result: dict, cond: dict) -> str:
     return "\n".join(lines)
 
 
+def batting_summary(s: dict) -> str:
+    """{"pa": 12, "ab": 10, "h": 3, "hr": 1, "bb": 1, "so": 4} → 12타석 10타수 3안타 (타율 .300) · 홈런 1 · 삼진 4 · 볼넷 1"""
+    line = f"{s['pa']}타석 {s['ab']}타수 {s['h']}안타" + (f" (타율 {rate3(s['h'] / s['ab'])})" if s.get("ab") else "")
+    extra = [f"홈런 {s['hr']}"] if s.get("hr") else []
+    extra += [f"삼진 {s.get('so', 0)}", f"볼넷 {s.get('bb', 0)}"]
+    return line + " · " + " · ".join(extra)
+
+
 def games_text(result: dict, cond: dict) -> str:
     total = result.get("total") or 0
     if total == 0:
         return "조건에 맞는 경기가 없어요."
+    games = [game_line(r) for r in result.get("rows") or [] if r.get("date")] if total <= FEW else []
+    if total == 1 and games:
+        return games[0]
     if cond.get("result") in WIN_WORD:
-        return f"{WIN_WORD[cond['result']]} 경기는 {total}경기예요."
+        return "\n".join([f"{WIN_WORD[cond['result']]} 경기는 {total}경기예요."] + games)
     rec = result.get("record") or {}
     w, l, d = rec.get("win", 0), rec.get("loss", 0), rec.get("draw", 0)
     line = f"{w}승 {l}패" + (f" {d}무" if d else "")
     if rec.get("win_pct") is not None:
         line += f" · 승률 {rate3(rec['win_pct'])}"
-    return line
+    return "\n".join([line] + games)
 
 
 def pick_stat(metric: str, batting: dict | None, pitching: dict | None) -> tuple[str, object] | None:

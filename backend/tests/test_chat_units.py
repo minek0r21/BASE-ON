@@ -27,6 +27,39 @@ class Answers(unittest.TestCase):
         self.assertEqual(answers.pa_text({"total": 0, "shown": 0}, {"results": ["2루타"]}), "조건에 맞는 2루타가 없어요.")
         self.assertEqual(answers.pa_text({"total": 0, "shown": 0}, {}), "조건에 맞는 타석이 없어요.")
 
+    def test_pa_matchup_summary(self):  # 결과를 안 정한 맞대결 → 타석 · 타수 · 안타 요약
+        r = {"total": 12, "shown": 10, "rows": [], "summary": {"pa": 12, "ab": 10, "h": 3, "hr": 1, "bb": 1, "so": 4}}
+        self.assertEqual(answers.pa_text(r, {}), "12타석 10타수 3안타 (타율 .300) · 홈런 1 · 삼진 4 · 볼넷 1\n최근 10개")
+
+    def test_pa_who(self):  # 타자를 안 정한 질문 → 많이 친 타자 이름
+        r = {"total": 12, "shown": 10, "rows": [],
+             "by_batter": {"top": [{"name": "오스틴", "n": 3}, {"name": "김도영", "n": 2}], "people": 9}}
+        self.assertEqual(answers.pa_text(r, {"results": ["홈런"]}), "홈런 12개예요.\n오스틴 3개 · 김도영 2개 등 9명\n최근 10개")
+
+    def test_pa_few_rows_say_when(self):
+        r = {"total": 1, "shown": 1, "rows": [{"date": "2024-06-23", "inning": 5, "inning_half": "초", "batter": "김도영",
+                                              "pitcher": "최원준", "result": "3루타", "video": None}]}
+        self.assertEqual(answers.pa_text(r, {"results": ["3루타"]}), "3루타 1개예요.\n2024년 6월 23일 5회초 · 김도영 · 투수 최원준 · 3루타")
+
+    def test_asks_who(self):
+        self.assertTrue(answers.asks_who("2024년에 류현진 상대로 홈런 친 타자 누구누구야"))
+        self.assertTrue(answers.asks_who("2025년 기아 타자들 만루에서 장타"))
+        self.assertFalse(answers.asks_who("2024년 고척에서 키움 투수들이 포크볼로 잡은 삼진"))
+
+    def test_games_one_game_says_score(self):
+        r = {"total": 1, "record": {"win": 1, "loss": 0, "draw": 0, "win_pct": 1.0},
+             "rows": [{"date": "2025-05-04", "team": "LG", "team_score": 12, "opp_score": 4, "opponent": "두산", "result": "승"}]}
+        self.assertEqual(answers.games_text(r, {}), "2025년 5월 4일 LG 12:4 두산 · 승")
+
+    def test_games_few_list_each(self):
+        rows = [{"date": "2024-08-13", "team": "한화", "team_score": 2, "opp_score": 3, "opponent": "LG", "result": "패"},
+                {"date": "2024-05-02", "team": "한화", "team_score": 1, "opp_score": 5, "opponent": "LG", "result": "패"}]
+        self.assertEqual(answers.games_text({"total": 2, "rows": rows}, {"result": "패"}),
+                         "진 경기는 2경기예요.\n2024년 8월 13일 한화 2:3 LG · 패\n2024년 5월 2일 한화 1:5 LG · 패")
+
+    def test_gocheok_dome(self):
+        self.assertEqual(terms.stadium_teams("고척돔"), ["키움"])
+
     def test_games_record(self):
         r = {"total": 9, "record": {"win": 5, "loss": 4, "draw": 0, "win_pct": 0.556}}
         self.assertEqual(answers.games_text(r, {}), "5승 4패 · 승률 .556")

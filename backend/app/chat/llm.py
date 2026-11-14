@@ -30,7 +30,7 @@ def ready() -> bool:  # 키가 들어 있는가
 
 
 def retries() -> int:
-    """429(1분당 요청 수)에 걸렸을 때 기다렸다 다시 묻는 횟수. 웹 요청은 0 — 사용자를 40초씩 붙잡지 않는다. 채점(grade.py)만 2"""
+    """429(1분당 요청 수) · 503 · 529(서버 붐빔)에 걸렸을 때 기다렸다 다시 묻는 횟수. 웹 요청은 0 — 사용자를 40초씩 붙잡지 않는다. 채점(grade.py)만 2"""
     try:
         return int(os.getenv("LLM_RETRIES", "0"))
     except ValueError:
@@ -47,7 +47,7 @@ def _post(url: str, body: dict, headers: dict) -> dict:
                 return json.loads(r.read())
         except urllib.error.HTTPError as e:
             text = e.read().decode("utf-8", "replace")
-            if e.code == 429 and attempt < n:
+            if e.code in (429, 503, 529) and attempt < n:
                 m = re.search(r'"retryDelay":\s*"(\d+)', text)  # 구글이 알려 주는 기다릴 시간
                 time.sleep(min(int(m.group(1)) + 1 if m else 20, 40))
                 continue
