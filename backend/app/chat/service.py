@@ -323,6 +323,8 @@ def answer(req: ChatRequest, message: str) -> dict:
         result = run_menu(menu, ids, cond) if menu != "other" else run_other(message, ids)
     except ApiError as e:  # 조건을 못 알아들으면 그대로 알린다 (other로 넘겨 숫자를 지어내게 하지 않는다)
         log_unanswered(message, e.code, {"detail": e.message, "parsed": parsed})
+        if e.code in ("UNUSED_PERSON", "BAD_MENU"):
+            return say(NOT_YET, as_of=day)
         return say(friendly(e.message), as_of=day)
     except llm.LLMError as e:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
@@ -333,10 +335,12 @@ def answer(req: ChatRequest, message: str) -> dict:
     if result.get("total") == 0:
         log_unanswered(message, "zero_rows", {"parsed": parsed})
     if menu == "stats":
-        result["conditions"] = [answers.season_label(result.get("season"), day), "정규시즌"]
+        result["conditions"] = [x for x in (result.get("name"), answers.season_label(result.get("season"), day), "정규시즌") if x]
     elif day:  # 현재 시즌은 「2026 시즌(7월 26일까지)」로
         cur = f"{day[:4]} 시즌"
         result["conditions"] = [answers.season_label(int(day[:4]), day) if c == cur else c for c in result.get("conditions") or []]
+    if menu == "pa" and not answers.asks_who(message):
+        result.pop("by_batter", None)
     result["text"] = answers.text_for(menu, result, cond, day)
     result["type"] = "answer"
     result["as_of"] = day

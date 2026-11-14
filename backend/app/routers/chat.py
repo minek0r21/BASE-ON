@@ -102,7 +102,7 @@ def pa_where(c: PASearch) -> tuple[str, dict, list[str]]:
     if bt:
         w.append("bt.name = $bat_team"); p["bat_team"] = bt; said.append(f"{bt} 공격")
     if pt:
-        w.append("pt.name = $pit_team"); p["pit_team"] = pt; said.append(f"상대 {pt}")
+        w.append("pt.name = $pit_team"); p["pit_team"] = pt; said.append(f"{pt} 투수")
     if c.home_away:
         w.append("pa.inning_half = $ha"); p["ha"] = "말" if c.home_away == "home" else "초"; said.append("홈" if c.home_away == "home" else "원정")
     if c.inning_from is not None:
@@ -207,7 +207,7 @@ def names_of(ids: list[str]) -> dict[str, str]:
 @router.post("/search/pa", summary="챗봇: 타석 검색")
 def search_pa(c: PASearch):
     if not (c.batter_id or c.pitcher_id or c.bat_team or c.pit_team or c.game_starter_ids or c.game_player_ids):
-        bad("타자 · 투수 · 팀 중 하나는 있어야 해요")
+        bad("어느 선수나 팀의 기록인지 함께 말씀해 주세요. 예: 김도영 2024 홈런")
     where, p, said = pa_where(c)
     nm = names_of([c.batter_id, c.pitcher_id])
     head = [x for x in (nm.get(c.batter_id), c.pitcher_id and f"투수 {nm.get(c.pitcher_id)}") if x]
