@@ -7,7 +7,7 @@
 KIA가 올러 선발일 때 LG 상대로 승률은?,되묻기,,,,,,연도 없음
 KIA가 올러 선발일 때 LG 상대로 승률은?,games,team=KIA; opponent=LG,0,7,,,전체 시즌 선택
 기아 엘지전 올러 선발 몇승 몇패야 전체 시즌으로,games,team=KIA; opponent=LG,,7,,,
-2025년 김도영이랑 나성범이 같이 뛴 경기,games,team=KIA; season=2025,,6,,,
+2025년 김도영이랑 나성범이 같이 뛴 경기,games,season=2025,,6,,,
 KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,,,
 원태인 2025 시즌 기록,stats,season=2025,,,pitching.so=108,,
 김도영 2025 타율 몇이야,stats,season=2025; metrics=타율,,,batting.avg=0.3091; text~타율 .309; text~규정 타석 미달,,
@@ -15,7 +15,7 @@ KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,,,
 2025년 기아 타자들 만루에서 장타,pa,bat_team=KIA; bases=만루; results=장타; season=2025,,,,,
 2025년 홈런 제일 많이 친 타자 5명,other,,,,,,메뉴 밖 → 서버는 「아직 못 답함」 (CHAT_OTHER=on이면 로컬에서 조회)
 안녕,chat,,,,,,
-레이예스 2025 2아웃 득점권 타석,pa,bases=득점권; outs=2; season=2025,,78,,,on_2b IS NOT NULL로 세면 236 (조용히 틀리는 함정)
+레이예스 2025 2아웃 득점권 타석,pa,outs=2; season=2025,,78,,,on_2b IS NOT NULL로 세면 236 (조용히 틀리는 함정)
 원태인 2025 삼진 몇 개야,stats,season=2025; metrics=삼진,,,pitching.so=108; text~삼진 108개,,
 원태인 2025 평균자책점,stats,season=2025; metrics=평균자책점,,,text~없는 기록,,평균자책점은 DB에 없음 → 「없다」가 정답
 LG 2025 홈에서 두산 상대 승률,games,team=LG; opponent=두산; home_away=home; season=2025,,9,record.win=5; record.loss=4,,
@@ -26,3 +26,24 @@ LG 2025 홈에서 두산 상대 승률,games,team=LG; opponent=두산; home_away
 한화 올해 성적,games,team=한화; season=2026,,92,record.win=44; record.loss=45; record.draw=3,,올해 = 2026 (7.26까지)
 2024년 삼성 끝내기 장면,pa,bat_team=삼성; situations=끝내기; season=2024,,2,,,
 오늘 날씨 어때,chat,,,,,,야구 밖 질문
+김도영이랑 문동주 맞대결 전적 어때,pa,,,3,text~3타석 3타수 2안타,,맞대결: 결과를 안 정하면 타격 요약
+2024년에 류현진 상대로 홈런 친 타자 누구누구야,pa,results=홈런; season=2024,,12,text~황재균 3개,,투수 기준으로 친 타자 이름
+2025년 양현종이 선발로 나온 경기에서 KIA 타자들이 친 홈런 영상,pa,bat_team=KIA; results=홈런; season=2025; video_only=True,,13,,,타석 → 경기 → 선발 등판 (고치기 전 144개)
+2024년 김도영이 홈런 친 날 KIA 승률,games,team=KIA; season=2024; batter_results=홈런,,36,record.win=26; record.loss=10,,경기 → 그 타자의 타석
+2025년에 김도영이랑 나성범이 같이 뛴 날 김도영이 친 안타,pa,results=안타; season=2025,,5,,,같이 뛴 경기의 타석 (고치기 전 34개)
+2024년 오스틴이 풀카운트에서 슬라이더 쳐서 넘긴 홈런 장면,pa,results=홈런; season=2024; balls=3; strikes=2; pitch_names=슬라이더,,3,,,
+2025년 KIA 타자들이 잠실에서 8회 이후에 친 역전 안타 전부,pa,bat_team=KIA; stadium=잠실; inning_from=8; situations=역전; results=안타; season=2025,,0,,,조건 6개 · 실제로 0건
+김도영이 문동주 상대로 친 안타 전체 시즌 다 보여줘,pa,results=안타,,2,,,전체 시즌이라고 말해서 되묻지 않음
+"2025년 한화가 2아웃 1,3루에서 친 끝내기 안타",pa,"bat_team=한화; outs=2; bases=1,3루; situations=끝내기; results=안타; season=2025",,0,,,끝내기 자체가 드묾 · 실제로 0건
+2024년 고척에서 키움 투수들이 포크볼로 잡은 삼진,pa,pit_team=키움; stadium=고척; results=삼진; season=2024,,61,,,
+2025년 LG가 1회말에 친 홈런 중에 영상 있는 것만,pa,bat_team=LG; inning_half=말; results=홈런; season=2025,,9,,,
+2024년 김도영이 0볼 2스트라이크에서 친 안타,pa,balls=0; strikes=2; results=안타; season=2024,,4,,,
+2025년에 KIA 투수 상대로 3루타 친 타자들 누구야,pa,pit_team=KIA; results=3루타; season=2025,,21,text~정수빈 2개,,「누구야」도 pa (순위 아님)
+2024년 문동주가 155km 넘는 공으로 잡은 삼진,pa,results=삼진; season=2024; speed_min=155,,8,,,넘는 · 이상 모두 speed_min=155
+2025년 KIA가 양현종 선발일 때 홈경기 승률,games,team=KIA; season=2025; home_away=home,,14,record.win=7; record.loss=6; record.draw=1,,
+2024년 한화가 류현진 선발로 LG 만나서 진 경기,games,team=한화; opponent=LG; season=2024; result=패,,2,,,
+2025년 원태인이랑 곽빈이 선발 맞대결한 경기 결과,games,season=2025,,1,record.win=1,,팀은 코드가 원태인 소속으로 채움
+2024년 7월 LG 원정 경기 성적,games,team=LG; home_away=away; season=2024; date_from=2024-07-01,,8,record.win=5; record.loss=3,,
+김도영 2024 OPS랑 장타율,stats,season=2024; metrics=OPS,,,text~OPS 1.065; text~장타율 .645,,
+"원태인 2025 WHIP이랑 피홈런, 그리고 평균자책점",stats,season=2025; metrics=WHIP,,,text~WHIP 1.11; text~피홈런 20개; text~없는 기록,,있는 지표 + 없는 지표 섞임
+그럼 2025년은?,pa,results=홈런; season=2025,,31,,2024 오스틴 홈런 영상,이어 묻기 (오스틴)
