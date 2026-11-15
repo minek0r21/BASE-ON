@@ -112,9 +112,10 @@ def pick_stat(metric: str, batting: dict | None, pitching: dict | None) -> tuple
 def stats_text(result: dict, metrics: list[str] | None, as_of: str | None) -> str:
     name, label = result.get("name") or "", season_label(result.get("season"), as_of)
     batting, pitching = result.get("batting"), result.get("pitching")
+    unknown = [m for m in dict.fromkeys(metrics or []) if m not in terms.METRICS]
     metrics = [m for m in dict.fromkeys(metrics or []) if m in terms.METRICS]
-    if not metrics:
-        return f"{name} {label} 기록이에요."
+    if not metrics:  # 모르는 지표만 물었으면 조용히 「기록이에요」로 넘기지 않는다
+        return f"{name} {label} 기록이에요." + (f"\n{josa(' · '.join(unknown), '은', '는')} 아직 알아듣지 못한 기록이에요." if unknown else "")
     parts, missing, none = [], [], []
     for m in metrics:
         if m in terms.MISSING_METRICS:

@@ -52,12 +52,19 @@ def main():
     p = sub.add_parser("promote")
     p.add_argument("run")
     sub.add_parser("collect")
+    e = sub.add_parser("exam")
+    e.add_argument("--name", default="dev", help="dev(보고 고쳐도 됨) · hold(점수만 봄)")
+    e.add_argument("--n", type=int, default=12, help="묶음마다 질문 수")
+    e.add_argument("--seed", type=int, default=1)
     a = ap.parse_args()
 
     db.connect()
     try:
         if a.cmd == "run":
             run(a.family, a.n, a.seed)
+        elif a.cmd == "exam":
+            from .exam import make
+            print(f"시험지: {make(a.name, a.n, a.seed)} · AI 호출 {steps.CALLS['n']}번 → 다음은 grade --file")
         elif a.cmd == "promote":
             print(f"채점 질문 {steps.promote(steps.ROOT / a.run)}개 추가 → 다음은 grade --gate")
         else:

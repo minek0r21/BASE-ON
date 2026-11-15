@@ -59,7 +59,7 @@ def check(row: dict, reply: dict) -> tuple[str | None, str]:
     if reply.get("type") == "clarify":
         return "메뉴", f"되물음({reply.get('slot')})"
     menu = reply.get("menu") or "chat"
-    if menu != want_menu:
+    if menu not in want_menu.split("|"):  # 「3루타 몇 개」는 stats · pa 어느 쪽으로 답해도 숫자가 같다 → stats|pa
         return "메뉴", f"메뉴 {menu} (기대 {want_menu})"
     cond = ((reply.get("context") or {}).get("parsed") or {}).get("cond") or {}
     for part in filter(None, (p.strip() for p in row["기대조건"].split(";"))):
@@ -101,8 +101,12 @@ def main():
     repeat = max(1, int(os.getenv("GRADE_REPEAT", "1")))
     gap = float(os.getenv("GRADE_GAP", "1"))  # 질문 사이 쉬는 초 (1분당 요청 수 때문에)
     db.connect()
-    rows = list(csv.DictReader(CSV.open(encoding="utf-8-sig")))
+    src = Path(sys.argv[sys.argv.index("--file") + 1]) if "--file" in sys.argv else CSV  # 시험지(learn exam)도 같은 모양
+    if not src.is_absolute():
+        src = CSV.parents[1] / src
+    rows = list(csv.DictReader(src.open(encoding="utf-8-sig")))
     out, passed, stages = [], 0, Counter()
+    by = {}  # 묶음 · 말투별 (맞음, 전체) — 메모가 「묶음 · 말투 · …」인 시험지에서
     for i, row in enumerate(rows, 1):
         fails, reply = [], {}
         for _ in range(repeat):
@@ -113,6 +117,9 @@ def main():
                 fails.append((stage, why))
         ok = not fails
         passed += ok
+        tags = [t.strip() for t in (row.get("메모") or "").split(" · ")[:2]] if src != CSV else []
+        for key in [f"메뉴 {row['기대메뉴']}", *(f"말투 {t}" for t in tags[1:])]:
+            a, b = by.get(key, (0, 0)); by[key] = (a + ok, b + 1)
         if fails:
             stages[fails[0][0]] += 1
         why = "" if ok else f"{len(fails)}/{repeat}번 틀림 · {fails[0][1]}"
@@ -124,8 +131,10 @@ def main():
     print(f"\n{passed} / {len(rows)} 맞음" + (f" (질문마다 {repeat}번 모두 맞아야 맞음)" if repeat > 1 else ""))
     if stages:
         print("틀린 단계: " + " · ".join(f"{k} {v}" for k, v in stages.most_common()))
+    for k in sorted(by):
+        print(f"  {k:<14} {by[k][0]:>3} / {by[k][1]}")
     LOG.parent.mkdir(exist_ok=True)
-    f = LOG.parent / f"grade_{datetime.now():%Y%m%d_%H%M}.csv"
+    f = LOG.parent / f"grade_{datetime.now():%Y%m%d_%H%M}{'_' + src.stem if src != CSV else ''}.csv"
     with f.open("w", newline="", encoding="utf-8-sig") as fp:
         w = csv.DictWriter(fp, fieldnames=list(out[0]))
         w.writeheader(); w.writerows(out)

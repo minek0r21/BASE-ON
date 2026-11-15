@@ -23,7 +23,7 @@ from pydantic import BaseModel
 
 from .. import db
 from ..errors import ApiError
-from . import answers, limits, llm, prompts, talk
+from . import answers, checks, limits, llm, prompts, talk, terms
 from .registry import MENUS
 
 LOG = Path(__file__).resolve().parents[2] / "chat_logs" / "unanswered.jsonl"  # backend/chat_logs (git 제외)
@@ -92,7 +92,55 @@ def fix_name(name: str, message: str) -> str:
     return best[0] if best else name
 
 
-def resolve_people(people: dict, resolved: dict, message: str) -> tuple[dict | None, dict | None]:
+NICK = re.compile(r"(?<=..)(형|이|선수|님)$")  # 「도영이」 · 「창기형」 → 이름 부분
+_ALL: list = []
+
+
+def all_names() -> list[str]:
+    if not _ALL:
+        _ALL.extend(r["name"] for r in db.run("MATCH (p:Player) RETURN DISTINCT p.name AS name"))
+    return _ALL
+
+
+def narrow(cands: list[dict], teams: list[str], season: int | None) -> list[dict]:
+    """여러 명이면 질문에 나온 팀 · 시즌에 뛴 선수로 좁힌다 (「재훈 한화 24」). 좁혀서 0명이면 그대로"""
+    if len(cands) <= 1 or not (teams or season):
+        return cands
+    ids = [c["player_id"] for c in cands]
+    for t, s in ((teams, season), (teams, None), ([], season)):
+        if not t and s is None:
+            continue
+        keep = {r["id"] for r in db.run(
+            """MATCH (p:Player)-[f:PLAYS_FOR]->(t:Team) WHERE p.player_id IN $ids AND (size($teams) = 0 OR t.name IN $teams)
+               AND ($season IS NULL OR f.season = $season) RETURN DISTINCT p.player_id AS id""", ids=ids, teams=t, season=s)}
+        got = [c for c in cands if c["player_id"] in keep]
+        if got:
+            return got
+    return cands
+
+
+def lookup(name: str, role: str | None, message: str, teams: list[str], season: int | None) -> list[dict]:
+    """이름 → 후보. AI가 옮긴 이름 → 질문 속 낱말 → 별칭 꼬리(이 · 형) 뗀 이름 → 비슷한 이름(오타) 순서로"""
+    bare = message.replace(" ", "")
+    tries = [name] if name.replace(" ", "") in bare else [fix_name(name, message), name]
+    if name.replace(" ", "") not in bare:  # AI가 지어낸 이름(창기형 → 임창민)이면 질문 낱말에서 찾는다
+        vocab = {*terms.TEAMS, *terms.METRICS, *terms.EVENT_GROUPS, *terms.STADIUMS}
+        tries += [w for w in (PARTICLES.sub("", w) for w in re.findall(r"[가-힣]{2,5}", message)) if w not in vocab]
+    tries += [NICK.sub("", t) for t in tries if NICK.search(t)]
+    for t in dict.fromkeys(x for x in tries if len(x) >= 2):
+        cands = find_player(t, role)
+        if cands:
+            return narrow(cands, teams, season)
+    # 오타 (나승업 → 나승엽): 가장 비슷한 이름들 → 팀 · 시즌으로 좁힌다. 그래도 여럿이면 되묻기
+    key = NICK.sub("", tries[0])
+    scored = sorted(((difflib.SequenceMatcher(None, key, n).ratio(), n) for n in all_names()), reverse=True)[:5]
+    best = [n for s, n in scored if s >= 0.6 and s == scored[0][0]]
+    cands = [c for n in best for c in find_player(n, role) if c["name"] == n]
+    return narrow(cands, teams, season)
+
+
+def resolve_people(people: dict, resolved: dict, message: str, teams: list[str] | None = None,
+                   season: int | None = None) -> tuple[dict | None, dict | None]:
     """people(이름) → ids. 되물어야 하면 (None, 되묻기 답), 못 찾으면 (None, 안내 답)"""
     ids: dict = {}
     for slot, role in ROLE.items():
@@ -103,8 +151,8 @@ def resolve_people(people: dict, resolved: dict, message: str) -> tuple[dict | N
             key = slot if slot != "players" else f"players.{i}"
             if resolved.get(key):
                 found.append(resolved[key]); continue
+            cands = lookup(name, role, message, teams or [], season)
             name = fix_name(name, message)
-            cands = find_player(name, role)
             if not cands:
                 log_unanswered(message, "player_not_found", {"name": name})
                 return None, say(f"「{name}」 선수를 찾지 못했어요. 이름을 다시 확인해 주세요.")
@@ -241,12 +289,20 @@ def answer(req: ChatRequest, message: str) -> dict:
     t0 = time.time()
     resolved = req.resolved or {}
     day = as_of()
+    prev = (req.context or {}).get("parsed")
     try:
-        parsed = llm.complete_json(prompts.parse_system(day),
-                                   json.dumps({"question": message, "previous": (req.context or {}).get("parsed")}, ensure_ascii=False))
+        parsed = llm.complete_json(prompts.parse_system(day), json.dumps({"question": message, "previous": prev}, ensure_ascii=False))
+        if checks.needs_pa(parsed, message):  # 장면 조건이 있는데 시즌 기록으로 → 한 번 더 (드물다, 조건 칸을 AI가 채워야 해서)
+            parsed = llm.complete_json(prompts.parse_system(day), json.dumps(
+                {"question": message, "previous": prev, "hint": "회 · 주자 · 구장 · 상대 같은 장면 조건이 있다 → menu는 pa"}, ensure_ascii=False))
     except llm.LLMError as e:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
         return say("지금 질문을 이해하는 데 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.", error=True)
+    fixed = checks.fix_season(parsed, message, day, follow_up=bool(prev))  # 연도는 질문 글자를 믿는다
+    fixed += checks.result_only(parsed, message) + checks.fix_cond(parsed, message)
+    if parsed.get("menu") == "other" and not any((parsed.get("people") or {}).values()) and not parsed.get("cond"):
+        parsed["menu"] = "talk"  # 선수 · 팀 · 시즌 없는 메뉴 밖 질문 = 규칙 · 용어 · 관람 질문 → 일반 설명 (꼬리표 붙음)
+        fixed.append("other→talk")
 
     menu = parsed.get("menu")
     people = parsed.get("people") or {}
@@ -273,9 +329,20 @@ def answer(req: ChatRequest, message: str) -> dict:
         log_unanswered(message, "after_as_of", {"parsed": parsed})
         return say(f"BASE:ON에는 {answers.as_of_ko(day)} 경기까지 기록이 있어요.", menu=menu, reason="after_as_of", as_of=day, context=ctx)
 
-    ids, stop = resolve_people(people, resolved, message)
+    teams = checks.teams_in(message)
+    season_hint = cond.get("season") or resolved.get("season") or None
+    ids, stop = resolve_people(people, resolved, message, teams, int(season_hint) if season_hint else None)
     if stop:
         return stop
+    if menu == "pa":  # 선수 옆에 쓴 팀(그 선수 소속)을 상대 팀 칸에 넣은 경우 — 자기 팀과는 맞붙지 않으니 지운다
+        for slot, key in (("batter", "pit_team"), ("pitcher", "bat_team")):
+            if ids.get(slot) and cond.get(key):
+                from .registry import latest_team
+                try:
+                    if terms.team_of(cond[key]) == latest_team(ids[slot], int(season_hint) if season_hint else None):
+                        fixed.append(f"{key} {cond.pop(key)}→없음 (선수 소속)")
+                except ValueError:
+                    pass
 
     if "season" in resolved:
         cond["season"] = resolved["season"] or None   # 0 = 전체 시즌
@@ -317,5 +384,7 @@ def answer(req: ChatRequest, message: str) -> dict:
     result["type"] = "answer"
     result["as_of"] = day
     result["context"] = {"parsed": {"menu": menu, "people": people, "cond": cond, "year_given": True}}
+    if fixed:
+        result["context"]["fixed"] = fixed  # 코드가 고친 것 (채점 · 로그에서 본다)
     result["ms"] = int((time.time() - t0) * 1000)
     return result

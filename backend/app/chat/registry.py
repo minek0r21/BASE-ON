@@ -184,7 +184,8 @@ MENUS: dict[str, Menu] = {m.id: m for m in [
         prompt="한 시즌 순위 (○○ 1위 · 상위 N명 · 팀 안 순위 · 한 선수가 몇 위인지). \"몇 위\" · \"1위\" · \"제일 많이\" · \"순위\"면 rank",
         slots="season rank_metric(지표 하나) rank_side(batter|pitcher — 삼진 · 볼넷처럼 타자 · 투수 둘 다 있는 지표에서 투수 쪽이면 pitcher) "
               "top(몇 명, 말 안 하면 넣지 않는다) team\n"
-              f"- rank_metric에 쓸 수 있는 말: {', '.join(terms.RANK_METRICS)}  (\"탈삼진\" = 삼진 + rank_side pitcher, \"홈런 맞은\" = 피홈런)",
+              f"- rank_metric에 쓸 수 있는 말: {', '.join(terms.RANK_METRICS)}  (\"탈삼진\" = 삼진 + rank_side pitcher, \"홈런 맞은\" = 피홈런)\n"
+              "  \"적게 맞은 · 덜 내보낸\"처럼 적을수록 좋은 투수를 물으면 개수가 아니라 비율 지표 (안타 → 피안타율, 출루 · 주자 → WHIP)",
         run=run_rank, text=answers.rank_text, season="ask_one",
         examples=[
             ("2025년 홈런 제일 많이 친 타자 5명",

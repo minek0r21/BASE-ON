@@ -87,7 +87,9 @@ def parse_system(as_of: str | None = None) -> str:
 [cond] {slot_lines}
 - metrics에 쓸 수 있는 말: {', '.join(terms.METRICS)}  (\"방어율\" = 평균자책점, \"K\" = 삼진, \"홈런 맞은 거\" = 피홈런)
 - results에 쓸 수 있는 말: {', '.join(terms.EVENT_GROUPS)}  (\"안타\"는 홈런 포함, \"장타\" = 2·3루타+홈런)
-- 팀: {', '.join(sorted(set(terms.TEAMS.values())))} 중 하나로 (기아→KIA, 엘지→LG)
+- 팀: {', '.join(sorted(set(terms.TEAMS.values())))} 중 하나로 (기아→KIA, 엘지→LG, 쓱→SSG)
+- pa에서 \"플로리얼 한화\" \"엘지 문보경\"처럼 선수 이름 옆에 붙은 팀은 그 선수 소속이다 → bat_team · pit_team에 넣지 않는다. 상대 팀은 \"한화 상대로\" \"한화 투수한테\"처럼 말할 때만
+- \"8회 이후\" · \"득점권\" · \"만루\" · \"잠실에서\" · \"OO 상대로\"처럼 장면 조건이 붙은 개수는 stats가 아니라 pa (시즌 기록에는 그 조건이 없다)
 - stadium: {', '.join(terms.STADIUMS)}
 - situations(점수 상황): {', '.join(terms.SITUATIONS)} / bases(주자): {', '.join(terms.BASES)}, {terms.RISP} — 득점권 · 만루는 situations가 아니라 bases
 - pitch_names: {', '.join(terms.PITCHES)}

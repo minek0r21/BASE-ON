@@ -112,6 +112,51 @@ class PaCond(unittest.TestCase):
         self.assertEqual(fix_pa_cond({"situations": ["역전"]}), {"situations": ["역전"]})
 
 
+class Checks(unittest.TestCase):  # 어려운 시험지(11-16)에서 AI가 글자를 잘못 옮긴 것들
+    def test_years_from_text(self):
+        from app.chat.checks import years_in
+        for q, want in [("24 3루타 1위", {2024}), ("26시즌 타자", {2026}), ("재작년 잠실", {2024}), ("베어스 2025 승패", {2025}),
+                        ("원석 케이티 25 위프", {2025}), ("김도영 38홈런", set()), ("상위 10 명", set()), ("탑10", set()),
+                        ("2025년 7월 4일 한화", {2025}), ("기아 성적 어떻게 돼", set())]:
+            self.assertEqual(years_in(q, 2026)[0], want, q)
+
+    def test_fix_season(self):
+        from app.chat.checks import fix_season
+        p = {"menu": "games", "cond": {"team": "KIA", "season": 2026}, "year_given": True}
+        self.assertEqual(fix_season(p, "기아 성적 어떻게 돼", AS_OF, False), ["season 2026→없음"])
+        self.assertNotIn("season", p["cond"]); self.assertFalse(p["year_given"])  # → 되묻기
+        p = {"menu": "games", "cond": {"team": "KIA", "season": 2026}}
+        self.assertEqual(fix_season(p, "기아 요즘 성적", AS_OF, False), [])
+        p = {"menu": "rank", "cond": {"season": 2025}}
+        self.assertEqual(fix_season(p, "24 3루타 1위", AS_OF, False), ["season 2025→2024"])
+        p = {"menu": "pa", "cond": {"season": 2025}}
+        self.assertEqual(fix_season(p, "그럼 홈런은?", AS_OF, True), [])  # 이어 묻기는 앞 시즌을 잇는다
+
+    def test_teams_and_scene(self):
+        from app.chat.checks import needs_pa, teams_in
+        self.assertEqual(set(teams_in("쓱 최정 엘지 상대 한화 이글스")), {"SSG", "LG", "한화"})
+        self.assertTrue(needs_pa({"menu": "stats"}, "나승엽 2025 8회 이후 2루타"))
+        self.assertFalse(needs_pa({"menu": "stats"}, "최정 25년 타율"))
+        self.assertEqual(terms.team_of("한화 이글스"), "한화")
+
+    def test_result_only_goes_to_pa(self):
+        from app.chat.checks import fix_cond, result_only
+        p = {"menu": "stats", "people": {"player": "최주환"}, "cond": {"season": 2026, "metrics": ["장타율"]}}
+        self.assertTrue(result_only(p, "키움 최주환 26시즌 장타"))
+        self.assertEqual((p["menu"], p["people"], p["cond"]), ("pa", {"batter": "최주환"}, {"season": 2026, "results": ["장타"]}))
+        for q in ["최주환 26시즌 장타율", "최주환 26시즌 홈런 몇 개", "최주환 26 시즌 기록"]:
+            self.assertFalse(result_only({"menu": "stats", "people": {"player": "최주환"}, "cond": {"metrics": ["장타율"]}}, q), q)
+        p = {"menu": "stats", "cond": {"metrics": ["평균구속"]}}
+        fix_cond(p, "류현진 26 평균구속")
+        self.assertEqual(p["cond"]["metrics"], ["평균 구속"])
+        p = {"menu": "pa", "cond": {"video_only": True}}
+        fix_cond(p, "김도영 홈런 장면 영상")
+        self.assertNotIn("video_only", p["cond"])
+        p = {"menu": "pa", "cond": {"video_only": True}}
+        fix_cond(p, "김도영 홈런 영상 있는 것만")
+        self.assertTrue(p["cond"]["video_only"])
+
+
 class Limits(unittest.TestCase):
     def test_per_minute_then_recovers(self):
         now = [1_800_000_000.0]

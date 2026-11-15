@@ -11,6 +11,7 @@ import re
 import time
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 DEFAULT_MODEL = {"gemini": "gemini-3.5-flash-lite", "claude": "claude-haiku-4-5-20251001"}
 TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))     # 초. 웹 요청이라 오래 붙잡지 않는다
@@ -56,6 +57,19 @@ def _post(url: str, body: dict, headers: dict) -> dict:
             raise LLMError(f"LLM 연결 실패: {e}") from None
 
 
+USAGE = Path(__file__).resolve().parents[2] / "chat_logs" / "usage.jsonl"  # 실제 토큰 수 (비용은 콘솔이 기준, 이건 어림용)
+
+
+def usage(model: str, meta: dict):
+    try:
+        USAGE.parent.mkdir(exist_ok=True)
+        with USAGE.open("a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": int(time.time()), "model": model, "in": meta.get("promptTokenCount", 0),
+                                "out": meta.get("candidatesTokenCount", 0) + meta.get("thoughtsTokenCount", 0)}) + "\n")
+    except OSError:
+        pass
+
+
 def complete(system: str, user: str, as_json: bool = False, temperature: float = 0) -> str:
     """system(규칙) + user(질문) → 답 문자열. as_json이면 JSON 하나만 돌려 달라고 한다"""
     p = provider()
@@ -81,6 +95,7 @@ def complete(system: str, user: str, as_json: bool = False, temperature: float =
                 raise
             body["generationConfig"] = {k: v for k, v in cfg.items() if k != "thinkingConfig"}
             res = _post(url, body, {"x-goog-api-key": key})
+        usage(model, res.get("usageMetadata") or {})
         try:
             return "".join(part.get("text", "") for part in res["candidates"][0]["content"]["parts"])
         except (KeyError, IndexError):
