@@ -73,7 +73,7 @@ def check(row: dict, reply: dict) -> tuple[str | None, str]:
     for part in filter(None, (p.strip() for p in (row.get("기대값") or "").split(";"))):
         if "~" in part and ("=" not in part or part.index("~") < part.index("=")):
             k, _, v = part.partition("~")
-            if v.strip() not in str(dig(reply, k.strip()) or ""):
+            if not any(alt in str(dig(reply, k.strip()) or "") for alt in v.strip().split("|")):  # 「0개|없어요」처럼 둘 중 하나
                 return "개수 · 값", f"{k.strip()}에 「{v.strip()}」 없음"
         else:
             k, _, v = part.partition("=")

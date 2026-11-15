@@ -47,6 +47,23 @@ class Answers(unittest.TestCase):
         self.assertEqual(answers.season_label(2026, AS_OF), "2026 시즌(7월 26일까지)")
         self.assertEqual(answers.season_label(2025, AS_OF), "2025 시즌")
 
+    def test_before_data(self):
+        self.assertTrue(answers.before_data({"season": 2019}, 2024))
+        self.assertTrue(answers.before_data({"date_to": "2023-10-01"}, 2024))
+        self.assertFalse(answers.before_data({"season": 2024}, 2024))
+        self.assertFalse(answers.before_data({}, 2024))
+
+    def test_compare_text(self):
+        r = {"compare": {"season": 2025, "metrics": ["홈런", "WHIP", "평균자책점"], "players": [
+            {"name": "김도영", "batting": {"hr": 7, "qualified": False}, "pitching": None},
+            {"name": "최정", "batting": {"hr": 23, "qualified": True}, "pitching": None}]}}
+        self.assertEqual(answers.compare_text(r, {}, AS_OF),
+                         "홈런은 최정이 더 많아요.\n홈런: 김도영 7개 · 최정 23개\nWHIP 기록이 없어요.\n평균자책점은 BASE:ON에 없는 기록이에요.")
+        p = {"compare": {"season": 2025, "metrics": ["WHIP"], "players": [
+            {"name": "원태인", "batting": None, "pitching": {"whip": 1.106}},
+            {"name": "폰세", "batting": None, "pitching": {"whip": 0.94}}]}}
+        self.assertEqual(answers.compare_text(p, {}, AS_OF).splitlines()[0], "WHIP은 폰세가 더 낮아요.")
+
     def test_after_as_of(self):
         self.assertTrue(answers.after_as_of({"date_from": "2026-08-01"}, AS_OF))
         self.assertTrue(answers.after_as_of({"season": 2027}, AS_OF))
@@ -138,6 +155,28 @@ class Checks(unittest.TestCase):  # 어려운 시험지(11-16)에서 AI가 글�
         self.assertTrue(needs_pa({"menu": "stats"}, "나승엽 2025 8회 이후 2루타"))
         self.assertFalse(needs_pa({"menu": "stats"}, "최정 25년 타율"))
         self.assertEqual(terms.team_of("한화 이글스"), "한화")
+
+    def test_other_to_stats(self):
+        from app.chat.checks import other_to_stats
+        p = {"menu": "other", "people": {"player": "전민재"}, "cond": {"team": "롯데", "results": ["3루타"]}, "year_given": True}
+        self.assertEqual(other_to_stats(p, "전민재 자이언츠 3루타 몇개야"), ["other→stats"])
+        self.assertEqual((p["menu"], p["cond"], p["year_given"]), ("stats", {"metrics": ["3루타"]}, False))
+        p = {"menu": "other", "people": {"player": "이승엽"}, "cond": {"results": ["홈런"]}}
+        self.assertEqual(other_to_stats(p, "이승엽 통산 홈런"), [])
+        p = {"menu": "other", "people": {"player": "김도영"}, "cond": {"season": 2025, "results": ["홈런"]}}
+        self.assertEqual(other_to_stats(p, "김도영 2025 월별 홈런"), [])
+
+    def test_team_near_name(self):
+        from app.chat.checks import team_near
+        q = "기아 성범이랑 쓱 지훈이 24년도에 걸어나간 거 누가 더 많냐"
+        self.assertEqual((team_near(q, "성범"), team_near(q, "지훈")), ("KIA", "SSG"))
+
+    def test_jamo_typo(self):
+        from app.chat.service import jamo
+        import difflib
+        r = lambda a, b: difflib.SequenceMatcher(None, jamo(a), jamo(b)).ratio()
+        self.assertGreater(r("김진우", "김진욱"), 0.9)  # 11-16: 김진우 → 김태진으로 답했다 (글자 단위로는 둘이 같은 점수)
+        self.assertLess(r("김진우", "김태진"), 0.8)       # 0.8 아래는 후보로 안 본다
 
     def test_result_only_goes_to_pa(self):
         from app.chat.checks import fix_cond, result_only

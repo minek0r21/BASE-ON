@@ -1,4 +1,4 @@
-질문,기대메뉴,기대조건,시즌선택,기대개수,기대값,앞질문,메모
+﻿질문,기대메뉴,기대조건,시즌선택,기대개수,기대값,앞질문,메모
 김도영 2024 홈런 영상 보여줘,pa,results=홈런; season=2024,,38,text~홈런 38개,,
 2024년 김도영이 잠실에서 3루타 친 날 언제야,pa,results=3루타; stadium=잠실; season=2024,,1,,,
 도영이 재작년 잠실 3루타,pa,results=3루타; stadium=잠실; season=2024,,1,,,재작년 = 2024 (2026 기준)
@@ -31,7 +31,8 @@ LG 2025 홈에서 두산 상대 승률,games,team=LG; opponent=두산; home_away
 2025 탈삼진 순위,rank,rank_metric=삼진; rank_side=pitcher; season=2025,,,rank.rows.0.name=폰세; rank.rows.0.value=251,,
 2025 WHIP 제일 낮은 투수,rank,rank_metric=WHIP; season=2025,,,rank.rows.0.name=폰세,,투수 비율 지표는 선발 비교 대상만 (불펜을 섞으면 마무리가 1위)
 올해 삼진 제일 많이 잡은 투수,rank,rank_metric=삼진; rank_side=pitcher; season=2026,,,rank.rows.0.name=곽빈,,2026 = 7.26까지
-김도영이랑 최정 2025 홈런 누가 더 많아,other,,,,reason=other_off; links.0.href=/players/?id=52605; suggestions.0.ask~김도영 2025,,두 선수 비교 → 아직 메뉴 없음. 기본 답 = 가까운 메뉴 버튼 + 선수 화면 링크
+김도영이랑 최정 2025 홈런 누가 더 많아,compare,season=2025; metrics=홈런,,,text~홈런은 최정이 더 많아요; text~김도영 7개 · 최정 23개,,두 선수 비교 (11-16 compare 메뉴). 숫자는 시즌 기록 API
+김도영 2025 월별 홈런,other,,,,reason=other_off; links.0.href=/players/?id=52605,,월별 집계 → 아직 메뉴 없음. 기본 답 = 가까운 메뉴 버튼 + 선수 화면 링크
 OPS가 뭐야,talk,,,,tag=일반 설명 · BASE:ON 기록 아님; text~출루율,,기록이 아닌 야구 질문 → AI 일반 설명 (사이트 「?」 문장 바탕)
 인필드 플라이가 뭐야,talk,,,,tag=일반 설명 · BASE:ON 기록 아님,,
 야구장 처음 가는데 뭘 알면 좋아?,talk,,,,,,입문 · 관람

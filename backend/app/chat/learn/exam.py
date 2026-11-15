@@ -28,7 +28,8 @@ STYLES = {
     "오타": "글자 하나를 잘못 친다 (이름 · 낱말 중 한 군데, 자판에서 옆 글자나 받침 빠짐). 띄어쓰기도 대충",
     "줄임": "최대한 짧게, 조사 · 물음표 없이 낱말만 (예: 「도영 24 홈런 몇개」)",
     "이름만": "선수는 성을 빼고 이름만 (도영이 · 현민이처럼), 팀은 별칭 (기아 · 엘지 · 쓱 · 한화 이글스)",
-    "돌려 말하기": "지표 이름을 그대로 쓰지 않고 풀어서 (홈런 → 담장 넘긴 거, 삼진 → 삼진 먹은 거 / 투수면 삼진 잡은 거, 1위 → 제일 잘한)",
+    "돌려 말하기": "지표 이름을 그대로 쓰지 않고 풀어서 (홈런 → 담장 넘긴 거, 장타 → 2루타 이상 친 거, 볼넷 → 볼 넷 개 골라 나간 거, "
+                  "삼진 → 삼진 먹은 거 / 투수면 삼진 잡은 거, 1위 → 제일 잘한). 뜻이 다른 지표와 겹치면 지표 이름을 그대로 쓴다",
     "수다": "앞뒤에 상관없는 말을 붙인다 (「어제 친구랑 얘기하다 궁금해서 그런데」 · 「ㅋㅋ」), 반말",
     "연도 빼기": "연도 · 시즌을 말하지 않는다",
 }
@@ -63,6 +64,7 @@ def ex_rank(rng):
 
 
 COUNTS = {"홈런", "안타", "2루타", "3루타", "볼넷", "삼진", "몸에 맞는 공"}
+PIT_COUNTS = {"삼진", "볼넷", "피홈런", "피안타"}
 
 
 def ex_stats(rng):
@@ -73,10 +75,10 @@ def ex_stats(rng):
     metric = rng.choice([m for m in table if m not in ("타석", "타수", "경기")])
     stat = season_stats(player_id=who["player_id"], season=season)[part]
     p = {"player": who["name"], "season": season, "metric": metric, "side": side}
-    if side == "batter" and metric in COUNTS:  # 개수는 pa(장면 목록)로 답해도 숫자가 같다 → 어느 쪽이든 그 숫자가 답에 있으면 맞음
+    if metric in (COUNTS if side == "batter" else PIT_COUNTS):  # 개수는 pa(장면 목록)로 답해도 숫자가 같다 → 그 숫자가 답에 있으면 맞음
         n = stat[table[metric]]
-        return p, f"{who['name']}({who['team']} 타자) {season} 시즌 {metric} 몇 개인지", {
-            "기대메뉴": "stats|pa", "기대조건": "", "기대값": f"text~{n}개"}
+        return p, f"{who['name']}({who['team']} {'타자' if side == 'batter' else '투수'}) {season} 시즌 {metric} 몇 개인지", {
+            "기대메뉴": "stats|pa", "기대조건": "", "기대값": f"text~{n}개" + ("|없어요" if not n else "")}
     desc = f"{who['name']}({who['team']} {'타자' if side == 'batter' else '투수'}) {season} 시즌 기록 중 {metric}이 얼마인지 (숫자 하나)"
     return p, desc, {"기대메뉴": "stats", "기대조건": f"metrics={metric}",
                      "기대값": f"name={who['name']}; {part}.{table[metric]}={stat[table[metric]]}"}
@@ -122,6 +124,21 @@ def ex_games(rng):
                                                   "기대개수": str(r["total"]), "기대값": f"record.win={r['record']['win']}"}
 
 
+def ex_compare(rng):
+    from ..answers import compare_text
+    from ..registry import run_compare
+    season, side = rng.choice(SEASONS), rng.choice(["batter", "batter", "pitcher"])
+    a = some_player(rng, season, side)
+    b = next(x for x in (some_player(rng, season, side) for _ in range(5)) if x["player_id"] != a["player_id"])
+    table = terms.BAT_METRICS if side == "batter" else terms.PIT_METRICS
+    metric = rng.choice([None, *[m for m in table if m not in ("타석", "타수", "경기", "선발")]])
+    cond = {"season": season, **({"metrics": [metric]} if metric else {})}
+    first = compare_text(run_compare({"players": [a["player_id"], b["player_id"]]}, cond), cond, None).splitlines()[0]
+    p = {"players": [a["name"], b["name"]], "season": season}
+    desc = f"{a['name']}({a['team']})와 {b['name']}({b['team']}) {season} 시즌 " + (f"{metric} 비교 (누가 더)" if metric else "누가 더 잘했는지")
+    return p, desc, {"기대메뉴": "compare", "기대조건": "", "기대값": f"text~{first}"}
+
+
 TALK = ["OPS가 무슨 뜻인지", "WHIP이 뭔지", "인필드 플라이 규칙", "보크가 뭔지", "낫아웃(스트라이크 아웃 낫아웃)", "규정타석이 뭔지",
         "희생플라이는 타수에 들어가는지", "더블헤더가 뭔지", "지명타자 제도", "콜드게임", "피치클락", "홀드가 무슨 기록인지",
         "볼카운트 읽는 법", "야구장 처음 갈 때 응원석 고르는 법", "FA 제도", "타격 방해"]
@@ -132,17 +149,18 @@ def ex_talk(rng):
     return {"topic": t}, f"{t} (선수 · 시즌 기록이 아니라 규칙 · 용어 · 입문 질문)", {"기대메뉴": "talk", "기대조건": "", "기대값": "tag~일반 설명"}
 
 
-EXAMS = {"rank": ex_rank, "stats": ex_stats, "pa": ex_pa, "games": ex_games, "talk": ex_talk}
-NO_YEAR_OK = {"rank", "stats", "pa", "games"}  # 시즌을 빼면 되묻기가 나와야 하는 묶음
+EXAMS = {"rank": ex_rank, "stats": ex_stats, "pa": ex_pa, "games": ex_games, "compare": ex_compare, "talk": ex_talk}
+NO_YEAR_OK = {"rank", "stats", "pa", "games", "compare"}  # 시즌을 빼면 되묻기가 나와야 하는 묶음
 
 
 def valid(q: str, p: dict, style: str) -> bool:
     """만든 질문이 정답 값과 맞는가 — 한 번에 여러 개를 만들면 AI가 이름을 다른 줄과 섞는다 (11-16 dev2: 김현수 → 「현민」)"""
     from ..checks import teams_in, years_in
     bare = q.replace(" ", "")
-    who = p.get("player") or p.get("batter")
-    if who:
-        grams = {who[i:i + 2] for i in range(len(who) - 1)}
+    for who in [p.get("player") or p.get("batter"), *(p.get("players") or [])]:
+        if not who:
+            continue
+        grams = {who[i:i + 2] for i in range(len(who) - 1)} or {who}
         if not any(g in bare for g in grams):
             return False
     for k in ("team",):

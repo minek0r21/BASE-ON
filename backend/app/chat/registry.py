@@ -133,6 +133,36 @@ def run_rank(ids: dict, cond: dict) -> dict:
             "table": [[k, r["name"], r["team"], answers.fmt(key, r[key])] for k, r in top]}
 
 
+# ------------------------------------------------------------------ compare: 두(세) 선수 한 시즌 기록 비교 (시즌 기록 API를 선수마다)
+def run_compare(ids: dict, cond: dict) -> dict:
+    from ..routers import chat as api
+    pids = list(dict.fromkeys(ids.get("players") or []))[:3]
+    if len(pids) < 2:
+        raise ApiError(400, "NEED_PLAYER", "비교할 선수 두 명을 함께 말씀해 주세요. 예: 김도영이랑 구자욱 2025 홈런")
+    season = int(cond["season"])
+    players = []
+    for pid in pids:
+        try:
+            s = api.season_stats(player_id=pid, season=season)
+        except ApiError:
+            s = {"player_id": pid, "name": api.names_of([pid]).get(pid, pid), "batting": None, "pitching": None}
+        players.append(s)
+    metrics = [m for m in cond.get("metrics") or [] if m in terms.METRICS]
+    if not metrics:  # 지표를 안 말하면 대표 지표 — 판정은 첫 지표(사이트 종합 지표: 타자 OPS · 투수 WHIP)로
+        pitchers = all(p.get("pitching") and not p.get("batting") for p in players)
+        metrics = ["WHIP", "이닝", "삼진"] if pitchers else ["OPS", "타율", "홈런"]
+    cols = ["지표", *(p["name"] for p in players)]
+    table = []
+    for m in metrics:
+        row = [m]
+        for p in players:
+            s = answers.side_stat(m, p.get("batting"), p.get("pitching"))
+            row.append(answers.fmt(s[1], s[2]) if s else "-")
+        table.append(row)
+    return {"conditions": [f"{season} 시즌", "정규시즌"], "total": len(players), "shown": len(players),
+            "compare": {"season": season, "metrics": metrics, "players": players}, "columns": cols, "table": table}
+
+
 MENUS: dict[str, Menu] = {m.id: m for m in [
     Menu(
         id="pa",
@@ -154,7 +184,7 @@ MENUS: dict[str, Menu] = {m.id: m for m in [
         ]),
     Menu(
         id="games",
-        prompt="경기 찾기 (팀 기준 경기 목록 · 승패 · 승률, 선발 투수 · 같이 뛴 선수 조건)",
+        prompt="경기 찾기 (팀 기준 경기 목록 · 승패 · 승률, 선발 투수 · 같이 뛴 선수 조건). 팀 \"통산 성적\" · \"전체 승패\"도 games (season 없이, year_given true)",
         slots="team opponent season date_from date_to home_away result(승|패|무)",
         run=run_games, text=lambda r, c, d: answers.games_text(r, c), season="ask",
         examples=[
@@ -195,5 +225,16 @@ MENUS: dict[str, Menu] = {m.id: m for m in [
              {"menu": "rank", "people": {}, "cond": {"season": "{this_year}", "rank_metric": "삼진", "rank_side": "pitcher"}, "year_given": True}),
             ("김도영 2024 홈런 몇 위야",
              {"menu": "rank", "people": {"player": "김도영"}, "cond": {"season": 2024, "rank_metric": "홈런"}, "year_given": True}),
+        ]),
+    Menu(
+        id="compare",
+        prompt="두세 선수의 한 시즌 기록 비교 (누가 더 잘했어 · 누가 홈런 더 많아 · A vs B). 선수는 people.players에",
+        slots="season metrics(비교할 지표 목록. \"누가 더 잘해\"처럼 지표를 안 말하면 넣지 않는다)",
+        run=run_compare, text=answers.compare_text, season="ask_one",
+        examples=[
+            ("김도영이랑 최정 2025 홈런 누가 더 많아",
+             {"menu": "compare", "people": {"players": ["김도영", "최정"]}, "cond": {"season": 2025, "metrics": ["홈런"]}, "year_given": True}),
+            ("원태인 vs 폰세 올해 누가 더 잘 던져",
+             {"menu": "compare", "people": {"players": ["원태인", "폰세"]}, "cond": {"season": "{this_year}"}, "year_given": True}),
         ]),
 ]}

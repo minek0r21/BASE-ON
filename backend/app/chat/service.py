@@ -119,6 +119,21 @@ def narrow(cands: list[dict], teams: list[str], season: int | None) -> list[dict
     return cands
 
 
+def regular(cands: list[dict], season: int | None) -> list[dict]:
+    """이름만 부른 경우(「지훈이」) 좁혀도 여럿이면, 그 시즌(없으면 전체) 출장이 다른 후보의 3배 이상인 주전 한 명 —
+    팬이 이름만 부르는 건 대개 주전이다. 답에는 성까지 붙은 이름이 나가서 사용자가 바로 알아본다"""
+    if len(cands) <= 1:
+        return cands
+    rows = db.run("""UNWIND $ids AS id MATCH (p:Player {player_id: id})
+        RETURN id, COUNT { (p)-[:BATTED_IN]->(x) WHERE $season IS NULL OR x.season = $season }
+                 + COUNT { (p)-[:PITCHED_IN]->(y) WHERE $season IS NULL OR y.season = $season } AS n""",
+                  ids=[c["player_id"] for c in cands], season=season)
+    n = sorted(((r["n"], r["id"]) for r in rows), reverse=True)
+    if len(n) >= 2 and n[0][0] >= 3 * max(n[1][0], 1):
+        return [c for c in cands if c["player_id"] == n[0][1]]
+    return cands
+
+
 def lookup(name: str, role: str | None, message: str, teams: list[str], season: int | None) -> list[dict]:
     """이름 → 후보. AI가 옮긴 이름 → 질문 속 낱말 → 별칭 꼬리(이 · 형) 뗀 이름 → 비슷한 이름(오타) 순서로"""
     bare = message.replace(" ", "")
@@ -130,13 +145,28 @@ def lookup(name: str, role: str | None, message: str, teams: list[str], season: 
     for t in dict.fromkeys(x for x in tries if len(x) >= 2):
         cands = find_player(t, role)
         if cands:
-            return narrow(cands, teams, season)
-    # 오타 (나승업 → 나승엽): 가장 비슷한 이름들 → 팀 · 시즌으로 좁힌다. 그래도 여럿이면 되묻기
-    key = NICK.sub("", tries[0])
-    scored = sorted(((difflib.SequenceMatcher(None, key, n).ratio(), n) for n in all_names()), reverse=True)[:5]
-    best = [n for s, n in scored if s >= 0.6 and s == scored[0][0]]
+            cands = narrow(cands, teams, season)
+            partial = all(c["name"].replace(" ", "") != t for c in cands)
+            return regular(cands, season) if partial else cands
+    # 오타 (나승업 → 나승엽, 김진우 → 김진욱): 자모로 풀어 가장 비슷한 이름 → 팀 · 시즌으로 좁힌다. 그래도 여럿이면 되묻기.
+    # 글자 단위로 재면 「김진」만 같은 김태진도 같은 점수라 엉뚱한 선수로 답했다 (11-16 dev4)
+    key = jamo(NICK.sub("", tries[0]))
+    scored = sorted(((difflib.SequenceMatcher(None, key, jamo(n)).ratio(), n) for n in all_names()), reverse=True)[:5]
+    best = [n for s, n in scored if s >= 0.8 and s >= scored[0][0] - 0.02]
     cands = [c for n in best for c in find_player(n, role) if c["name"] == n]
-    return narrow(cands, teams, season)
+    return narrow(cands, teams, season) if len(best) == 1 else cands  # 비슷한 이름이 여럿이면 좁히지 않고 되묻는다
+
+
+def jamo(s: str) -> str:
+    """한글 음절 → 초성 · 중성 · 종성 (오타 비교용)"""
+    out = []
+    for ch in s:
+        o = ord(ch) - 0xAC00
+        if 0 <= o < 11172:
+            out += [chr(0x1100 + o // 588), chr(0x1161 + o % 588 // 28)] + ([chr(0x11A7 + o % 28)] if o % 28 else [])
+        else:
+            out.append(ch)
+    return "".join(out)
 
 
 def resolve_people(people: dict, resolved: dict, message: str, teams: list[str] | None = None,
@@ -151,8 +181,9 @@ def resolve_people(people: dict, resolved: dict, message: str, teams: list[str] 
             key = slot if slot != "players" else f"players.{i}"
             if resolved.get(key):
                 found.append(resolved[key]); continue
-            cands = lookup(name, role, message, teams or [], season)
             name = fix_name(name, message)
+            near = checks.team_near(message, NICK.sub("", name)) if len(teams or []) > 1 else None
+            cands = lookup(name, role, message, [near] if near else teams or [], season)
             if not cands:
                 log_unanswered(message, "player_not_found", {"name": name})
                 return None, say(f"「{name}」 선수를 찾지 못했어요. 이름을 다시 확인해 주세요.")
@@ -299,7 +330,7 @@ def answer(req: ChatRequest, message: str) -> dict:
         log_unanswered(message, "llm_error", {"error": str(e)[:200]})
         return say("지금 질문을 이해하는 데 문제가 생겼어요. 잠시 뒤 다시 시도해 주세요.", error=True)
     fixed = checks.fix_season(parsed, message, day, follow_up=bool(prev))  # 연도는 질문 글자를 믿는다
-    fixed += checks.result_only(parsed, message) + checks.fix_cond(parsed, message)
+    fixed += checks.other_to_stats(parsed, message) + checks.result_only(parsed, message) + checks.fix_cond(parsed, message)
     if parsed.get("menu") == "other" and not any((parsed.get("people") or {}).values()) and not parsed.get("cond"):
         parsed["menu"] = "talk"  # 선수 · 팀 · 시즌 없는 메뉴 밖 질문 = 규칙 · 용어 · 관람 질문 → 일반 설명 (꼬리표 붙음)
         fixed.append("other→talk")
@@ -331,9 +362,18 @@ def answer(req: ChatRequest, message: str) -> dict:
 
     teams = checks.teams_in(message)
     season_hint = cond.get("season") or resolved.get("season") or None
+    if answers.before_data(cond, SEASONS[-1]):  # 2024 전 시즌 — 「없어요」로 답하면 그해 기록이 없었던 것처럼 읽힌다
+        log_unanswered(message, "before_data", {"parsed": parsed})
+        return say(f"BASE:ON에는 {SEASONS[-1]} 시즌부터 기록이 있어요.", menu=menu, reason="before_data", as_of=day, context=ctx)
     ids, stop = resolve_people(people, resolved, message, teams, int(season_hint) if season_hint else None)
     if stop:
         return stop
+    if menu == "games" and not cond.get("team"):  # 팀을 안 말했으면 선발 · 같이 뛴 선수의 그 시즌 팀 (답 조건 · 이어 묻기에 남게 여기서)
+        who = ids.get("starter") or (ids.get("players") or [None])[0]
+        if who:
+            from .registry import latest_team
+            if t := latest_team(who, int(season_hint) if season_hint else None):
+                cond["team"] = t
     if menu == "pa":  # 선수 옆에 쓴 팀(그 선수 소속)을 상대 팀 칸에 넣은 경우 — 자기 팀과는 맞붙지 않으니 지운다
         for slot, key in (("batter", "pit_team"), ("pitcher", "bat_team")):
             if ids.get(slot) and cond.get(key):

@@ -15,7 +15,7 @@ export type GameRow = { game_pk: string; date: string; is_home: boolean; team: s
 export type ChatAnswer = {
   type: "answer";
   text: string;
-  menu?: "pa" | "games" | "stats" | "rank" | "talk" | "other";
+  menu?: "pa" | "games" | "stats" | "rank" | "compare" | "talk" | "other";
   conditions?: string[];
   total?: number;
   shown?: number;

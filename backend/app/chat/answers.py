@@ -12,10 +12,15 @@ PCT1 = {"k_pct", "bb_pct"}
 WIN_WORD = {"승": "이긴", "패": "진", "무": "비긴"}
 
 
+WORD_READ = {"WHIP": True}
+
+
 def has_batchim(word: str) -> bool:
     """마지막 글자에 받침이 있나 (한글이 아니면 숫자 · 영문 읽는 소리로 대충)"""
     if not word:
         return False
+    if word.upper() in WORD_READ:  # 낱말처럼 읽는 영문 지표 (WHIP = 휩)
+        return WORD_READ[word.upper()]
     c = word[-1]
     if "가" <= c <= "힣":
         return (ord(c) - 0xAC00) % 28 != 0
@@ -136,6 +141,61 @@ def stats_text(result: dict, metrics: list[str] | None, as_of: str | None) -> st
     if missing:
         lines.append(f"{josa(' · '.join(missing), '은', '는')} BASE:ON에 없는 기록이에요.")
     return "\n".join(lines)
+
+
+LOW_BAT = {"so", "k_pct"}                       # 타자: 적을수록 좋은 것
+LOW_PIT = {"whip", "avg", "bb", "hr", "h", "r"}  # 투수: 적을수록 좋은 것
+
+
+def side_stat(metric: str, batting: dict | None, pitching: dict | None) -> tuple[str, str, object] | None:
+    """(batter|pitcher, 저장 칸, 값)"""
+    for side, table, stat in (("batter", terms.BAT_METRICS, batting), ("pitcher", terms.PIT_METRICS, pitching)):
+        if stat and metric in table and stat.get(table[metric]) is not None:
+            return side, table[metric], stat[table[metric]]
+    return None
+
+
+def compare_text(result: dict, cond: dict, as_of: str | None) -> str:
+    """두(세) 선수 한 시즌 비교 — 지표마다 한 줄, 첫 지표로 판정 한 줄. 숫자는 조회 결과에서만"""
+    cmp = result["compare"]
+    label = season_label(cmp["season"], as_of)
+    lines, verdict = [], None
+    for m in cmp["metrics"]:
+        if m in terms.MISSING_METRICS:
+            lines.append(f"{josa(m, '은', '는')} BASE:ON에 없는 기록이에요.")
+            continue
+        got = [(p["name"], side_stat(m, p.get("batting"), p.get("pitching"))) for p in cmp["players"]]
+        have = [(n, s) for n, s in got if s]
+        if not have:
+            lines.append(f"{m} 기록이 없어요.")
+            continue
+        lines.append(f"{m}: " + " · ".join(f"{n} {fmt(s[1], s[2])}" if s else f"{n} 기록 없음" for n, s in got))
+        if verdict is None and len(have) >= 2:
+            side, key = have[0][1][0], have[0][1][1]
+            low = key in (LOW_PIT if side == "pitcher" else LOW_BAT)
+            vals = sorted(have, key=lambda x: x[1][2], reverse=not low)
+            rate = key in RATE3 | PCT1 | {"whip", "avg_velo"} or (side == "pitcher" and key == "avg")
+            if vals[0][1][2] == vals[1][1][2]:
+                verdict = f"{josa(m, '은', '는')} 같아요."
+            else:
+                word = ("낮아요" if low else "높아요") if rate else ("적어요" if low else "많아요")
+                verdict = f"{josa(m, '은', '는')} {josa(vals[0][0], '이', '가')} 더 {word}."
+    head = f"{label} 비교예요."
+    small = [p["name"] for p in cmp["players"] if (p.get("batting") or {}).get("qualified") is False
+             and any(terms.BAT_METRICS.get(m) in RATE3 | PCT1 for m in cmp["metrics"])]
+    tail = [f"규정 타석 미달: {' · '.join(small)}"] if small else []
+    return "\n".join([verdict or head, *lines, *tail])
+
+
+def before_data(cond: dict, first: int) -> bool:
+    """데이터 시작 시즌보다 앞만 묻는가 (2019 홈런왕 · 김도영 2022 타율)"""
+    try:
+        if cond.get("season") and int(cond["season"]) < first:
+            return True
+    except (TypeError, ValueError):
+        return False
+    to = cond.get("date_to")
+    return bool(to) and str(to) < f"{first}-01-01"
 
 
 def ranked(rows: list[dict], key: str, low_better: bool) -> list[tuple[int, dict]]:

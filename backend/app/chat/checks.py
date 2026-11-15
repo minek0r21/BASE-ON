@@ -67,6 +67,27 @@ def fix_season(parsed: dict, message: str, day: str | None, follow_up: bool) -> 
     return []
 
 
+AGG = re.compile(r"통산|커리어|월별|달마다|이닝별|회별|팀별|구장별|상대\s*팀별|요일|합계|평균\s*몇|추이|변화")
+
+
+def other_to_stats(parsed: dict, message: str) -> list[str]:
+    """「전민재 자이언츠 3루타 몇개야」 — 연도가 없어 통산으로 읽고 other(못 답함)로 보낸 경우 → stats (시즌은 되묻는다).
+    통산 · 월별 · 이닝별처럼 정말 메뉴 밖인 말이 있으면 그대로"""
+    if parsed.get("menu") != "other" or AGG.search(message):
+        return []
+    people, cond = parsed.get("people") or {}, parsed.get("cond") or {}
+    who = people.get("player") or people.get("batter") or people.get("pitcher")
+    asked = [m for m in (cond.get("metrics") or []) + (cond.get("results") or []) if m in terms.METRICS]
+    if not who or not asked or any(people.get(k) for k in ("players", "starter", "opp_starter")):
+        return []
+    if any(cond.get(k) for k in ("bases", "situations", "inning_from", "stadium", "pit_team", "date_from")):
+        return []
+    parsed.update(menu="stats", people={"player": who}, cond={k: v for k, v in cond.items() if k == "season"} | {"metrics": asked})
+    if "season" not in parsed["cond"]:
+        parsed["year_given"] = False
+    return ["other→stats"]
+
+
 VIDEO_ONLY = re.compile(r"영상\s*(?:이\s*)?(?:있는|나오는|붙은|딸린)|영상만|영상\s*있는\s*것만")
 
 
@@ -124,6 +145,20 @@ def result_only(parsed: dict, message: str) -> list[str]:
     parsed["people"] = {"batter": who} if who else {}
     parsed["cond"] = {k: v for k, v in (parsed.get("cond") or {}).items() if k == "season"} | {"results": [words[0]]}
     return [f"stats→pa (결과 이름 「{words[0]}」만)"]
+
+
+def team_near(message: str, name: str) -> str | None:
+    """이름 바로 앞 · 뒤에 붙은 팀 (「기아 성범이랑 쓱 지훈이」 → 지훈 = SSG). 팀이 둘 나오는 비교 질문에서 사람마다"""
+    i = message.replace(" ", "").find(name.replace(" ", ""))
+    if i < 0:
+        return None
+    bare = message.replace(" ", "")
+    before, after = bare[max(0, i - 6):i], bare[i + len(name.replace(' ', '')):][:8]
+    for text, pick in ((before, -1), (after, 0)):
+        hits = [(m.start(), terms.TEAMS[a]) for a in terms.TEAMS for m in re.finditer(re.escape(a), text, re.I)]
+        if hits:
+            return sorted(hits)[pick][1]
+    return None
 
 
 def teams_in(message: str) -> list[str]:
