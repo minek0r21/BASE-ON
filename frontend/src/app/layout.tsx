@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import { Big_Shoulders, Geist, Noto_Sans_KR } from "next/font/google";
+import ChatWidget from "@/components/chat/ChatWidget";
 import Footer from "@/components/layout/Footer";
 import Nav from "@/components/layout/Nav";
 import TabBar from "@/components/layout/TabBar";
@@ -40,6 +41,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <Footer />
           <TabBar />
           <ToTop />
+          {/* 챗봇 💬 — 모든 화면 오른쪽 아래 (화면을 옮겨도 대화가 남도록 레이아웃에 둔다). 서버에 AI 키가 없으면 그리지 않는다 */}
+          <ChatWidget />
         </Providers>
       </body>
     </html>

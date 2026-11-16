@@ -50,3 +50,6 @@ photos/
 logos/
 photos_x4/
 logos_x4/
+
+# 챗봇이 못 답한 질문 로그 (서버마다 따로)
+backend/chat_logs/
