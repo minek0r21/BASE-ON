@@ -52,7 +52,10 @@ uvicorn app.main:app --reload       # --reload: 코드를 고치면 서버가 �
 - `.env`의 `GEMINI_API_KEY`가 비어 있으면 `/chat/status`가 `enabled: false`를 돌려주고, 화면에 챗봇 버튼이 나오지 않는다.
 - 메뉴(타석 · 경기 · 시즌 기록) 밖 질문은 「아직 못 답함」으로 끝나고 `chat_logs/unanswered.jsonl`에 남는다. 로컬에서 `CHAT_OTHER=on`이면 AI가 쓴 Cypher를 읽기 전용으로 돌려 본다(참고용, 서버는 늘 꺼짐).
 - 호출 제한: IP별 `CHAT_PER_MIN`(8) · `CHAT_PER_DAY`(60), 서버 전체 `CHAT_DAILY_CAP`(200). 메모리에서 세므로 `--workers 1`일 때만 맞다.
-- 채점: `docker compose exec api python -m app.chat.grade` (질문 `tests/chat_questions.csv`, `GRADE_REPEAT=3`이면 세 번 모두 맞아야 맞음).
+- 채점: `docker compose exec api python -m app.chat.grade` (질문 `tests/chat_questions.csv`, `GRADE_REPEAT=3`이면 세 번 모두 맞아야 맞음). 메뉴 · 프롬프트를 바꾼 뒤엔 `--gate`(하나라도 틀리면 실패).
+- 메뉴는 `app/chat/registry.py` 등록부 하나에서 프롬프트 · 실행 · 답 문장이 나온다.
+- 학습 순환(로컬 전용): `python -m app.chat.learn run --family rank --n 30` → `chat_logs/learn/<run>/review.md`를 보고 `review.csv`에 승인(O) → `learn promote <run>` → `grade --gate`.
+  값(정답)을 먼저 고르고 AI가 질문으로 바꾸므로, 질문 이해와 후보 Cypher를 정답과 대조할 수 있다. `blind`는 정답 없이 일치 · 규칙만 본 판정(API 없는 묶음에서 쓸 수 있는 것), `false_green`은 blind 통과인데 틀린 수.
 
 ## API 목록
 모든 주소 앞에 `/api/v1`. 번호는 설계 문서의 API 번호.

@@ -15,7 +15,7 @@ export type GameRow = { game_pk: string; date: string; is_home: boolean; team: s
 export type ChatAnswer = {
   type: "answer";
   text: string;
-  menu?: "pa" | "games" | "stats" | "other";
+  menu?: "pa" | "games" | "stats" | "rank" | "compare" | "talk" | "other";
   conditions?: string[];
   total?: number;
   shown?: number;
@@ -29,12 +29,21 @@ export type ChatAnswer = {
   table?: unknown[][];
   note?: string;
   context?: Record<string, unknown>;
+  /** talk 답의 꼬리표 (「일반 설명 · BASE:ON 기록 아님」) */
+  tag?: string;
+  /** 못 답한 질문의 기본 답: 이미 답할 수 있는 가까운 질문 버튼 · 사이트 화면 링크 */
+  suggestions?: { label: string; ask: string }[];
+  links?: { label: string; href: string }[];
   /** DB의 마지막 경기일 (답이 이 날까지의 기록이라는 뜻) */
   as_of?: string;
   /** 조회하지 않고 끝난 답의 까닭: other_off(메뉴 밖) · after_as_of(기준일 뒤) · limited(호출 제한) · off(꺼짐) */
   reason?: "other_off" | "after_as_of" | "limited" | "off";
 };
-export type ChatClarify = { type: "clarify"; slot: string; text: string; options: { value: string | number; label: string }[] };
+export type ChatClarify = {
+  type: "clarify"; slot: string; text: string; options: { value: string | number; label: string }[];
+  /** 이 질문의 context — 고르지 않고 이어 물을 때 앞 질문으로 쓴다 */
+  context?: Record<string, unknown>;
+};
 export type ChatReply = ChatAnswer | ChatClarify;
 
 /** 챗봇을 켤지 (서버에 AI 키가 있나) + 기록 기준일. 못 받으면 끈 것으로 본다 */

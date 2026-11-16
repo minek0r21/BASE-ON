@@ -114,7 +114,7 @@ def pa_where(c: PASearch) -> tuple[str, dict, list[str]]:
         w.append("pa.inning_half = $half"); p["half"] = c.inning_half; said.append(f"{c.inning_half}")
     if c.situations:
         if bad_s := [s for s in c.situations if s not in terms.SITUATIONS]:
-            bad(f"모르는 상황: {bad_s}")
+            bad(f"모르는 상황: {', '.join(bad_s)}")
         w.append("pa.situation IN $sits"); p["sits"] = c.situations; said.append(" · ".join(c.situations))
     if c.bases:
         if c.bases == terms.RISP:
