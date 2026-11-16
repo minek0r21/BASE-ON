@@ -8,10 +8,12 @@ import { SectionHead } from "@/components/home/common";
 import StageTag from "@/components/StageTag";
 import { Empty } from "@/components/ui/Chip";
 import { PlayGlyph, TeamLogo } from "@/components/ui/Media";
+import Help from "@/components/ui/Help";
 import Seg from "@/components/ui/Seg";
+import { STAT_HELP } from "@/lib/constants";
 import type { Role } from "./Hero";
 
-// BO-PB-03 시즌 기록 (API-19). 타자 표 + 투수 표(투구 기록이 있으면). 숫자 머리에는 쉬운 설명(title). 프로필은 머리에 있어 뺐다 (10-31 사용자)
+// BO-PB-03 시즌 기록 (API-19). 타자 표 + 투수 표(투구 기록이 있으면). 숫자 머리에는 「?」 설명(STAT_HELP). 프로필은 머리에 있어 뺐다 (10-31 사용자)
 // 칸마다 정규시즌 중 가장 좋은 값은 구단 글자색(best: high 클수록 · low 작을수록 좋음), 줄 끝 「▶ n」은 그 시즌 장면 · 등판 탭으로 (10-31 사용자)
 type Col<T> = { key: string; label: string; help?: string; value: (r: T) => string; strong?: boolean; best?: "high" | "low" };
 type Bat = Record<string, unknown> & { season: number; teams: string[]; games: number };
@@ -23,34 +25,34 @@ const r3 = (v: unknown) => rate3(typeof v === "number" ? v : null);
 const BAT: Col<Bat>[] = [
   { key: "games", label: "경기", value: (r) => n(r.games) },
   { key: "pa", label: "타석", value: (r) => n(r.pa) },
-  { key: "ab", label: "타수", help: "타석에서 볼넷·사구·희생타를 뺀 수", value: (r) => n(r.ab) },
+  { key: "ab", label: "타수", help: STAT_HELP.ab, value: (r) => n(r.ab) },
   { key: "h", label: "안타", value: (r) => n(r.h), best: "high" },
   { key: "b2", label: "2루타", value: (r) => n(r.b2), best: "high" },
   { key: "b3", label: "3루타", value: (r) => n(r.b3), best: "high" },
-  { key: "hr", label: "홈런", value: (r) => n(r.hr), best: "high" },
+  { key: "hr", label: "홈런", help: STAT_HELP.hr, value: (r) => n(r.hr), best: "high" },
   { key: "bb", label: "볼넷", value: (r) => n(r.bb), best: "high" },
-  { key: "hbp", label: "사구", help: "몸에 맞는 공", value: (r) => n(r.hbp) },
+  { key: "hbp", label: "사구", help: STAT_HELP.hbp, value: (r) => n(r.hbp) },
   { key: "so", label: "삼진", value: (r) => n(r.so) },
-  { key: "avg", label: "타율", value: (r) => r3(r.avg), best: "high" },
-  { key: "obp", label: "출루율", help: "타석에서 살아 나간 비율", value: (r) => r3(r.obp), best: "high" },
-  { key: "slg", label: "장타율", help: "타수당 루타 수 — 장타를 많이 칠수록 높다", value: (r) => r3(r.slg), best: "high" },
-  { key: "ops", label: "OPS", help: "출루율 + 장타율, 타격 종합 점수", value: (r) => r3(r.ops), strong: true, best: "high" },
+  { key: "avg", label: "타율", help: STAT_HELP.avg, value: (r) => r3(r.avg), best: "high" },
+  { key: "obp", label: "출루율", help: STAT_HELP.obp, value: (r) => r3(r.obp), best: "high" },
+  { key: "slg", label: "장타율", help: STAT_HELP.slg, value: (r) => r3(r.slg), best: "high" },
+  { key: "ops", label: "OPS", help: STAT_HELP.ops, value: (r) => r3(r.ops), strong: true, best: "high" },
 ];
 
 const PIT: Col<Pit>[] = [
   { key: "role", label: "역할", value: (r) => r.role_label },
   { key: "g", label: "등판", value: (r) => n(r.g) },
   { key: "gs", label: "선발", value: (r) => n(r.gs) },
-  { key: "outs", label: "이닝", help: "아웃 3개 = 1이닝", value: (r) => innings(typeof r.outs === "number" ? r.outs : null), strong: true, best: "high" },
+  { key: "outs", label: "이닝", help: STAT_HELP.innings, value: (r) => innings(typeof r.outs === "number" ? r.outs : null), strong: true, best: "high" },
   { key: "tbf", label: "상대 타자", value: (r) => n(r.tbf) },
   { key: "h", label: "피안타", value: (r) => n(r.h) },
   { key: "hr", label: "피홈런", value: (r) => n(r.hr) },
   { key: "bb", label: "볼넷", value: (r) => n(r.bb) },
-  { key: "hbp", label: "사구", value: (r) => n(r.hbp) },
-  { key: "so", label: "탈삼진", value: (r) => n(r.so), best: "high" },
+  { key: "hbp", label: "사구", help: STAT_HELP.hbp, value: (r) => n(r.hbp) },
+  { key: "so", label: "탈삼진", help: STAT_HELP.so, value: (r) => n(r.so), best: "high" },
   { key: "r", label: "실점", value: (r) => n(r.r) },
-  { key: "avg", label: "피안타율", help: "맞은 안타 비율 · 낮을수록 좋아요", value: (r) => r3(r.avg), best: "low" },
-  { key: "whip", label: "WHIP", help: "1이닝에 내보낸 주자(안타 + 볼넷) · 낮을수록 좋아요", value: (r) => (typeof r.whip === "number" ? r.whip.toFixed(2) : "–"), best: "low" },
+  { key: "avg", label: "피안타율", help: STAT_HELP.oppAvg, value: (r) => r3(r.avg), best: "low" },
+  { key: "whip", label: "WHIP", help: STAT_HELP.whip, value: (r) => (typeof r.whip === "number" ? r.whip.toFixed(2) : "–"), best: "low" },
 ];
 
 // 포스트시즌 줄 (PS3): 그 시즌 줄 바로 아래 「포스트시즌」. 팀 · 역할 칸이 없고 백분위도 없다
@@ -84,8 +86,8 @@ function Table<T extends { season: number; teams: string[] }>({ title, rows, col
               <th className="py-3 pr-3 text-left font-semibold">시즌</th>
               <th className="py-3 pr-3 text-left font-semibold">팀</th>
               {cols.map((c) => (
-                <th key={c.key} title={c.help} className={`py-3 pl-2 text-right font-semibold ${c.help ? "cursor-help underline decoration-dotted" : ""}`}>
-                  {c.label}
+                <th key={c.key} className="py-3 pl-2 text-right font-semibold whitespace-nowrap">
+                  {c.label}{c.help && <> <Help title={c.label === "사구" ? "몸에 맞는 공" : c.label} body={c.help} inline below /></>}
                 </th>
               ))}
               <th className="py-3 pl-4 text-right font-semibold">{unit}</th>
@@ -152,7 +154,7 @@ function MobileSeason<T extends { season: number; teams: string[] }>({ rows, col
           </div>
           {cols.map((c) => (
             <div key={c.key} className="flex h-10 items-center justify-between gap-2 border-b border-line [&:nth-last-child(-n+2)]:border-0">
-              <dt className="truncate text-[13px] text-fg-2">{label(c)}</dt>
+              <dt className="flex min-w-0 items-center gap-1 text-[13px] text-fg-2"><span className="truncate">{label(c)}</span>{c.help && c.key !== "hbp" && <Help title={label(c)} body={c.help} inline />}</dt>
               <dd className={`font-num text-[15px] font-semibold ${c.strong ? "font-bold" : ""}`}>{c.value(r)}</dd>
             </div>
           ))}

@@ -12,11 +12,13 @@ import { representative, type Role } from "@/components/player/Hero";
 import { thumbnailUrl } from "@/components/ScenePlayer";
 import SearchBox, { playerHref } from "@/components/SearchBox";
 import { Empty } from "@/components/ui/Chip";
+import Help from "@/components/ui/Help";
 import { PlayGlyph, PlayerAvatar, TeamLogo, mmss } from "@/components/ui/Media";
 import Seg from "@/components/ui/Seg";
 import Slide from "@/components/ui/Slide";
 import { ApiError, getCompare, getMeta, getPlayer, getSimilar, qk, type ComparePlayer, type PlayerSummary } from "@/lib/api";
 import { josa } from "@/lib/abilities";
+import { STAT_HELP } from "@/lib/constants";
 import { axisCopy } from "@/lib/axes";
 import { innings, md, rate3 } from "@/lib/format";
 import { useNavCrumb } from "@/lib/title";
@@ -29,24 +31,24 @@ const SERIES = ["var(--s1)", "var(--s2)", "var(--s3)"];
 const tint = (i: number, pct = 14) => `color-mix(in srgb, ${SERIES[i]} ${pct}%, transparent)`;
 const CLOSE = 5; // 백분위 차이가 이보다 작으면 「비슷해요」
 
-type Row = { label: string; get: (s: Record<string, number | null>) => number | null; fmt: (v: number | null) => string; better?: "high" | "low" };
+type Row = { label: string; help?: string; get: (s: Record<string, number | null>) => number | null; fmt: (v: number | null) => string; better?: "high" | "low" };
 const pct1 = (v: number | null) => (v == null ? "–" : `${(v * 100).toFixed(1)}%`);
 const int = (v: number | null) => (v == null ? "–" : String(v));
 const BAT_ROWS: Row[] = [
-  { label: "홈런", get: (s) => s.hr, fmt: int, better: "high" },
-  { label: "타율", get: (s) => s.avg, fmt: rate3, better: "high" },
-  { label: "출루율", get: (s) => s.obp, fmt: rate3, better: "high" },
-  { label: "장타율", get: (s) => s.slg, fmt: rate3, better: "high" },
-  { label: "OPS", get: (s) => s.ops, fmt: rate3, better: "high" },
-  { label: "삼진 비율", get: (s) => s.k_pct, fmt: pct1, better: "low" },
-  { label: "볼넷 비율", get: (s) => s.bb_pct, fmt: pct1, better: "high" },
+  { label: "홈런", help: STAT_HELP.hr, get: (s) => s.hr, fmt: int, better: "high" },
+  { label: "타율", help: STAT_HELP.avg, get: (s) => s.avg, fmt: rate3, better: "high" },
+  { label: "출루율", help: STAT_HELP.obp, get: (s) => s.obp, fmt: rate3, better: "high" },
+  { label: "장타율", help: STAT_HELP.slg, get: (s) => s.slg, fmt: rate3, better: "high" },
+  { label: "OPS", help: STAT_HELP.ops, get: (s) => s.ops, fmt: rate3, better: "high" },
+  { label: "삼진 비율", help: STAT_HELP.kPct, get: (s) => s.k_pct, fmt: pct1, better: "low" },
+  { label: "볼넷 비율", help: STAT_HELP.bbPct, get: (s) => s.bb_pct, fmt: pct1, better: "high" },
   { label: "타석", get: (s) => s.pa, fmt: int },
 ];
 const PIT_ROWS: Row[] = [
-  { label: "이닝", get: (s) => s.outs, fmt: (v) => innings(v), better: "high" },
-  { label: "탈삼진", get: (s) => s.so, fmt: int, better: "high" },
-  { label: "WHIP", get: (s) => s.whip, fmt: (v) => (v == null ? "–" : v.toFixed(2)), better: "low" },
-  { label: "피안타율", get: (s) => s.avg, fmt: rate3, better: "low" },
+  { label: "이닝", help: STAT_HELP.innings, get: (s) => s.outs, fmt: (v) => innings(v), better: "high" },
+  { label: "탈삼진", help: STAT_HELP.so, get: (s) => s.so, fmt: int, better: "high" },
+  { label: "WHIP", help: STAT_HELP.whip, get: (s) => s.whip, fmt: (v) => (v == null ? "–" : v.toFixed(2)), better: "low" },
+  { label: "피안타율", help: STAT_HELP.oppAvg, get: (s) => s.avg, fmt: rate3, better: "low" },
   { label: "볼넷 · 몸에 맞는 공", get: (s) => (s.bb == null ? null : s.bb + (s.hbp ?? 0)), fmt: int },
   { label: "피홈런", get: (s) => s.hr, fmt: int },
   { label: "등판 (선발)", get: (s) => s.g, fmt: int },
@@ -328,7 +330,7 @@ function Stats({ players, rows }: { players: ComparePlayer[]; rows: Row[] }) {
         const best = r.better && known.length >= 2 ? (r.better === "high" ? Math.max(...known) : Math.min(...known)) : null;
         return (
           <div key={r.label} className="grid items-center gap-3 border-b border-line py-2.5 last:border-0" style={cols}>
-            <span className="text-[13px] text-fg-2">{r.label}</span>
+            <span className="flex min-w-0 items-center gap-1 text-[13px] text-fg-2"><span className="truncate">{r.label}</span>{r.help && <Help title={r.label} body={r.help} inline />}</span>
             {vals.map((v, i) => (
               <span key={i} className={`text-right font-display text-[22px] leading-none ${v != null && v === best ? "font-extrabold" : "font-semibold text-fg-2"}`}>{r.fmt(v)}</span>
             ))}
