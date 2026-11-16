@@ -11,6 +11,7 @@ import Help from "@/components/ui/Help";
 import { PlayGlyph, PlayerAvatar, TeamLogo } from "@/components/ui/Media";
 import Seg from "@/components/ui/Seg";
 import { getMatchup, getMatchups, getPaClip, qk, type VsPitcher } from "@/lib/api";
+import { STAT_HELP } from "@/lib/constants";
 import { md, rate3 } from "@/lib/format";
 import type { Role } from "./Hero";
 import { ForecastPicker, NextTime } from "./Forecast";
@@ -139,7 +140,7 @@ export default function MatchupTab({ playerId, playerName, season, role = "batte
                     <button onClick={() => sortBy(k)} className={`hover:text-fg ${sort.key === k ? "font-bold text-fg" : ""}`}>
                       {h}{sort.key === k && (sort.desc ? " ↓" : " ↑")}
                     </button>
-                    {k === "ab" && <> <Help title="타수" body="타석에서 볼넷 · 몸에 맞는 공 · 희생타를 뺀 수예요. 타율은 안타 ÷ 타수로 계산해요." inline below /></>}
+                    {k === "ab" && <> <Help title="타수" body={STAT_HELP.ab} inline below /></>}
                   </th>
                 ))}
                 <th className="w-10" aria-hidden />

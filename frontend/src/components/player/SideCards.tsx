@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getForm, qk, type Form, type PlayerSeasons, type PlayerSummary } from "@/lib/api";
+import { STAT_HELP } from "@/lib/constants";
 import { innings, md, rate3 } from "@/lib/format";
 import Help from "@/components/ui/Help";
 import type { Role } from "./Hero";
@@ -25,10 +26,10 @@ function seasonStats(p: PlayerSummary, role: Role, seasons: PlayerSeasons | unde
       title: `${p.season} 시즌 기록`,
       sub: [`${pi.g}경기${pi.gs === pi.g ? " 선발" : ""}`, at, r && pi.groupSize && `순위는 ${pi.roleLabel} ${pi.groupSize}명 중`].filter(Boolean).join(" · "),
       items: [
-        { label: "이닝", value: innings(pi.outs), rank: rk("outs"), help: "이닝은 「회」예요. 아웃 3개가 1이닝이라, ⅓은 아웃 1개 · ⅔는 아웃 2개를 더 잡았다는 뜻이에요." },
-        { label: "탈삼진", value: String(pi.so), rank: rk("so") },
-        { label: "WHIP", value: pi.whip?.toFixed(2) ?? "–", rank: rk("whip") },
-        { label: "피안타율", value: rate3(pi.avg), rank: rk("avg") },
+        { label: "이닝", value: innings(pi.outs), rank: rk("outs"), help: STAT_HELP.innings },
+        { label: "탈삼진", value: String(pi.so), rank: rk("so"), help: STAT_HELP.so },
+        { label: "WHIP", value: pi.whip?.toFixed(2) ?? "–", rank: rk("whip"), help: STAT_HELP.whip },
+        { label: "피안타율", value: rate3(pi.avg), rank: rk("avg"), help: STAT_HELP.oppAvg },
         { label: "볼넷 · 몸에 맞는 공", value: String(bb), rank: pi.outs ? { text: `9이닝당 ${((bb * 27) / pi.outs).toFixed(1)}` } : null },
       ],
     };
@@ -42,11 +43,11 @@ function seasonStats(p: PlayerSummary, role: Role, seasons: PlayerSeasons | unde
     title: `${p.season} 시즌 기록`,
     sub: [games != null && `${games}경기 ${st.pa}타석`, at, r && p.groupSize && `순위는 타자 ${p.groupSize}명 중`].filter(Boolean).join(" · "),
     items: [
-      { label: "홈런", value: String(st.hr), rank: rk("hr") },      // 삼진회피 위: 짝이 없어 그대로(보류)
-      { label: "타율", value: rate3(st.avg), rank: rk("avg") },     // 안타생산
-      { label: "장타율", value: rate3(st.slg), rank: rk("slg") },   // 파워 (순수 장타력 = 장타율 − 타율)
-      { label: "출루율", value: rate3(st.obp), rank: rk("obp") },   // 선구안
-      { label: "OPS", value: rate3(st.ops), rank: rk("ops") },      // 꾸준함 (달마다 OPS 차이)
+      { label: "홈런", value: String(st.hr), rank: rk("hr"), help: STAT_HELP.hr },      // 삼진회피 위: 짝이 없어 그대로(보류)
+      { label: "타율", value: rate3(st.avg), rank: rk("avg"), help: STAT_HELP.avg },     // 안타생산
+      { label: "장타율", value: rate3(st.slg), rank: rk("slg"), help: STAT_HELP.slg },   // 파워 (순수 장타력 = 장타율 − 타율)
+      { label: "출루율", value: rate3(st.obp), rank: rk("obp"), help: STAT_HELP.obp },   // 선구안
+      { label: "OPS", value: rate3(st.ops), rank: rk("ops"), help: STAT_HELP.ops },      // 꾸준함 (달마다 OPS 차이)
     ],
   };
 }
