@@ -277,6 +277,7 @@ def run_other(message: str, ids: dict) -> dict:
 
 
 # ------------------------------------------------------------------ 못 답한 질문의 기본 답 — 숫자는 지어내지 않고, 이미 답할 수 있는 가까운 질문 · 사이트 화면으로 잇는다
+CHAT_GUIDE = "선수 · 팀 기록이나 장면을 물어봐 주세요. 예: 김도영 2026 홈런 영상 · 올해 홈런 1위 · KIA 2026년 7월 성적"
 NOT_YET = "이 질문은 아직 답할 수 없어요."
 NOT_YET_NONE = "이 질문은 아직 답할 수 없어요. 한 선수의 타석 · 시즌 기록, 한 팀의 경기 결과, 시즌 순위로 물어봐 주세요."
 
@@ -349,7 +350,10 @@ def answer(req: ChatRequest, message: str) -> dict:
             log_unanswered(message, "talk_record_like", {"parsed": parsed})
         return say(text, menu="talk", tag="일반 설명 · BASE:ON 기록 아님", context=ctx)
     if menu == "chat" or (menu not in MENUS and menu != "other"):
-        return say(parsed.get("reply") or "선수 · 타석 · 경기 기록을 물어봐 주세요. 예: 김도영 2024 홈런 영상")
+        # AI가 쓴 인사말(reply)은 검사 없이 나가서 「…있습니다」 · 「…물어봐 주세요!」처럼 말투가 섞였다 (11-16 디버깅) → 정해진 안내 + 기록
+        log_unanswered(message, "chat", {"parsed": {k: v for k, v in parsed.items() if k != "reply"}, "reply": (parsed.get("reply") or "")[:200]})
+        asks, links = alternatives(people, cond)
+        return say(CHAT_GUIDE, menu="chat", reason="chat", as_of=day, context=ctx, suggestions=asks, links=links)
     if menu == "other" and not OTHER_ON:
         log_unanswered(message, "other_off", {"parsed": parsed})  # 자주 나오는 질문 → 메뉴 · 조건 칸 후보
         asks, links = alternatives(people, cond)
@@ -367,7 +371,7 @@ def answer(req: ChatRequest, message: str) -> dict:
         return say(f"BASE:ON에는 {SEASONS[-1]} 시즌부터 기록이 있어요.", menu=menu, reason="before_data", as_of=day, context=ctx)
     ids, stop = resolve_people(people, resolved, message, teams, int(season_hint) if season_hint else None)
     if stop:
-        return stop
+        return {**stop, "context": ctx}  # 되묻기 · 못 찾음도 이 질문이 「앞 질문」 — 「작년에는?」이 그 전 답에 붙지 않게
     if menu == "games" and not cond.get("team"):  # 팀을 안 말했으면 선발 · 같이 뛴 선수의 그 시즌 팀 (답 조건 · 이어 묻기에 남게 여기서)
         who = ids.get("starter") or (ids.get("players") or [None])[0]
         if who:
@@ -392,7 +396,8 @@ def answer(req: ChatRequest, message: str) -> dict:
     if need and no_when and not parsed.get("year_given") and "season" not in resolved:
         opts = [{"value": s, "label": answers.season_label(s, day)} for s in SEASONS] \
             + ([{"value": 0, "label": "전체 (2024~)"}] if need == "ask" else [])
-        return {"type": "clarify", "slot": "season", "text": "어느 시즌을 말씀하시는 건가요?", "options": opts}
+        return {"type": "clarify", "slot": "season", "text": "어느 시즌을 말씀하시는 건가요?", "options": opts,
+                "context": ctx}  # 고르지 않고 「작년에는?」으로 이어 물어도 이 질문에 붙게 (11-16 디버깅: 그 전 답에 붙었다)
     if need == "ask_one" and not cond.get("season"):
         cond["season"] = SEASONS[0]
     # 연도 없이 "7월 이후"였던 질문: 시즌을 고르면 그 해 날짜로 다시 해석하도록 질문에 연도를 붙여 다시 돈다 (호출 제한은 이미 셌다)

@@ -6,7 +6,8 @@ talk 메뉴 — 기록 숫자가 아닌 야구 질문(용어 · 규칙 · 관람
 """
 import re
 
-from . import llm
+from . import checks, llm
+from .answers import josa
 
 # 사이트 「?」 문장 그대로 (바꾸면 화면 쪽도 같이)
 GLOSSARY = {
@@ -26,17 +27,59 @@ GLOSSARY = {
 }
 
 
+# 구단 기본 정보 — 「기아 구단 어디지?」 · 「두산은 뭐야」는 AI가 [구단] 표시만 쓰고 문장은 코드가 이 표로 쓴다.
+# 11-16 디버깅: 표를 프롬프트에 줘도 AI가 「챔피언스 파크」로 틀리고 「입니다 · 이다」로 말투가 섞였다
+# 키 = DB 팀 이름 (terms.TEAMS 값). (정식 이름, 모기업 이름, 연고지, 홈구장, 덧붙일 말)
+CLUBS = {
+    "KIA": ("KIA 타이거즈", "기아", "광주", "광주-기아 챔피언스 필드", None),
+    "삼성": ("삼성 라이온즈", "삼성", "대구", "대구 삼성 라이온즈 파크", None),
+    "LG": ("LG 트윈스", "엘지", "서울", "잠실야구장", "잠실야구장은 두산과 함께 써요."),
+    "두산": ("두산 베어스", "두산", "서울", "잠실야구장", "잠실야구장은 LG와 함께 써요."),
+    "KT": ("KT 위즈", "케이티", "수원", "수원 KT 위즈 파크", None),
+    "SSG": ("SSG 랜더스", "신세계", "인천", "인천 SSG 랜더스필드", "문학구장이라고도 불러요."),
+    "NC": ("NC 다이노스", "엔씨", "창원", "창원 NC 파크", None),
+    "롯데": ("롯데 자이언츠", "롯데", "부산", "사직야구장", None),
+    "한화": ("한화 이글스", "한화", "대전", "대전 한화생명 볼파크", None),
+    "키움": ("키움 히어로즈", "키움", "서울", "고척 스카이돔", None),
+}
+
+
+def club_text(message: str) -> str | None:
+    """질문에 구단이 하나 나오면 그 구단 소개 (연고지 · 홈구장 · 모기업 이름)"""
+    found = checks.teams_in(message)
+    if len(found) != 1 or found[0] not in CLUBS:
+        return None
+    full, alias, city, park, note = CLUBS[found[0]]
+    lines = [f"{josa(full, '은', '는')} {josa(city, '을', '를')} 연고지로 하는 KBO 구단이에요.",
+             f"홈구장은 {josa(park, '이에요', '예요')}.", note,
+             None if alias in full else f"모기업 이름으로 「{alias}」라고도 불러요."]
+    return " ".join(x for x in lines if x)
+
+
+# AI가 표시만 쓰면 코드가 정해진 문장으로 바꾼다 — 지시문을 문장으로 주면 AI가 「모른다고 말해요」처럼 지시문을 그대로 옮겨 썼다 (11-16 디버깅)
+MARK = {
+    "[기록]": "기록 숫자는 선수 이름과 시즌을 넣어 물어봐 주세요. 예: 김도영 2026 홈런",
+    "[최신]": "BASE:ON에는 2026년 7월 26일 경기까지의 기록만 있어서 최신 소식 · 트레이드 · 일정은 알려 드릴 수 없어요.",
+    "[야구아님]": "야구 질문만 답할 수 있어요.",
+}
+# 지시문을 옮겨 쓴 흔적 (「…라고 답해요」 · 「모른다고 말해요」)
+ECHO = re.compile(r"라고\s*(?:만\s*)?(?:말|답)|모른다고\s*말")
+GUIDE = "야구 용어 · 규칙 · 관람 질문이나 선수 · 팀 기록을 물어봐 주세요. 예: OPS가 뭐야 · 김도영 2026 홈런"
+
+
 def system() -> str:
     terms = "\n".join(f"- {k}: {v}" for k, v in GLOSSARY.items())
     return f"""너는 KBO 야구 기록 서비스 BASE:ON의 입문 팬 도우미다. 야구 용어 · 규칙 · 관람 · 입문 질문에 쉽게 설명한다.
 
 [규칙]
-- 3~4문장, 해요체, 마크다운 · 이모지 없이. 줄임말은 풀어 쓴다 (K → 삼진, 사구 → 몸에 맞는 공).
+- 3~4문장, 해요체(~예요 · ~해요), 마크다운 · 이모지 · 느낌표 없이. 줄임말은 풀어 쓴다 (K → 삼진, 사구 → 몸에 맞는 공).
 - 아래 [용어]에 있는 말은 그 문장을 바탕으로 설명한다 (사이트 설명과 같아야 한다).
-- 특정 선수 · 팀 · 시즌의 기록 숫자(홈런 수, 타율, 승패, 순위)는 절대 쓰지 않는다. 그런 질문이면 \"선수 이름과 시즌을 넣어 기록으로 물어봐 주세요\"라고만 한다.
-- 해마다 바뀌는 KBO 규정(자동 볼 판정, 피치클록, 연장전, 외국인 선수 수 등)은 단정하지 말고 \"KBO 공식 규정에서 확인해 주세요\"를 덧붙인다.
-- 최신 소식 · 트레이드 · 지금 로스터 · 일정은 모른다고 말한다.
-- 야구와 관계없는 질문이면 \"야구 질문만 답할 수 있어요\"라고 짧게 답한다.
+- 해마다 바뀌는 KBO 규정(자동 볼 판정, 피치클록, 연장전, 외국인 선수 수 등)은 단정하지 말고 "KBO 공식 규정에서 확인해 주세요"를 덧붙인다.
+- 다음 경우에는 설명 없이 표시 하나만 쓴다:
+  · 구단이 어디 팀인지 · 연고지 · 홈구장 · 어떤 구단인지 묻는 질문 (기아 구단 어디야 · 두산은 뭐야) → [구단]
+  · 특정 선수 · 팀 · 시즌의 기록 숫자(홈런 수, 타율, 승패, 순위)를 묻는 질문 → [기록]
+  · 최신 소식 · 트레이드 · 지금 로스터 · 앞으로의 일정 → [최신]
+  · 야구와 관계없는 질문 → [야구아님]
 
 [용어]
 {terms}"""
@@ -46,9 +89,23 @@ def system() -> str:
 RECORD_LIKE = re.compile(r"(?<![\d.])\.\d{3}(?!\d)|\d+\s*(?:홈런|승(?!제)|패|타점|위|세이브|홀드|도루)")
 
 
-def answer(message: str) -> tuple[str, bool]:
-    """(답, 안전한가). 기록 숫자처럼 보이면 버리고 안내 문장"""
-    text = llm.complete(system(), message).strip()
+def clean(text: str) -> tuple[str, bool]:
+    """AI 답 → (화면에 낼 문장, 그대로 써도 되나). 표시 · 기록 숫자 · 지시문 옮겨 쓰기는 정해진 문장으로 바꾼다"""
+    text = text.strip()
+    for mark, fixed in MARK.items():
+        if mark in text:
+            return fixed, mark != "[기록]"  # 기록 숫자 질문이 talk로 온 것은 기록에 남긴다
     if RECORD_LIKE.search(text):
-        return "기록 숫자는 선수 이름과 시즌을 넣어 물어봐 주세요. 예: 김도영 2024 홈런", False
-    return text, True
+        return MARK["[기록]"], False
+    if ECHO.search(text) or not text:
+        return GUIDE, False
+    return text.replace("!", "."), True  # 사이트 말투(느낌표 없음)
+
+
+def answer(message: str) -> tuple[str, bool]:
+    """(답, 안전한가). 구단 질문은 코드 표로, 기록 숫자처럼 보이거나 지시문을 옮겨 쓰면 버리고 안내 문장"""
+    text = llm.complete(system(), message)
+    if "[구단]" in text:
+        club = club_text(message)
+        return (club, True) if club else (GUIDE, False)
+    return clean(text)

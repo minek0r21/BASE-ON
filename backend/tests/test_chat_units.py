@@ -99,6 +99,33 @@ class Talk(unittest.TestCase):
         for ok in ["볼 4개면 볼넷이에요", "3아웃이면 공수가 바뀌어요", "9이닝 경기", "한국시리즈는 7전 4승제예요", "OPS가 1.000을 넘으면"]:
             self.assertFalse(RECORD_LIKE.search(ok), ok)
 
+    def test_marks_become_fixed_sentences(self):  # 11-16 디버깅: 지시문을 문장으로 주면 AI가 그대로 옮겨 썼다
+        from app.chat.talk import MARK, clean
+        self.assertEqual(clean("[최신]"), (MARK["[최신]"], True))
+        self.assertEqual(clean(" [야구아님] "), (MARK["[야구아님]"], True))
+        self.assertEqual(clean("[기록]"), (MARK["[기록]"], False))
+
+    def test_echoed_instruction_is_dropped(self):
+        from app.chat.talk import GUIDE, clean
+        for echo in ["최신 소식이나 팀 정보는 모른다고 말해요.", "야구와 관계없는 질문이면 야구 질문만 답할 수 있어요라고 답해요."]:
+            self.assertEqual(clean(echo), (GUIDE, False), echo)
+
+    def test_site_tone(self):
+        from app.chat.talk import clean
+        self.assertEqual(clean("KIA 타이거즈는 광주가 연고지예요!"), ("KIA 타이거즈는 광주가 연고지예요.", True))
+
+    def test_mother_company_names(self):
+        from app.chat.checks import teams_in
+        self.assertEqual(teams_in("신세계 구단 어디지?"), ["SSG"])
+
+    def test_club_text_from_table(self):  # 11-16 디버깅: AI에 맡기면 구장 이름을 틀리고 말투가 섞였다
+        from app.chat.talk import club_text
+        self.assertEqual(club_text("기아 구단 어디지?"),
+                         "KIA 타이거즈는 광주를 연고지로 하는 KBO 구단이에요. 홈구장은 광주-기아 챔피언스 필드예요. 모기업 이름으로 「기아」라고도 불러요.")
+        self.assertEqual(club_text("두산은 뭐야"),
+                         "두산 베어스는 서울을 연고지로 하는 KBO 구단이에요. 홈구장은 잠실야구장이에요. 잠실야구장은 LG와 함께 써요.")
+        self.assertIsNone(club_text("KIA랑 LG 중에 어디가 더 오래됐어"))  # 구단이 둘이면 표로 답하지 않는다
+
 
 class LearnCheck(unittest.TestCase):
     def test_plays_for_without_season(self):

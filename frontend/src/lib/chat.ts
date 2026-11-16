@@ -39,7 +39,11 @@ export type ChatAnswer = {
   /** 조회하지 않고 끝난 답의 까닭: other_off(메뉴 밖) · after_as_of(기준일 뒤) · limited(호출 제한) · off(꺼짐) */
   reason?: "other_off" | "after_as_of" | "limited" | "off";
 };
-export type ChatClarify = { type: "clarify"; slot: string; text: string; options: { value: string | number; label: string }[] };
+export type ChatClarify = {
+  type: "clarify"; slot: string; text: string; options: { value: string | number; label: string }[];
+  /** 이 질문의 context — 고르지 않고 이어 물을 때 앞 질문으로 쓴다 */
+  context?: Record<string, unknown>;
+};
 export type ChatReply = ChatAnswer | ChatClarify;
 
 /** 챗봇을 켤지 (서버에 AI 키가 있나) + 기록 기준일. 못 받으면 끈 것으로 본다 */

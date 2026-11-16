@@ -15,11 +15,13 @@ import type { Clip } from "@/lib/api";
 import { getChatStatus, postChat, toClip, type ChatAnswer, type ChatReply, type GameRow, type PaRow } from "@/lib/chat";
 import { innings, md, rate3 } from "@/lib/format";
 
-type Msg = { id: number; role: "user" | "bot"; text: string; reply?: ChatReply; ask?: { message: string; resolved: Record<string, unknown> } };
+type Msg = {
+  id: number; role: "user" | "bot"; text: string; reply?: ChatReply;
+  ask?: { message: string; resolved: Record<string, unknown>; context: Record<string, unknown> | null };
+};
 
 const EXAMPLES = ["김도영 2024 홈런 영상 보여줘", "2024년 김도영이 잠실에서 3루타 친 날", "KIA가 올러 선발일 때 LG 상대로 승률은?", "원태인 2025 시즌 기록"];
 const FAB_SPACE = "60px"; // 버튼 48px + 간격 12px — 맨 위로가 이만큼 올라간다
-let seq = 0;
 
 export default function ChatWidget() {
   const path = usePathname();
@@ -32,6 +34,9 @@ export default function ChatWidget() {
   const [context, setContext] = useState<Record<string, unknown> | null>(null);
   const [playing, setPlaying] = useState<{ clip: Clip; title: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
+  // 말풍선 번호: 컴포넌트 안에 둔다. 파일 맨 위 변수는 개발 중 코드를 다시 읽으면(Fast Refresh) 0으로 돌아가
+  // 화면에 남은 대화와 번호가 겹쳤다 (「same key」 경고)
+  const seq = useRef(0);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => { getChatStatus().then(setStatus); }, []);
@@ -43,14 +48,18 @@ export default function ChatWidget() {
 
   if (!status?.enabled) return null;
 
-  async function send(message: string, resolved: Record<string, unknown> = {}, shown?: string) {
+  // ctx: 앞 답의 context. 되묻기에서 고를 때는 그 질문을 보낼 때의 context를 그대로 다시 쓴다
+  async function send(message: string, resolved: Record<string, unknown> = {}, shown?: string, ctx = context) {
     if (!message.trim() || busy) return;
-    setMsgs((m) => [...m, { id: ++seq, role: "user", text: shown ?? message }]);
+    const askId = ++seq.current; // 번호는 갱신 함수 밖에서 정한다 (개발 모드는 갱신 함수를 두 번 부른다)
+    setMsgs((m) => [...m, { id: askId, role: "user", text: shown ?? message }]);
     setBusy(true);
-    const reply = await postChat({ message, context, resolved }).catch(() => ({ type: "answer", text: "서버에 연결하지 못했어요." }) as ChatReply);
+    const reply = await postChat({ message, context: ctx, resolved }).catch(() => ({ type: "answer", text: "서버에 연결하지 못했어요." }) as ChatReply);
     setBusy(false);
-    if (reply.type === "answer" && reply.context) setContext(reply.context);
-    setMsgs((m) => [...m, { id: ++seq, role: "bot", text: reply.text, reply, ask: reply.type === "clarify" ? { message, resolved } : undefined }]);
+    // 되묻기 · 못 찾음 답에도 context가 온다 — 고르지 않고 「작년에는?」으로 이어 물어도 방금 질문에 붙는다
+    if (reply.context) setContext(reply.context);
+    const replyId = ++seq.current;
+    setMsgs((m) => [...m, { id: replyId, role: "bot", text: reply.text, reply, ask: reply.type === "clarify" ? { message, resolved, context: ctx } : undefined }]);
   }
 
   return (
@@ -91,7 +100,7 @@ export default function ChatWidget() {
               <p key={m.id} className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand px-3 py-2 text-sm text-white">{m.text}</p>
             ) : (
               <BotBubble key={m.id} m={m} onPlay={setPlaying} onAsk={(q) => send(q)}
-                onPick={(o) => m.ask && send(m.ask.message, { ...m.ask.resolved, [(m.reply as { slot: string }).slot]: o.value }, o.label)} />
+                onPick={(o) => m.ask && send(m.ask.message, { ...m.ask.resolved, [(m.reply as { slot: string }).slot]: o.value }, o.label, m.ask.context)} />
             ))}
             {busy && <p className="w-fit rounded-2xl bg-surface-2 px-3 py-2 text-sm text-muted">찾는 중…</p>}
             <div ref={endRef} />
