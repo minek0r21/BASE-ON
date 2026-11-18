@@ -2,7 +2,6 @@
 챗봇 자동 채점 — tests/chat_questions.csv의 질문을 전부 챗봇에 넣고 맞음/틀림 표를 만든다.
     docker compose exec api python -m app.chat.grade              (한 번씩)
     docker compose exec -e GRADE_REPEAT=3 api python -m app.chat.grade   (세 번 모두 맞아야 맞음 — AI 답은 매번 다를 수 있다)
-    docker compose exec api python -m app.chat.grade --gate      (관문: 하나라도 틀리면 실패로 끝난다. 메뉴 · 프롬프트를 바꾼 뒤 · 승격 전에)
 질문을 추가할 때는 CSV에 한 줄 더 적기만 하면 된다.
   기대메뉴  pa · games · stats · other · chat · 되묻기
   기대조건  "칸=값; 칸=값" (목록은 값 하나만 적어도 포함되면 맞음). 칸 이름은 prompts.PARSE_SCHEMA의 cond 칸
@@ -16,7 +15,6 @@
 import csv
 import json
 import os
-import sys
 import time
 from collections import Counter
 from datetime import datetime
@@ -59,7 +57,7 @@ def check(row: dict, reply: dict) -> tuple[str | None, str]:
     if reply.get("type") == "clarify":
         return "메뉴", f"되물음({reply.get('slot')})"
     menu = reply.get("menu") or "chat"
-    if menu not in want_menu.split("|"):  # 「3루타 몇 개」는 stats · pa 어느 쪽으로 답해도 숫자가 같다 → stats|pa
+    if menu != want_menu:
         return "메뉴", f"메뉴 {menu} (기대 {want_menu})"
     cond = ((reply.get("context") or {}).get("parsed") or {}).get("cond") or {}
     for part in filter(None, (p.strip() for p in row["기대조건"].split(";"))):
@@ -73,7 +71,7 @@ def check(row: dict, reply: dict) -> tuple[str | None, str]:
     for part in filter(None, (p.strip() for p in (row.get("기대값") or "").split(";"))):
         if "~" in part and ("=" not in part or part.index("~") < part.index("=")):
             k, _, v = part.partition("~")
-            if not any(alt in str(dig(reply, k.strip()) or "") for alt in v.strip().split("|")):  # 「0개|없어요」처럼 둘 중 하나
+            if v.strip() not in str(dig(reply, k.strip()) or ""):
                 return "개수 · 값", f"{k.strip()}에 「{v.strip()}」 없음"
         else:
             k, _, v = part.partition("=")
@@ -101,12 +99,8 @@ def main():
     repeat = max(1, int(os.getenv("GRADE_REPEAT", "1")))
     gap = float(os.getenv("GRADE_GAP", "1"))  # 질문 사이 쉬는 초 (1분당 요청 수 때문에)
     db.connect()
-    src = Path(sys.argv[sys.argv.index("--file") + 1]) if "--file" in sys.argv else CSV  # 시험지(learn exam)도 같은 모양
-    if not src.is_absolute():
-        src = CSV.parents[1] / src
-    rows = list(csv.DictReader(src.open(encoding="utf-8-sig")))
+    rows = list(csv.DictReader(CSV.open(encoding="utf-8-sig")))
     out, passed, stages = [], 0, Counter()
-    by = {}  # 묶음 · 말투별 (맞음, 전체) — 메모가 「묶음 · 말투 · …」인 시험지에서
     for i, row in enumerate(rows, 1):
         fails, reply = [], {}
         for _ in range(repeat):
@@ -117,9 +111,6 @@ def main():
                 fails.append((stage, why))
         ok = not fails
         passed += ok
-        tags = [t.strip() for t in (row.get("메모") or "").split(" · ")[:2]] if src != CSV else []
-        for key in [f"메뉴 {row['기대메뉴']}", *(f"말투 {t}" for t in tags[1:])]:
-            a, b = by.get(key, (0, 0)); by[key] = (a + ok, b + 1)
         if fails:
             stages[fails[0][0]] += 1
         why = "" if ok else f"{len(fails)}/{repeat}번 틀림 · {fails[0][1]}"
@@ -131,16 +122,12 @@ def main():
     print(f"\n{passed} / {len(rows)} 맞음" + (f" (질문마다 {repeat}번 모두 맞아야 맞음)" if repeat > 1 else ""))
     if stages:
         print("틀린 단계: " + " · ".join(f"{k} {v}" for k, v in stages.most_common()))
-    for k in sorted(by):
-        print(f"  {k:<14} {by[k][0]:>3} / {by[k][1]}")
     LOG.parent.mkdir(exist_ok=True)
-    f = LOG.parent / f"grade_{datetime.now():%Y%m%d_%H%M}{'_' + src.stem if src != CSV else ''}.csv"
+    f = LOG.parent / f"grade_{datetime.now():%Y%m%d_%H%M}.csv"
     with f.open("w", newline="", encoding="utf-8-sig") as fp:
         w = csv.DictWriter(fp, fieldnames=list(out[0]))
         w.writeheader(); w.writerows(out)
     print(f"저장: {f}")
-    if "--gate" in sys.argv and passed < len(rows):
-        sys.exit(f"관문 실패: {len(rows) - passed}개 틀림")
 
 
 if __name__ == "__main__":

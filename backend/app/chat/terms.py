@@ -37,10 +37,10 @@ TEAMS = {
     "두산": "두산", "베어스": "두산",
     "삼성": "삼성", "라이온즈": "삼성",
     "롯데": "롯데", "자이언츠": "롯데",
-    "SSG": "SSG", "랜더스": "SSG", "쓱": "SSG", "에스에스지": "SSG", "신세계": "SSG",
+    "SSG": "SSG", "랜더스": "SSG",
     "한화": "한화", "이글스": "한화",
     "키움": "키움", "히어로즈": "키움",
-    "KT": "KT", "kt": "KT", "위즈": "KT", "케이티": "KT",
+    "KT": "KT", "kt": "KT", "위즈": "KT",
     "NC": "NC", "엔씨": "NC", "다이노스": "NC",
 }
 
@@ -105,9 +105,6 @@ def team_of(name: str | None) -> str | None:
     if not name:
         return None
     t = TEAMS.get(name.strip()) or TEAMS.get(name.strip().upper())
-    if not t:  # 「한화 이글스」 · 「KT위즈」처럼 별칭이 붙어 오면 아는 이름 하나만 들어 있을 때 그 팀
-        hits = {v for k, v in TEAMS.items() if k.lower() in name.lower()}
-        t = hits.pop() if len(hits) == 1 else None
     if not t:
         raise ValueError(f"모르는 팀: {name}")
     return t
@@ -135,16 +132,3 @@ PIT_METRICS = {
 # DB에 없는 지표 — 물으면 「없는 기록」이라고 답한다 (지어내지 않게 질문 해석에서 이름으로 받는다)
 MISSING_METRICS = ["평균자책점", "승", "패", "세이브", "홀드", "타점", "득점", "도루", "자책점", "WAR"]
 METRICS = list(dict.fromkeys([*BAT_METRICS, *PIT_METRICS, *MISSING_METRICS]))
-
-# 순위 메뉴 지표 → (저장 칸, 비율 지표인가, 낮을수록 좋은가). 비율 지표는 사이트와 같은 비교 대상(규정타석 50% · 규정이닝)만 줄 세운다
-RANK_BAT = {
-    "홈런": ("hr", False, False), "타율": ("avg", True, False), "OPS": ("ops", True, False), "안타": ("h", False, False),
-    "출루율": ("obp", True, False), "장타율": ("slg", True, False), "타석": ("pa", False, False), "2루타": ("b2", False, False),
-    "3루타": ("b3", False, False), "볼넷": ("bb", False, False), "삼진": ("so", False, False),
-}
-RANK_PIT = {
-    "삼진": ("so", False, False), "이닝": ("outs", False, False), "WHIP": ("whip", True, True), "피안타율": ("avg", True, True),
-    "등판 경기": ("g", False, False), "선발 등판": ("gs", False, False), "볼넷": ("bb", False, False), "피홈런": ("hr", False, False),
-    "피안타": ("h", False, False),
-}  # 「선발」 · 「경기」만 쓰면 「선발 투수 순위」로 읽혀서(학습 순환 11-10) 「선발 등판」 · 「등판 경기」로 쓴다
-RANK_METRICS = list(dict.fromkeys([*RANK_BAT, *RANK_PIT]))
