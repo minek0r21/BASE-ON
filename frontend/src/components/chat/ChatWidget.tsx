@@ -7,7 +7,6 @@
  * 대화는 창을 닫아도 남고(레이아웃이 화면을 바꿔도 유지된다) 새로고침하면 사라진다.
  * 흐름: 질문 → POST /chat → 답(문장 · 조건 · 목록 · ▶) 또는 되묻기(버튼) → 고르면 같은 질문을 고른 값과 함께 다시 보낸다.
  */
-import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import ScenePlayer from "@/components/ScenePlayer";
@@ -15,13 +14,11 @@ import type { Clip } from "@/lib/api";
 import { getChatStatus, postChat, toClip, type ChatAnswer, type ChatReply, type GameRow, type PaRow } from "@/lib/chat";
 import { innings, md, rate3 } from "@/lib/format";
 
-type Msg = {
-  id: number; role: "user" | "bot"; text: string; reply?: ChatReply;
-  ask?: { message: string; resolved: Record<string, unknown>; context: Record<string, unknown> | null };
-};
+type Msg = { id: number; role: "user" | "bot"; text: string; reply?: ChatReply; ask?: { message: string; resolved: Record<string, unknown> } };
 
 const EXAMPLES = ["김도영 2024 홈런 영상 보여줘", "2024년 김도영이 잠실에서 3루타 친 날", "KIA가 올러 선발일 때 LG 상대로 승률은?", "원태인 2025 시즌 기록"];
 const FAB_SPACE = "60px"; // 버튼 48px + 간격 12px — 맨 위로가 이만큼 올라간다
+let seq = 0;
 
 export default function ChatWidget() {
   const path = usePathname();
@@ -34,9 +31,6 @@ export default function ChatWidget() {
   const [context, setContext] = useState<Record<string, unknown> | null>(null);
   const [playing, setPlaying] = useState<{ clip: Clip; title: string } | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
-  // 말풍선 번호: 컴포넌트 안에 둔다. 파일 맨 위 변수는 개발 중 코드를 다시 읽으면(Fast Refresh) 0으로 돌아가
-  // 화면에 남은 대화와 번호가 겹쳤다 (「same key」 경고)
-  const seq = useRef(0);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, busy]);
   useEffect(() => { getChatStatus().then(setStatus); }, []);
@@ -48,18 +42,14 @@ export default function ChatWidget() {
 
   if (!status?.enabled) return null;
 
-  // ctx: 앞 답의 context. 되묻기에서 고를 때는 그 질문을 보낼 때의 context를 그대로 다시 쓴다
-  async function send(message: string, resolved: Record<string, unknown> = {}, shown?: string, ctx = context) {
+  async function send(message: string, resolved: Record<string, unknown> = {}, shown?: string) {
     if (!message.trim() || busy) return;
-    const askId = ++seq.current; // 번호는 갱신 함수 밖에서 정한다 (개발 모드는 갱신 함수를 두 번 부른다)
-    setMsgs((m) => [...m, { id: askId, role: "user", text: shown ?? message }]);
+    setMsgs((m) => [...m, { id: ++seq, role: "user", text: shown ?? message }]);
     setBusy(true);
-    const reply = await postChat({ message, context: ctx, resolved }).catch(() => ({ type: "answer", text: "서버에 연결하지 못했어요." }) as ChatReply);
+    const reply = await postChat({ message, context, resolved }).catch(() => ({ type: "answer", text: "서버에 연결하지 못했어요." }) as ChatReply);
     setBusy(false);
-    // 되묻기 · 못 찾음 답에도 context가 온다 — 고르지 않고 「작년에는?」으로 이어 물어도 방금 질문에 붙는다
-    if (reply.context) setContext(reply.context);
-    const replyId = ++seq.current;
-    setMsgs((m) => [...m, { id: replyId, role: "bot", text: reply.text, reply, ask: reply.type === "clarify" ? { message, resolved, context: ctx } : undefined }]);
+    if (reply.type === "answer" && reply.context) setContext(reply.context);
+    setMsgs((m) => [...m, { id: ++seq, role: "bot", text: reply.text, reply, ask: reply.type === "clarify" ? { message, resolved } : undefined }]);
   }
 
   return (
@@ -99,8 +89,8 @@ export default function ChatWidget() {
             {msgs.map((m) => m.role === "user" ? (
               <p key={m.id} className="ml-auto w-fit max-w-[85%] rounded-2xl rounded-br-md bg-brand px-3 py-2 text-sm text-white">{m.text}</p>
             ) : (
-              <BotBubble key={m.id} m={m} onPlay={setPlaying} onAsk={(q) => send(q)}
-                onPick={(o) => m.ask && send(m.ask.message, { ...m.ask.resolved, [(m.reply as { slot: string }).slot]: o.value }, o.label, m.ask.context)} />
+              <BotBubble key={m.id} m={m} onPlay={setPlaying}
+                onPick={(o) => m.ask && send(m.ask.message, { ...m.ask.resolved, [(m.reply as { slot: string }).slot]: o.value }, o.label)} />
             ))}
             {busy && <p className="w-fit rounded-2xl bg-surface-2 px-3 py-2 text-sm text-muted">찾는 중…</p>}
             <div ref={endRef} />
@@ -129,9 +119,7 @@ export default function ChatWidget() {
   );
 }
 
-function BotBubble({ m, onPlay, onPick, onAsk }: {
-  m: Msg; onPlay: (p: { clip: Clip; title: string }) => void; onPick: (o: { value: string | number; label: string }) => void; onAsk: (q: string) => void;
-}) {
+function BotBubble({ m, onPlay, onPick }: { m: Msg; onPlay: (p: { clip: Clip; title: string }) => void; onPick: (o: { value: string | number; label: string }) => void }) {
   const r = m.reply;
   return (
     <div className="max-w-[92%] space-y-2 rounded-2xl rounded-bl-md bg-surface-2 px-3 py-2 text-sm">
@@ -143,26 +131,15 @@ function BotBubble({ m, onPlay, onPick, onAsk }: {
           ))}
         </div>
       )}
-      {r?.type === "answer" && <Answer r={r} onPlay={onPlay} onAsk={onAsk} />}
+      {r?.type === "answer" && <Answer r={r} onPlay={onPlay} />}
     </div>
   );
 }
 
-function Answer({ r, onPlay, onAsk }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title: string }) => void; onAsk: (q: string) => void }) {
+function Answer({ r, onPlay }: { r: ChatAnswer; onPlay: (p: { clip: Clip; title: string }) => void }) {
   return (
     <>
-      {r.tag && <p className="w-fit rounded-md bg-surface-3 px-1.5 py-0.5 text-[11px] font-bold text-fg-2">{r.tag}</p>}
       {!!r.conditions?.length && <p className="text-xs text-muted">🔍 {r.conditions.join(" · ")}</p>}
-      {(!!r.suggestions?.length || !!r.links?.length) && ( /* 못 답한 질문: 가까운 질문 버튼 · 사이트 화면 */
-        <div className="flex flex-wrap gap-2">
-          {r.suggestions?.map((s) => (
-            <button key={s.ask} onClick={() => onAsk(s.ask)} className="rounded-full border border-line-strong bg-surface px-3 py-1 text-xs font-bold hover:border-brand">{s.label}</button>
-          ))}
-          {r.links?.map((l) => (
-            <Link key={l.href} href={l.href} className="rounded-full px-2 py-1 text-xs font-bold text-brand-text underline-offset-2 hover:underline">{l.label} →</Link>
-          ))}
-        </div>
-      )}
       {r.note && <p className="text-xs text-[#a05a00]">※ {r.note}</p>}
       {r.record && !r.text.includes("승률") && ( /* 답 문장에 이미 있으면 다시 쓰지 않는다 (승 · 패만 거른 질문일 때 전체 성적) */
         <p className="text-xs font-bold">{r.record.win}승 {r.record.loss}패{r.record.draw ? ` ${r.record.draw}무` : ""}
@@ -192,7 +169,7 @@ function Answer({ r, onPlay, onAsk }: { r: ChatAnswer; onPlay: (p: { clip: Clip;
         </ul>
       )}
       {r.menu === "stats" && <Stats r={r} />}
-      {!!r.table?.length && ( /* 순위(rank) · 로컬 other */
+      {r.menu === "other" && !!r.table?.length && (
         <div className="overflow-x-auto rounded-xl bg-surface">
           <table className="w-full text-xs">
             <thead><tr>{r.columns?.map((c) => <th key={c} className="px-2 py-1 text-left text-muted">{c}</th>)}</tr></thead>

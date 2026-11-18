@@ -11,7 +11,6 @@ import re
 import time
 import urllib.error
 import urllib.request
-from pathlib import Path
 
 DEFAULT_MODEL = {"gemini": "gemini-3.5-flash-lite", "claude": "claude-haiku-4-5-20251001"}
 TIMEOUT = int(os.getenv("LLM_TIMEOUT", "30"))     # 초. 웹 요청이라 오래 붙잡지 않는다
@@ -57,20 +56,7 @@ def _post(url: str, body: dict, headers: dict) -> dict:
             raise LLMError(f"LLM 연결 실패: {e}") from None
 
 
-USAGE = Path(__file__).resolve().parents[2] / "chat_logs" / "usage.jsonl"  # 실제 토큰 수 (비용은 콘솔이 기준, 이건 어림용)
-
-
-def usage(model: str, meta: dict):
-    try:
-        USAGE.parent.mkdir(exist_ok=True)
-        with USAGE.open("a", encoding="utf-8") as f:
-            f.write(json.dumps({"t": int(time.time()), "model": model, "in": meta.get("promptTokenCount", 0),
-                                "out": meta.get("candidatesTokenCount", 0) + meta.get("thoughtsTokenCount", 0)}) + "\n")
-    except OSError:
-        pass
-
-
-def complete(system: str, user: str, as_json: bool = False, temperature: float = 0) -> str:
+def complete(system: str, user: str, as_json: bool = False) -> str:
     """system(규칙) + user(질문) → 답 문자열. as_json이면 JSON 하나만 돌려 달라고 한다"""
     p = provider()
     model = os.getenv("LLM_MODEL") or DEFAULT_MODEL.get(p, "")
@@ -78,7 +64,7 @@ def complete(system: str, user: str, as_json: bool = False, temperature: float =
         key = os.getenv("GEMINI_API_KEY") or ""
         if not key:
             raise LLMError("GEMINI_API_KEY가 .env에 없어요")
-        cfg: dict = {"temperature": temperature}
+        cfg: dict = {"temperature": 0}
         if as_json:
             cfg["responseMimeType"] = "application/json"
         if THINKING:
@@ -95,7 +81,6 @@ def complete(system: str, user: str, as_json: bool = False, temperature: float =
                 raise
             body["generationConfig"] = {k: v for k, v in cfg.items() if k != "thinkingConfig"}
             res = _post(url, body, {"x-goog-api-key": key})
-        usage(model, res.get("usageMetadata") or {})
         try:
             return "".join(part.get("text", "") for part in res["candidates"][0]["content"]["parts"])
         except (KeyError, IndexError):
@@ -106,7 +91,7 @@ def complete(system: str, user: str, as_json: bool = False, temperature: float =
             raise LLMError("ANTHROPIC_API_KEY가 .env에 없어요")
         sys_text = system + ("\n\n반드시 JSON 객체 하나만 출력하라. 설명이나 코드블록 없이." if as_json else "")
         res = _post("https://api.anthropic.com/v1/messages",
-                    {"model": model, "max_tokens": 1500, "temperature": temperature, "system": sys_text,
+                    {"model": model, "max_tokens": 1500, "temperature": 0, "system": sys_text,
                      "messages": [{"role": "user", "content": user}]},
                     {"x-api-key": key, "anthropic-version": "2023-06-01"})
         return "".join(b.get("text", "") for b in res.get("content", []) if b.get("type") == "text")
@@ -125,10 +110,10 @@ def parse_json(text: str) -> dict | None:
     return None
 
 
-def complete_json(system: str, user: str, temperature: float = 0) -> dict:
+def complete_json(system: str, user: str) -> dict:
     """JSON 답을 dict로. 깨진 JSON이 오면(드물게 글자 코드가 잘린다) 한 번만 다시 묻는다"""
     for _ in range(2):
-        text = complete(system, user, as_json=True, temperature=temperature)
+        text = complete(system, user, as_json=True)
         if (v := parse_json(text)) is not None:
             return v
     raise LLMError(f"LLM이 JSON이 아닌 답을 보냈어요: {text.strip()[:200]}")

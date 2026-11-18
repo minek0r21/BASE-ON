@@ -1,4 +1,4 @@
-﻿질문,기대메뉴,기대조건,시즌선택,기대개수,기대값,앞질문,메모
+질문,기대메뉴,기대조건,시즌선택,기대개수,기대값,앞질문,메모
 김도영 2024 홈런 영상 보여줘,pa,results=홈런; season=2024,,38,text~홈런 38개,,
 2024년 김도영이 잠실에서 3루타 친 날 언제야,pa,results=3루타; stadium=잠실; season=2024,,1,,,
 도영이 재작년 잠실 3루타,pa,results=3루타; stadium=잠실; season=2024,,1,,,재작년 = 2024 (2026 기준)
@@ -13,7 +13,7 @@ KIA 2025 시즌 경기,games,team=KIA; season=2025,,144,,,
 김도영 2025 타율 몇이야,stats,season=2025; metrics=타율,,,batting.avg=0.3091; text~타율 .309; text~규정 타석 미달,,
 2025 오스틴 포심 쳐서 홈런,pa,results=홈런; season=2025; pitch_names=포심,,,,,
 2025년 기아 타자들 만루에서 장타,pa,bat_team=KIA; bases=만루; results=장타; season=2025,,,,,
-2025년 홈런 제일 많이 친 타자 5명,rank,rank_metric=홈런; season=2025,,,rank.rows.0.name=디아즈; rank.rows.0.value=50; text~디아즈(삼성) 50개,,순위 = 사이트 /batters (qualified=false)
+2025년 홈런 제일 많이 친 타자 5명,other,,,,,,메뉴 밖 → 서버는 「아직 못 답함」 (CHAT_OTHER=on이면 로컬에서 조회)
 안녕,chat,,,,,,
 레이예스 2025 2아웃 득점권 타석,pa,bases=득점권; outs=2; season=2025,,78,,,on_2b IS NOT NULL로 세면 236 (조용히 틀리는 함정)
 원태인 2025 삼진 몇 개야,stats,season=2025; metrics=삼진,,,pitching.so=108; text~삼진 108개,,
@@ -26,34 +26,3 @@ LG 2025 홈에서 두산 상대 승률,games,team=LG; opponent=두산; home_away
 한화 올해 성적,games,team=한화; season=2026,,92,record.win=44; record.loss=45; record.draw=3,,올해 = 2026 (7.26까지)
 2024년 삼성 끝내기 장면,pa,bat_team=삼성; situations=끝내기; season=2024,,2,,,
 오늘 날씨 어때,chat,,,,,,야구 밖 질문
-2024년 김도영 홈런 순위 몇 등이었어,rank,rank_metric=홈런; season=2024,,,rank.me.rank=2; rank.me.value=38,,동률은 같은 순위 (사이트 /batters로 확인)
-작년 기아 타율 1위 누구야,rank,rank_metric=타율; season=2025; team=KIA,,,rank.rows.0.name=김선빈,,타율은 규정타석 50% 이상만
-2025 탈삼진 순위,rank,rank_metric=삼진; rank_side=pitcher; season=2025,,,rank.rows.0.name=폰세; rank.rows.0.value=251,,
-2025 WHIP 제일 낮은 투수,rank,rank_metric=WHIP; season=2025,,,rank.rows.0.name=폰세,,투수 비율 지표는 선발 비교 대상만 (불펜을 섞으면 마무리가 1위)
-올해 삼진 제일 많이 잡은 투수,rank,rank_metric=삼진; rank_side=pitcher; season=2026,,,rank.rows.0.name=곽빈,,2026 = 7.26까지
-김도영이랑 최정 2025 홈런 누가 더 많아,compare,season=2025; metrics=홈런,,,text~홈런은 최정이 더 많아요; text~김도영 7개 · 최정 23개,,두 선수 비교 (11-16 compare 메뉴). 숫자는 시즌 기록 API
-김도영 2025 월별 홈런,other,,,,reason=other_off; links.0.href=/players/?id=52605,,월별 집계 → 아직 메뉴 없음. 기본 답 = 가까운 메뉴 버튼 + 선수 화면 링크
-OPS가 뭐야,talk,,,,tag=일반 설명 · BASE:ON 기록 아님; text~출루율,,기록이 아닌 야구 질문 → AI 일반 설명 (사이트 「?」 문장 바탕)
-인필드 플라이가 뭐야,talk,,,,tag=일반 설명 · BASE:ON 기록 아님,,
-야구장 처음 가는데 뭘 알면 좋아?,talk,,,,,,입문 · 관람
-26시즌 투수 등판 경기 탑10 누구야?,rank,rank_metric=등판 경기; season=2026; top=10,,,rank.rows.0.value=49; rank.rows.0.name=김민,,학습 순환 20261110_111734_rank (synthetic)
-올해 투수 선발 등판 상위 5명 알려줘,rank,rank_metric=선발 등판; season=2026; top=5,,,rank.rows.0.value=20; rank.rows.0.name=네일,,학습 순환 20261110_111734_rank (synthetic)
-2024년 타자 볼넷 1위 누구냐?,rank,rank_metric=볼넷; season=2024,,,rank.rows.0.value=96; rank.rows.0.name=홍창기,,학습 순환 20261110_111734_rank (synthetic)
-올해 타자 타율 1위 누구야?,rank,rank_metric=타율; season=2026,,,rank.rows.0.value=0.353; rank.rows.0.name=최원준,,학습 순환 20261110_111734_rank (synthetic)
-2024년 타자 타석 1위 누구임?,rank,rank_metric=타석; season=2024,,,rank.rows.0.value=670; rank.rows.0.name=로하스,,학습 순환 20261110_111734_rank (synthetic)
-2024년 투수 볼넷 1위 누구야?,rank,rank_metric=볼넷; season=2024; rank_side=pitcher,,,rank.rows.0.value=76; rank.rows.0.name=곽빈,,학습 순환 20261110_111734_rank (synthetic)
-작년 타자 3루타 1위 누구냐?,rank,rank_metric=3루타; season=2025,,,rank.rows.0.value=9; rank.rows.0.name=김성윤,,학습 순환 20261110_111734_rank (synthetic)
-올해 NC 타자 OPS 1위 누구임?,rank,rank_metric=OPS; season=2026; team=NC,,,rank.rows.0.value=0.882; rank.rows.0.name=박민우,,학습 순환 20261110_111734_rank (synthetic)
-2024년 타자 홈런 탑3 누구야?,rank,rank_metric=홈런; season=2024; top=3,,,rank.rows.0.value=46; rank.rows.0.name=데이비슨,,학습 순환 20261110_111734_rank (synthetic)
-2024년 기아 타자 홈런 1위 누구야?,rank,rank_metric=홈런; season=2024; team=KIA,,,rank.rows.0.value=38; rank.rows.0.name=김도영,,학습 순환 20261110_111734_rank (synthetic)
-작년 두산 타자 3루타 상위 5명 누구야?,rank,rank_metric=3루타; season=2025; team=두산; top=5,,,rank.rows.0.value=6; rank.rows.0.name=케이브,,학습 순환 20261110_111734_rank (synthetic)
-2024년 KT 타자 안타 상위 5명 누구?,rank,rank_metric=안타; season=2024; team=KT; top=5,,,rank.rows.0.value=188; rank.rows.0.name=로하스,,학습 순환 20261110_111734_rank (synthetic)
-2024년 투수 선발 등판 탑10 누구야?,rank,rank_metric=선발 등판; season=2024; top=10,,,rank.rows.0.value=32; rank.rows.0.name=윌커슨,,학습 순환 20261110_111734_rank (synthetic)
-2024년 한화 타자 볼넷 1위 누구야?,rank,rank_metric=볼넷; season=2024; team=한화,,,rank.rows.0.value=63; rank.rows.0.name=페라자,,학습 순환 20261110_111734_rank (synthetic)
-2024년 타자 안타 상위 5명 누구?,rank,rank_metric=안타; season=2024; top=5,,,rank.rows.0.value=202; rank.rows.0.name=레이예스,,학습 순환 20261110_111734_rank (synthetic)
-올해 타자 홈런 탑3 누구야?,rank,rank_metric=홈런; season=2026; top=3,,,rank.rows.0.value=30; rank.rows.0.name=김도영,,학습 순환 20261110_111734_rank (synthetic)
-올해 투수 이닝 1위 누구임?,rank,rank_metric=이닝; season=2026,,,rank.rows.0.value=347; rank.rows.0.name=네일,,학습 순환 20261110_111734_rank (synthetic)
-올해 롯데 투수 선발 등판 탑3 누구야?,rank,rank_metric=선발 등판; season=2026; team=롯데; top=3,,,rank.rows.0.value=18,,학습 순환 20261110_111734_rank (synthetic)
-올해 NC 타자 볼넷 탑10 누구야?,rank,rank_metric=볼넷; season=2026; team=NC; top=10,,,rank.rows.0.value=47; rank.rows.0.name=박민우,,학습 순환 20261110_111734_rank (synthetic)
-올해 타자 타석 1위 누구냐?,rank,rank_metric=타석; season=2026,,,rank.rows.0.value=422; rank.rows.0.name=디아즈,,학습 순환 20261110_111734_rank (synthetic)
-작년 KT 타자 OPS 상위 5명 누구야?,rank,rank_metric=OPS; season=2025; team=KT; top=5,,,rank.rows.0.value=1.018; rank.rows.0.name=안현민,,학습 순환 20261110_111734_rank (synthetic)
